@@ -1,6 +1,7 @@
 """Pre-curation steps: workspace setup before manual curation."""
 
 import glob
+import logging
 from pathlib import Path
 
 import rich_click as click
@@ -16,6 +17,8 @@ from grit.utils.output import (
     print_step_header,
     print_warning,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -45,6 +48,7 @@ def setup_curation(ctx: CurationContext) -> None:
     Prints:
         Command string executed and the path of the resulting original.fa.
     """
+    log.info("setup-curation | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Setup curation")
 
     # 1. Create workdir
@@ -111,6 +115,7 @@ def copy_pretext_maps(ctx: CurationContext) -> None:
         Step header, map filenames chosen, copy status, and scp commands.
     Next step hint: ``add_gap_track(ctx)``
     """
+    log.info("copy-pretext-maps | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Copy pretext maps")
 
     hr_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*hr.pretext")
@@ -179,6 +184,7 @@ def print_curation_summary(ctx: CurationContext) -> None:
         - Teloseq setting (if any)
         - Expected karyotype and sex (from YAML, if present)
     """
+    log.info("curation-summary | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Curation summary")
 
     print_info("Ticket", ctx.ticket_id)
@@ -212,6 +218,7 @@ def run_setup(ctx: CurationContext) -> None:
     Sets up the curation workspace: creates workdir, copies original.fa,
     pretext maps, and prints summary.
     """
+    log.info("setup | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_curation_summary(ctx)
     setup_curation(ctx)
     copy_pretext_maps(ctx)
@@ -230,4 +237,8 @@ def setup_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    run_setup(curation_ctx)
+    try:
+        run_setup(curation_ctx)
+    except Exception:
+        log.exception("setup failed")
+        raise SystemExit(1)

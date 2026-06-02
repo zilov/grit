@@ -1,6 +1,7 @@
 """Microchromosome second-shot curation steps."""
 
 import glob
+import logging
 
 import rich_click as click
 
@@ -13,6 +14,8 @@ from grit.utils.output import (
     print_next_step,
     print_step_header,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -49,6 +52,7 @@ def run_microchromosome_curation(ctx: CurationContext) -> None:
     Prints:
         Step header, command, scp instructions.
     """
+    log.info("microchromosome | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Microchromosome second-shot curation (pre)")
 
     micro_dir = ctx.workdir / "second_shot_microchromosomes"
@@ -127,6 +131,7 @@ def run_microchromosome_post_curation(ctx: CurationContext) -> None:
     Prints:
         Step header, each command, path to final merged FASTAs.
     """
+    log.info("microchromosome-post | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Microchromosome second-shot curation (post)")
 
     micro_dir = ctx.workdir / "second_shot_microchromosomes"
@@ -244,7 +249,11 @@ def microchromosome_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    run_microchromosome_curation(curation_ctx)
+    try:
+        run_microchromosome_curation(curation_ctx)
+    except Exception:
+        log.exception("microchromosome failed")
+        raise SystemExit(1)
 
 
 @click.command("microchromosome-post", cls=GritCommand)
@@ -255,4 +264,8 @@ def microchromosome_post_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    run_microchromosome_post_curation(curation_ctx)
+    try:
+        run_microchromosome_post_curation(curation_ctx)
+    except Exception:
+        log.exception("microchromosome-post failed")
+        raise SystemExit(1)

@@ -1,6 +1,7 @@
 """Optional pre-curation step: run sex_matcher."""
 
 import glob
+import logging
 from pathlib import Path
 
 import rich_click as click
@@ -15,6 +16,8 @@ from grit.utils.output import (
     print_step_header,
     print_warning,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -53,6 +56,7 @@ def run_sex_matcher(ctx: CurationContext) -> None:
     Prints:
         Step header, sex command, BUSCO summary table (if available).
     """
+    log.info("sex-matcher | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run sex-matcher")
 
     tol_id_lower = ctx.tol_id.lower()
@@ -113,4 +117,8 @@ def sex_matcher_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    run_sex_matcher(curation_ctx)
+    try:
+        run_sex_matcher(curation_ctx)
+    except Exception:
+        log.exception("sex-matcher failed")
+        raise SystemExit(1)

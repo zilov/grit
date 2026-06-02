@@ -5,6 +5,8 @@ Each step lives in its own module; this file re-exports them for backward compat
 
 from __future__ import annotations
 
+import logging
+
 import rich_click as click
 
 from grit.core.base_command import GritCommand
@@ -14,6 +16,8 @@ from grit.steps.post_curation.hic_remapping import run_hic_remapping
 from grit.steps.post_curation.pretext_to_asm import run_pretext_to_asm
 from grit.steps.post_curation.qv import run_qv
 from grit.steps.post_curation.validate_files import run_validate_files
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -37,6 +41,7 @@ __all__ = [
 
 def run_post_curation(ctx):
     """Run all post-curation steps in sequence."""
+    log.info("post-curation | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     run_pretext_to_asm(ctx)
     run_haplotig_files(ctx)
     run_hic_remapping(ctx)
@@ -58,4 +63,8 @@ def post_curation_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    run_post_curation(curation_ctx)
+    try:
+        run_post_curation(curation_ctx)
+    except Exception:
+        log.exception("post-curation failed")
+        raise SystemExit(1)

@@ -1,6 +1,7 @@
 """Optional tracks for pretext map: bedgraph, gap, and telomere tracks."""
 
 import glob
+import logging
 from pathlib import Path
 
 import rich_click as click
@@ -16,6 +17,8 @@ from grit.utils.output import (
     print_step_header,
     print_warning,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -45,6 +48,7 @@ def add_bedgraph_track(ctx: CurationContext, bedgraph_path: str) -> None:
     Prints:
         Step header, track name, command executed.
     """
+    log.info("add-bedgraph-track | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Add bedgraph track")
 
     bg_path = Path(bedgraph_path)
@@ -82,6 +86,7 @@ def add_gap_track(ctx: CurationContext) -> None:
         Step header, command executed.
     Next step hint: ``add_telo_track(ctx)``
     """
+    log.info("add-gap-track | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Add gap track")
 
     pretext_map = _find_pretext_map_in_workdir(ctx)
@@ -115,6 +120,7 @@ def add_telo_track(ctx: CurationContext) -> None:
     Prints:
         Step header, telo file found (or warning if absent), command executed.
     """
+    log.info("add-telo-track | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Add telo track")
 
     telo_pattern = str(
@@ -165,7 +171,11 @@ def add_bedgraph_track_cmd(ctx, bedgraph_path):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    add_bedgraph_track(curation_ctx, bedgraph_path)
+    try:
+        add_bedgraph_track(curation_ctx, bedgraph_path)
+    except Exception:
+        log.exception("add-bedgraph-track failed")
+        raise SystemExit(1)
 
 
 @click.command("add-gap-track", cls=GritCommand)
@@ -176,7 +186,11 @@ def add_gap_track_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    add_gap_track(curation_ctx)
+    try:
+        add_gap_track(curation_ctx)
+    except Exception:
+        log.exception("add-gap-track failed")
+        raise SystemExit(1)
 
 
 @click.command("add-telo-track", cls=GritCommand)
@@ -187,4 +201,8 @@ def add_telo_track_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    add_telo_track(curation_ctx)
+    try:
+        add_telo_track(curation_ctx)
+    except Exception:
+        log.exception("add-telo-track failed")
+        raise SystemExit(1)

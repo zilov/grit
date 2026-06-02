@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import glob
+import logging
 from datetime import datetime
 
 import rich_click as click
@@ -12,6 +13,8 @@ from grit.core.context import CurationContext
 from grit.utils.helpers import _submit_bsub
 from grit.utils.modules import module_cmd
 from grit.utils.output import console, print_info, print_next_step, print_step_header
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -34,6 +37,7 @@ def run_hic_remapping(ctx: CurationContext) -> None:
         Step header, bsub command, job ID, scp command for remapped pretext.
     Next step hint: ``run_qv(ctx)``
     """
+    log.info("hic-remapping | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "HiC remapping")
 
     hap1_fa_pattern = str(ctx.workdir / f"{ctx.tol_id}*.{ctx.hap1_prefix}*.primary.curated.fa")
@@ -103,4 +107,8 @@ def hic_remapping_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    run_hic_remapping(curation_ctx)
+    try:
+        run_hic_remapping(curation_ctx)
+    except Exception:
+        log.exception("hic-remapping failed")
+        raise SystemExit(1)

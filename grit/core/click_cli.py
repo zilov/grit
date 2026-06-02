@@ -4,13 +4,28 @@ Click-based CLI for the curation pipeline.
 This is the new Click-based interface, allowing modular use of pipeline steps.
 """
 
+import logging
 import sys
 from pathlib import Path
 
 import rich_click as click
 import yaml
+from rich.logging import RichHandler
 
 from grit.core.context import CurationContext
+
+log = logging.getLogger(__name__)
+
+
+def configure_logging(logging_level: str) -> None:
+    level = getattr(logging, logging_level.upper(), logging.INFO)
+    show_path = level == logging.DEBUG
+    logging.basicConfig(
+        level=level,
+        format="%(message)s",
+        datefmt="[%X]",
+        handlers=[RichHandler(show_path=show_path, rich_tracebacks=True)],
+    )
 
 
 class GlobalState:
@@ -23,12 +38,14 @@ class GlobalState:
         ticket: str = None,
         yaml: str = None,
         print_only: bool = False,
+        logging_level: str = "INFO",
     ):
         self.verbose = verbose
         self.config_path = config_path or Path.home() / ".grit_curation_config.yaml"
         self.ticket = ticket
         self.yaml = yaml
         self.print_only = print_only
+        self.logging_level = logging_level
 
 
 @click.group()
@@ -38,12 +55,25 @@ class GlobalState:
 )
 @click.option("--yaml", type=click.Path(exists=True), help="Path to YAML file")
 @click.option("--print-only", is_flag=True, help="Print commands without executing")
+@click.option(
+    "--logging-level",
+    "logging_level",
+    default="INFO",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
+    help="Logging level.",
+    show_default=True,
+)
 @click.pass_context
-def cli(ctx, verbose, config_path, yaml, print_only):
+def cli(ctx, verbose, config_path, yaml, print_only, logging_level):
     """Curation pipeline CLI."""
+    configure_logging(logging_level)
     ctx.ensure_object(dict)
     ctx.obj = GlobalState(
-        verbose=verbose, config_path=config_path, yaml=yaml, print_only=print_only
+        verbose=verbose,
+        config_path=config_path,
+        yaml=yaml,
+        print_only=print_only,
+        logging_level=logging_level,
     )
 
 

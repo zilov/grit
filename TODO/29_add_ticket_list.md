@@ -1,0 +1,1 @@
+Ticket in work list - store in ~/.grit. Rm ticket from work list and move to done after successful post-processing step run (last one in). 

@@ -1,6 +1,7 @@
 """Rename and orient chromosomes to reference."""
 
 import glob
+import logging
 import subprocess
 from pathlib import Path
 
@@ -14,6 +15,8 @@ from grit.utils.output import (
     print_info,
     print_step_header,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -39,6 +42,7 @@ def run_rename_and_orient(ctx: CurationContext) -> None:
     Prints:
         Step header, FASTA and PAF paths, command executed.
     """
+    log.info("rename-and-orient | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Rename and orient to reference")
 
     # --- find curated hap1 fa ---
@@ -104,4 +108,8 @@ def rename_and_orient_cmd(ctx):
     from grit.core.click_cli import build_context
 
     curation_ctx = build_context(ctx.obj)
-    run_rename_and_orient(curation_ctx)
+    try:
+        run_rename_and_orient(curation_ctx)
+    except Exception:
+        log.exception("rename-and-orient failed")
+        raise SystemExit(1)

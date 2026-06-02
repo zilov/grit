@@ -1,5 +1,7 @@
 """Find and download closest reference genome."""
 
+import logging
+
 import rich_click as click
 
 from grit.core.base_command import GritCommand
@@ -10,6 +12,8 @@ from grit.utils.output import (
     print_info,
     print_step_header,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -42,6 +46,7 @@ def find_closest_reference(ctx: CurationContext, number: int = 1) -> None:
     Prints:
         Step header, command executed, path to reference directory.
     """
+    log.info("find-reference | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Find closest reference")
 
     ref_dir = ctx.workdir / "reference"
@@ -72,4 +77,8 @@ def find_reference_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    find_closest_reference(curation_ctx)
+    try:
+        find_closest_reference(curation_ctx)
+    except Exception:
+        log.exception("find-reference failed")
+        raise SystemExit(1)

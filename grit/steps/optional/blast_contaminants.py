@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import glob
+import logging
 from pathlib import Path
 
 import rich_click as click
@@ -16,6 +17,8 @@ from grit.utils.output import (
     print_step_header,
     print_warning,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -53,6 +56,7 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     Prints:
         Step header, file paths, commands executed.
     """
+    log.info("blast-contaminants | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Blast contaminants search")
 
     # Get target phylum from species lineage
@@ -161,4 +165,8 @@ def blast_contaminants_cmd(ctx):
     from grit.core.click_cli import build_context
 
     curation_ctx = build_context(ctx.obj)
-    run_blast_contaminants(curation_ctx)
+    try:
+        run_blast_contaminants(curation_ctx)
+    except Exception:
+        log.exception("blast-contaminants failed")
+        raise SystemExit(1)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import rich_click as click
 
 from grit.core.base_command import GritCommand
@@ -13,6 +15,8 @@ from grit.utils.output import (
     print_step_header,
     print_warning,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -38,6 +42,7 @@ def run_haplotig_files(ctx: CurationContext) -> None:
         Status per expected file (found / created).
     Next step hint: ``run_hic_remapping(ctx)``
     """
+    log.info("haplotig-files | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Ensure haplotig files")
 
     # hap1/hap2: {tol_id}.hap1.1.all_haplotigs.curated.fa
@@ -82,4 +87,8 @@ def haplotig_files_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    run_haplotig_files(curation_ctx)
+    try:
+        run_haplotig_files(curation_ctx)
+    except Exception:
+        log.exception("haplotig-files failed")
+        raise SystemExit(1)

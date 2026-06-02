@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import glob
+import logging
 
 import rich_click as click
 
@@ -11,6 +12,8 @@ from grit.core.context import CurationContext
 from grit.utils.helpers import _run
 from grit.utils.modules import module_cmd
 from grit.utils.output import print_done, print_info, print_next_step, print_step_header
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -37,6 +40,7 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
         Step header, AGP path found, command executed.
     Next step hint: ``ensure_haplotig_files(ctx)``
     """
+    log.info("pretext-to-asm | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Pretext to ASM")
 
     original_fa = ctx.workdir / "original.fa"
@@ -85,4 +89,8 @@ def pretext_to_asm_cmd(ctx):
     from grit.core.click_cli import build_context
 
     curation_ctx = build_context(ctx.obj)
-    run_pretext_to_asm(curation_ctx)
+    try:
+        run_pretext_to_asm(curation_ctx)
+    except Exception:
+        log.exception("pretext-to-asm failed")
+        raise SystemExit(1)

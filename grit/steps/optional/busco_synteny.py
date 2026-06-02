@@ -1,6 +1,7 @@
 """Run BUSCO synteny analysis."""
 
 import glob
+import logging
 from pathlib import Path
 
 import rich_click as click
@@ -13,6 +14,8 @@ from grit.utils.output import (
     print_info,
     print_step_header,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -44,6 +47,7 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
     Prints:
         Step header, reference preparation commands, bsub command.
     """
+    log.info("busco-synteny | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO synteny")
 
     # --- ensure reference is available ---
@@ -147,4 +151,8 @@ def busco_synteny_cmd(ctx, lineage):
     from grit.core.click_cli import build_context
 
     curation_ctx = build_context(ctx.obj)
-    run_busco_synteny(curation_ctx, lineage)
+    try:
+        run_busco_synteny(curation_ctx, lineage)
+    except Exception:
+        log.exception("busco-synteny failed")
+        raise SystemExit(1)

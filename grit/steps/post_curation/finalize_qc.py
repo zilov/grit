@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import glob
+import logging
 
 import rich_click as click
 
@@ -10,6 +11,8 @@ from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.helpers import _run
 from grit.utils.output import console, print_done, print_info, print_step_header, print_warning
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -36,6 +39,7 @@ def finalize_for_qc(ctx: CurationContext) -> None:
     Prints:
         Step header, each copy command executed, reminder to update Jira.
     """
+    log.info("finalize-qc | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Finalize for QC")
 
     curated_dir = ctx.assembly_curated_dir
@@ -126,4 +130,8 @@ def finalize_qc_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    finalize_for_qc(curation_ctx)
+    try:
+        finalize_for_qc(curation_ctx)
+    except Exception:
+        log.exception("finalize-qc failed")
+        raise SystemExit(1)

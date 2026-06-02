@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import glob
+import logging
 
 import rich_click as click
 
@@ -16,6 +17,8 @@ from grit.utils.output import (
     print_step_header,
     print_warning,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -41,6 +44,7 @@ def run_validate_files(ctx: CurationContext) -> None:
         Breaks / joins counts, QV table, completeness table, missing-file warnings.
     Next step hint: ``finalize_for_qc(ctx)``
     """
+    log.info("validate-files | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Validate curated files")
 
     # --- curation log ---
@@ -132,4 +136,8 @@ def validate_files_cmd(ctx):
     from grit.core.click_cli import build_context
 
     curation_ctx = build_context(ctx.obj)
-    run_validate_files(curation_ctx)
+    try:
+        run_validate_files(curation_ctx)
+    except Exception:
+        log.exception("validate-files failed")
+        raise SystemExit(1)

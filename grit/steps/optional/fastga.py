@@ -1,6 +1,7 @@
 """Run FastGA dot-plot comparison."""
 
 import glob
+import logging
 from pathlib import Path
 
 import rich_click as click
@@ -14,6 +15,8 @@ from grit.utils.output import (
     print_info,
     print_step_header,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -50,6 +53,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     Prints:
         Step header, bsub command, scp commands (if output exists).
     """
+    log.info("fastga | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run FastGA")
 
     # --- find curated hap1 fa ---
@@ -152,4 +156,8 @@ def fastga_cmd(ctx):
     from grit.core.click_cli import build_context
 
     curation_ctx = build_context(ctx.obj)
-    run_fastga(curation_ctx)
+    try:
+        run_fastga(curation_ctx)
+    except Exception:
+        log.exception("fastga failed")
+        raise SystemExit(1)
