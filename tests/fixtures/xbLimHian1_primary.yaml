@@ -1,0 +1,64 @@
+---
+species: Limaria hians
+specimen: xbLimHian1
+projects:
+  - darwin
+assembled_by_group: 
+data_location: Sanger RW
+primary: /lustre/scratch124/tol/projects/darwin/data/molluscs/Limaria_hians/assembly/draft/xbLimHian1.20240425/xbLimHian1.20240425.fa.gz
+agp: /lustre/scratch124/tol/projects/darwin/data/molluscs/Limaria_hians/assembly/draft/xbLimHian1.20240425/scaffolds_FINAL.agp
+primary_contigs: /lustre/scratch124/tol/projects/darwin/data/molluscs/Limaria_hians/assembly/draft/xbLimHian1.20240425/xbLimHian1.20240425.primary_contigs.fa.gz
+haplotigs: /lustre/scratch124/tol/projects/darwin/data/molluscs/Limaria_hians/assembly/draft/xbLimHian1.20240425/xbLimHian1.20240425.haplotigs.fa.gz
+mito: /lustre/scratch124/tol/projects/darwin/data/molluscs/Limaria_hians/assembly/draft/xbLimHian1.20240425/xbLimHian1-MT.fa.gz
+mito_gb: /lustre/scratch124/tol/projects/darwin/data/molluscs/Limaria_hians/assembly/draft/xbLimHian1.20240425/xbLimHian1-MT.gb
+mito_reference: 
+plastid: 
+plastid_gb: 
+chloro_reference: 
+pacbio_read_dir: /lustre/scratch124/tol/projects/darwin/data/molluscs/Limaria_hians/genomic_data/xbLimHian1/pacbio
+10x_read_dir: 
+hic_read_dir: /lustre/scratch124/tol/projects/darwin/data/molluscs/Limaria_hians/genomic_data/xbLimHian1/hic-arima2
+pacbio_read_type: hifi
+hic_kit: Arima2
+hic: /lustre/scratch124/tol/projects/darwin/data/molluscs/Limaria_hians/assembly/draft/xbLimHian1.20240425/scaffolds_FINAL.hic
+pretext: /lustre/scratch124/tol/projects/darwin/data/molluscs/Limaria_hians/assembly/draft/xbLimHian1.20240425/scaffolds_FINAL.pretext
+hic_map_img: /lustre/scratch124/tol/projects/darwin/data/molluscs/Limaria_hians/assembly/draft/xbLimHian1.20240425/scaffolds_FINAL_FullMap.png
+kmer_spectra_img: /lustre/scratch124/tol/projects/darwin/data/molluscs/Limaria_hians/assembly/draft/xbLimHian1.20240425/scaffolds_FINAL.css.spectra-cn.ln.png
+busco_lineage: mollusca_odb10
+busco_gene_set_species: 
+karyotype: 
+karyotype_source: 
+ploidy: diploid
+jira_queue: 
+pipeline:
+  - hifiasm (version 0.19.8-r603)
+  - purge_dups (version 1.2.3)
+  - oatk (version 1.0)
+  - MitoHiFi (version 2)
+  - yahs (version 1.1a.2)
+notes:
+  - there is no species karyotype available on GoaT
+  - for scaffolding samtools mkdup was not run for HiC mapping
+  - new HiC has been requested
+  - mito genome can yet be updated - confirm before submission
+stats: |
+  merqury QV (CCS): 64.8
+  merqury KMER completeness (CCS): 99.67
+  BUSCO: C:91.6%[S:89.3%,D:2.3%],F:1.9%,M:6.5%,n:5295
+  /lustre/scratch124/tol/projects/darwin/data/molluscs/Limaria_hians/assembly/draft/xbLimHian1.20240425/xbLimHian1.20240425.fa.gz
+  COMPOSITION	A = 374281956 (32.7%), C = 199144239 (17.4%), G = 197322061 (17.2%), T = 373193896 (32.6%), N = 21400 (0.0%), CpG = 52720698 (4.6%)
+  SCAFFOLD	sum = 1143963552, n = 290, mean = 3944701.90344828, largest = 95311025, smallest = 1000
+  SCAFFOLD	N50 = 62629269, L50 = 8
+  SCAFFOLD	N60 = 61424098, L60 = 10
+  SCAFFOLD	N70 = 53598885, L70 = 12
+  SCAFFOLD	N80 = 38941721, L80 = 14
+  SCAFFOLD	N90 = 28048055, L90 = 17
+  SCAFFOLD	N100 = 1000, L100 = 290
+  CONTIG	sum = 1143942152, n = 504, mean = 2269726.49206349, largest = 48667371, smallest = 1000
+  CONTIG	N50 = 13045000, L50 = 27
+  CONTIG	N60 = 10538187, L60 = 37
+  CONTIG	N70 = 7148614, L70 = 50
+  CONTIG	N80 = 5264496, L80 = 69
+  CONTIG	N90 = 3114378, L90 = 96
+  CONTIG	N100 = 1000, L100 = 504
+  GAP	sum = 21400, n = 214, mean = 100, largest = 100, smallest = 100

@@ -1,0 +1,51 @@
+---
+species: Epithemia sp. CRS-2021a
+specimen: uoEpiScra1
+projects:
+  - asg
+combine_for_curation: true 
+data_location: Sanger RW
+hap1: /lustre/scratch124/tol/projects/asg/data/algae/Epithemia_sp_CRS_2021a/assembly/draft/uoEpiScra1.20241115/uoEpiScra1.20241115.hap1.fa.gz
+hap2: /lustre/scratch124/tol/projects/asg/data/algae/Epithemia_sp_CRS_2021a/assembly/draft/uoEpiScra1.20241115/uoEpiScra1.20241115.hap2.fa.gz
+mito: /lustre/scratch124/tol/projects/asg/data/algae/Epithemia_sp_CRS_2021a/assembly/draft/uoEpiScra1.20241115/uoEpiScra1-MT.fa.gz
+plastid: /lustre/scratch124/tol/projects/asg/data/algae/Epithemia_sp_CRS_2021a/assembly/draft/uoEpiScra1.20241115/uoEpiScra1-PT.fa.gz
+plastid_gb: /lustre/scratch124/tol/projects/asg/data/algae/Epithemia_sp_CRS_2021a/assembly/draft/uoEpiScra1.20241115/uoEpiScra1-PT.gb
+pacbio_read_dir: /lustre/scratch124/tol/projects/asg/data/algae/Epithemia_sp_CRS_2021a/genomic_data/uoEpiScra1/pacbio
+hic_read_dir: /lustre/scratch124/tol/projects/asg/data/algae/Epithemia_sp_CRS_2021a/genomic_data/uoEpiScra1/hic-arima2
+pacbio_read_type: hifi
+hic_kit: Arima2
+hic: /lustre/scratch124/tol/projects/asg/data/algae/Epithemia_sp_CRS_2021a/assembly/draft/uoEpiScra1.20241115/uoEpiScra1.20241115.hap1.hic
+pretext: /lustre/scratch124/tol/projects/asg/data/algae/Epithemia_sp_CRS_2021a/assembly/draft/uoEpiScra1.20241115/uoEpiScra1.20241115.hap1.pretext
+hic_map_img: /lustre/scratch124/tol/projects/asg/data/algae/Epithemia_sp_CRS_2021a/assembly/draft/uoEpiScra1.20241115/uoEpiScra1.20241115.hap1.pretext.png
+kmer_spectra_img: /lustre/scratch124/tol/projects/asg/data/algae/Epithemia_sp_CRS_2021a/assembly/draft/uoEpiScra1.20241115/uoEpiScra1.20241115.hap1.ccs.spectra-cn.ln.png
+busco_lineage: stramenopiles_odb10
+ploidy: diploid
+priority: Highest
+pipeline:
+  - hifiasm (version 0.19.8-r603)
+  - yahs (version 1.2a.2)
+notes:
+  - this is an updated and scaffolded version of public assembly (GCA_964019935)
+  - hifiasm was run in hic phasing mode
+  - purge_dups was not run on this assembly
+stats: |
+  mequry QV (CCS): 62.0
+  merqury KMER completeness (CCS): 98.65
+  BUSCO: C:93.0%[S:77.0%,D:16.0%],F:1.0%,M:6.0%,n:100
+  /lustre/scratch124/tol/projects/asg/data/algae/Epithemia_sp_CRS_2021a/assembly/draft/uoEpiScra1.20241115/uoEpiScra1.20241115.hap1.fa.gz
+  COMPOSITION	A = 181484765 (28.6%), C = 135200586 (21.3%), G = 135216016 (21.3%), T = 181858682 (28.7%), N = 133600 (0.0%), CpG = 25101462 (4.0%)
+  SCAFFOLD	sum = 633893649, n = 504, mean = 1257725.49404762, largest = 35151390, smallest = 1000
+  SCAFFOLD	N50 = 19749740, L50 = 12
+  SCAFFOLD	N60 = 14129645, L60 = 16
+  SCAFFOLD	N70 = 11034035, L70 = 21
+  SCAFFOLD	N80 = 5681296, L80 = 30
+  SCAFFOLD	N90 = 2093055, L90 = 48
+  SCAFFOLD	N100 = 1000, L100 = 504
+  CONTIG	sum = 633760049, n = 1172, mean = 540750.895051195, largest = 8090394, smallest = 1000
+  CONTIG	N50 = 1250902, L50 = 148
+  CONTIG	N60 = 1029357, L60 = 203
+  CONTIG	N70 = 819730, L70 = 272
+  CONTIG	N80 = 593595, L80 = 363
+  CONTIG	N90 = 339584, L90 = 503
+  CONTIG	N100 = 1000, L100 = 1172
+  GAP	sum = 133600, n = 668, mean = 200, largest = 200, smallest = 200

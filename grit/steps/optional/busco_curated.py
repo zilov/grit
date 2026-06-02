@@ -1,0 +1,124 @@
+"""Run BUSCO on curated genome."""
+
+import glob
+from pathlib import Path
+
+import rich_click as click
+
+from grit.core.base_command import GritCommand
+from grit.core.context import CurationContext
+from grit.utils.helpers import _submit_bsub
+from grit.utils.output import (
+    print_done,
+    print_info,
+    print_step_header,
+)
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_BUSCO_SIF = "/nfs/treeoflife-01/teams/grit/users/mh6/singularity/busco.sif"
+_BUSCO_LINEAGES = "/lustre/scratch122/tol/resources/busco/latest/lineages"
+
+
+# ---------------------------------------------------------------------------
+# Public step functions
+# ---------------------------------------------------------------------------
+
+
+def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
+    """
+    Runs BUSCO analysis on the curated genome assembly.
+
+    Steps:
+        1. Find the curated FASTA file (merged or hap1 curated.fa).
+        2. Determine file size and select appropriate memory allocation.
+        3. Submit BUSCO job via bsub using singularity.
+
+    Memory allocation based on FASTA size:
+        - < 1GB: 50GB
+        - < 2GB: 100GB
+        - < 3GB: 150GB
+        - >= 3GB: 220GB
+
+    Command structure:
+        bsub -q normal -e e_busco_{mem_gb} -o o_busco_{mem_gb} -n 32 -M {mem_mb} \\
+            -R'select[mem>{mem_mb}] rusage[mem={mem_mb}] span[hosts=1]' \\
+            singularity exec -B /lustre {_BUSCO_SIF} busco \\
+                -i {input_fa} -o {output_dir} -m genome \\
+                -l {_BUSCO_LINEAGES}/{lineage} -c 32 -f
+
+    Prints:
+        Step header, input FASTA, file size, memory allocation, bsub command.
+    """
+    print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO on curated genome")
+
+    # --- find curated FASTA ---
+    curated_pattern = str(ctx.workdir / f"{ctx.tol_id}*.curated.fa")
+    if ctx.print_only:
+        curated_fa = ctx.workdir / f"{ctx.tol_id}_merged_curated.{ctx.hap1_prefix}.fa"
+    else:
+        curated_matches = glob.glob(curated_pattern)
+        if not curated_matches:
+            raise FileNotFoundError(f"No curated FASTA found: {curated_pattern}")
+        curated_fa = Path(sorted(curated_matches)[-1])  # take the latest
+    print_info("Curated FASTA", str(curated_fa))
+
+    # --- determine file size and memory ---
+    if ctx.print_only:
+        file_size_gb = 2.5  # example
+    else:
+        file_size_bytes = curated_fa.stat().st_size
+        file_size_gb = file_size_bytes / (1024**3)
+
+    if file_size_gb < 1:
+        mem_mb = 50000
+    elif file_size_gb < 2:
+        mem_mb = 100000
+    elif file_size_gb < 3:
+        mem_mb = 150000
+    else:
+        mem_mb = 220000
+
+    mem_gb = mem_mb // 1000
+    print_info("File size", f"{file_size_gb:.2f} GB")
+    print_info("Memory allocation", f"{mem_gb} GB")
+
+    # --- build output dir ---
+    output_dir = ctx.workdir / f"{ctx.tol_id}_busco_singularity"
+
+    # --- build inner command ---
+    busco_lineage = f"{_BUSCO_LINEAGES}/{lineage}"
+    inner_cmd = (
+        f"singularity exec -B /lustre {_BUSCO_SIF} busco "
+        f"-i {curated_fa} -o {output_dir} -m genome "
+        f"-l {busco_lineage} -c 32 -f"
+    )
+
+    # --- build bsub options ---
+    bsub_opts = (
+        f"-q normal -e e_busco_{mem_gb} -o o_busco_{mem_gb} -n 32 -M {mem_mb} "
+        f"-R'select[mem>{mem_mb}] rusage[mem={mem_mb}] span[hosts=1]'"
+    )
+
+    # --- submit ---
+    _submit_bsub(inner_cmd, bsub_opts, ctx.print_only)
+
+    print_done("BUSCO on curated genome submitted.")
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+@click.command("busco-curated", cls=GritCommand)
+@click.option("--lineage", required=True, help="BUSCO lineage name (e.g. insecta_odb10).")
+@click.pass_context
+def busco_curated_cmd(ctx, lineage):
+    """Run BUSCO on the curated genome assembly."""
+    from grit.core.click_cli import build_context
+
+    curation_ctx = build_context(ctx.obj)
+    run_busco_curated(curation_ctx, lineage)
