@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import glob
+import logging
 import re
 import subprocess
 from pathlib import Path
 
 from grit.core.context import CurationContext
-from grit.utils.output import console, print_info
+from grit.utils.output import console
+
+log = logging.getLogger(__name__)
 
 
 def _run(cmd: str, print_only: bool = False) -> str:
@@ -36,7 +39,7 @@ def _submit_bsub(inner_cmd: str, bsub_opts: str, print_only: bool = False) -> st
     # bsub outputs: Job <12345> is submitted to queue ...
     if output and "Job <" in output:
         job_id = output.split("<")[1].split(">")[0]
-        print_info("Job ID", job_id)
+        log.info("Job ID: %s", job_id)
         return job_id
     return output
 

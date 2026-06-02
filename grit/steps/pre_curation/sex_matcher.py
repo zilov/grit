@@ -12,9 +12,7 @@ from grit.utils.helpers import _run
 from grit.utils.output import (
     console,
     print_done,
-    print_info,
     print_step_header,
-    print_warning,
 )
 
 log = logging.getLogger(__name__)
@@ -61,10 +59,11 @@ def run_sex_matcher(ctx: CurationContext) -> None:
 
     tol_id_lower = ctx.tol_id.lower()
     if not any(tol_id_lower.startswith(p) for p in _INSECT_PREFIXES):
-        print_warning(
-            f"tol_id '{ctx.tol_id}' does not start with a known insect prefix "
-            f"({', '.join(_INSECT_PREFIXES)}). "
-            "Sex-matcher is primarily used for insects — verify this is intentional."
+        log.warning(
+            "tol_id '%s' does not start with a known insect prefix (%s). "
+            "Sex-matcher is primarily used for insects — verify this is intentional.",
+            ctx.tol_id,
+            ", ".join(_INSECT_PREFIXES),
         )
 
     cmd = f"cd {ctx.workdir} && sex"
@@ -75,13 +74,14 @@ def run_sex_matcher(ctx: CurationContext) -> None:
         matches = glob.glob(str(ctx.workdir / "Best_match*"))
         if matches:
             best_match = Path(sorted(matches)[0])
-            print_info("Best match file", str(best_match))
+            log.info("Best match file: %s", best_match)
             _print_sex_summary(best_match)
         else:
-            print_warning(
-                f"No Best_match* file found in {ctx.workdir}. "
+            log.warning(
+                "No Best_match* file found in %s. "
                 "Sex-matcher may not have produced output yet — "
-                "re-run after the job completes."
+                "re-run after the job completes.",
+                ctx.workdir,
             )
 
     print_done("Sex-matcher step complete.")

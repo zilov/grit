@@ -12,10 +12,8 @@ from grit.utils.helpers import _find_pretext_map_in_workdir, _run
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
     print_done,
-    print_info,
     print_next_step,
     print_step_header,
-    print_warning,
 )
 
 log = logging.getLogger(__name__)
@@ -56,8 +54,8 @@ def add_bedgraph_track(ctx: CurationContext, bedgraph_path: str) -> None:
         raise FileNotFoundError(f"Bedgraph file not found: {bg_path}")
 
     track_name = bg_path.stem
-    print_info("Bedgraph file", str(bg_path))
-    print_info("Track name", track_name)
+    log.info("Bedgraph file: %s", bg_path)
+    log.info("Track name: %s", track_name)
 
     pretext_map = _find_pretext_map_in_workdir(ctx)
     ml = module_cmd("PRETEXTGRAPH")
@@ -128,14 +126,14 @@ def add_telo_track(ctx: CurationContext) -> None:
     )
 
     if ctx.print_only:
-        print_info("Telo pattern", telo_pattern)
+        log.info("Telo pattern: %s", telo_pattern)
     else:
         telo_files = glob.glob(telo_pattern)
         if not telo_files:
-            print_warning(f"No telo BED file found at: {telo_pattern} — skipping telo track.")
+            log.warning("No telo BED file found at: %s — skipping telo track.", telo_pattern)
             return
         telo_bed_gz = Path(sorted(telo_files)[-1])
-        print_info("Telo file", str(telo_bed_gz))
+        log.info("Telo file: %s", telo_bed_gz)
 
     pretext_map = _find_pretext_map_in_workdir(ctx)
     ml = module_cmd("PRETEXTGRAPH")

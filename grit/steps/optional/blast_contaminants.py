@@ -13,9 +13,7 @@ from grit.core.context import CurationContext
 from grit.utils.helpers import _clean_species_name, _run
 from grit.utils.output import (
     print_done,
-    print_info,
     print_step_header,
-    print_warning,
 )
 
 log = logging.getLogger(__name__)
@@ -61,16 +59,16 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
 
     # Get target phylum from species lineage
     cleaned_species = _clean_species_name(ctx.species)
-    print_info("Species", cleaned_species)
+    log.info("Species: %s", cleaned_species)
 
     lineage_cmd = f"{LINEAGE_SCRIPT} {cleaned_species}"
     our_lineage = _run(lineage_cmd, ctx.print_only).strip()
-    print_info("Species lineage", our_lineage)
+    log.info("Species lineage: %s", our_lineage)
 
     # Parse phylum (typically 4th element: Eukaryota; Metazoa; ...; Phylum; ...)
     lineage_parts = [part.strip() for part in our_lineage.split(";")]
     target_phylum = lineage_parts[3] if len(lineage_parts) > 3 else "Unknown"
-    print_info("Target phylum", target_phylum)
+    log.info("Target phylum: %s", target_phylum)
 
     # 1. Find curated FASTA
     curated_fa_pattern = str(ctx.workdir / f"{ctx.tol_id}*.curated.fa")
@@ -78,11 +76,11 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     if not curated_fa_files:
         raise FileNotFoundError(f"No curated FASTA found: {curated_fa_pattern}")
     curated_fasta = Path(curated_fa_files[0])
-    print_info("Curated FASTA", str(curated_fasta))
+    log.info("Curated FASTA: %s", curated_fasta)
 
     # 2. Create blast.me file
     blast_me = ctx.workdir / "blast.me"
-    print_info("Blast input file", str(blast_me))
+    log.info("Blast input file: %s", blast_me)
 
     # Create header
     header_cmd = f"echo 'header' > {blast_me}"
@@ -98,7 +96,7 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     blast_out_dir = ctx.workdir / "blast_out_dir"
     blast_cmd = f"~mh6/decon_blastBTK -b {blast_me} -f {curated_fasta} -o {blast_out_dir}"
     _run(blast_cmd, ctx.print_only)
-    print_info("Blast output dir", str(blast_out_dir))
+    log.info("Blast output dir: %s", blast_out_dir)
 
     # 4. Extract taxonomic information
     taxonomy_txt = blast_out_dir / "taxonomy.txt"
@@ -119,7 +117,7 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
         f"> {taxonomy_txt}"
     )
     _run(taxonomy_cmd, ctx.print_only)
-    print_info("Taxonomy file", str(taxonomy_txt))
+    log.info("Taxonomy file: %s", taxonomy_txt)
 
     # 5. Create contaminated.bed (filter non-target phylum hits)
     contaminated_bed = ctx.workdir / f"{ctx.tol_id}.contaminated.bed"
@@ -129,7 +127,7 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
         f">> {contaminated_bed}"
     )
     _run(bed_cmd, ctx.print_only)
-    print_info("Contaminated BED", str(contaminated_bed))
+    log.info("Contaminated BED: %s", contaminated_bed)
 
     # 6. Remove contamination from FASTA
     backup_fasta = curated_fasta.with_suffix(".original.fa")
@@ -146,9 +144,9 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
             mv_clean_cmd = f"mv {cleaned_fasta} {curated_fasta}"
             _run(mv_clean_cmd, ctx.print_only)
         else:
-            print_warning(f"Cleaned FASTA not found: {cleaned_fasta}")
+            log.warning("Cleaned FASTA not found: %s", cleaned_fasta)
     else:
-        print_info("Would rename", f"{cleaned_fasta} -> {curated_fasta}")
+        log.info("Would rename: %s -> %s", cleaned_fasta, curated_fasta)
 
     print_done("Contaminant blasting completed")
 

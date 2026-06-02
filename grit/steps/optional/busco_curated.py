@@ -11,7 +11,6 @@ from grit.core.context import CurationContext
 from grit.utils.helpers import _submit_bsub
 from grit.utils.output import (
     print_done,
-    print_info,
     print_step_header,
 )
 
@@ -67,7 +66,7 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
         if not curated_matches:
             raise FileNotFoundError(f"No curated FASTA found: {curated_pattern}")
         curated_fa = Path(sorted(curated_matches)[-1])  # take the latest
-    print_info("Curated FASTA", str(curated_fa))
+    log.info("Curated FASTA: %s", curated_fa)
 
     # --- determine file size and memory ---
     if ctx.print_only:
@@ -86,8 +85,8 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
         mem_mb = 220000
 
     mem_gb = mem_mb // 1000
-    print_info("File size", f"{file_size_gb:.2f} GB")
-    print_info("Memory allocation", f"{mem_gb} GB")
+    log.info("File size: %.2f GB", file_size_gb)
+    log.info("Memory allocation: %d GB", mem_gb)
 
     # --- build output dir ---
     output_dir = ctx.workdir / f"{ctx.tol_id}_busco_singularity"

@@ -10,10 +10,8 @@ from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.output import (
     print_done,
-    print_info,
     print_next_step,
     print_step_header,
-    print_warning,
 )
 
 log = logging.getLogger(__name__)
@@ -57,18 +55,18 @@ def run_haplotig_files(ctx: CurationContext) -> None:
     haplotig_path = ctx.workdir / haplotig_name
 
     if ctx.print_only:
-        print_info("Expected haplotig file", str(haplotig_path))
+        log.info("Expected haplotig file: %s", haplotig_path)
         print_next_step("run_hic_remapping(ctx)")
         return
 
     if haplotig_path.exists() and haplotig_path.stat().st_size > 10:
-        print_warning(f"Haplotig file is non-empty: {haplotig_path}")
-        print_info("Status", "found (non-empty — verify contents)")
+        log.warning("Haplotig file is non-empty: %s", haplotig_path)
+        log.info("Status: found (non-empty — verify contents)")
     elif haplotig_path.exists():
-        print_info("Status", f"found (empty) — {haplotig_name}")
+        log.info("Status: found (empty) — %s", haplotig_name)
     else:
         haplotig_path.touch()
-        print_info("Status", f"created empty — {haplotig_name}")
+        log.info("Status: created empty — %s", haplotig_name)
 
     print_done("Haplotig files ready")
     print_next_step("run_hic_remapping(ctx)")

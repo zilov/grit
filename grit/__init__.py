@@ -22,14 +22,8 @@ from grit.utils.output import (
     print_done as print_done,
 )
 from grit.utils.output import (
-    print_info as print_info,
-)
-from grit.utils.output import (
     print_next_step as print_next_step,
 )
 from grit.utils.output import (
     print_step_header as print_step_header,
-)
-from grit.utils.output import (
-    print_warning as print_warning,
 )

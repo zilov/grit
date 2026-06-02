@@ -12,7 +12,6 @@ from grit.utils.helpers import _run
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
     print_done,
-    print_info,
     print_step_header,
 )
 
@@ -65,7 +64,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
         if not hap1_matches:
             raise FileNotFoundError(f"No curated hap1 FASTA found: {hap1_pattern}")
         hap1_fa = Path(sorted(hap1_matches)[-1])
-    print_info("Curated hap1 FASTA", str(hap1_fa))
+    log.info("Curated hap1 FASTA: %s", hap1_fa)
 
     # --- find reference ---
     ref_dir = ctx.workdir / "reference"
@@ -86,7 +85,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
             break
 
     if ref_path is None or (not ctx.print_only and not ref_path.exists()):
-        print_info("No reference found, downloading closest reference")
+        log.info("No reference found, downloading closest reference")
         from grit.steps.find_reference import find_closest_reference
 
         find_closest_reference(ctx)
@@ -96,7 +95,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
             raise FileNotFoundError(f"No reference downloaded to {ref_dir}")
         ref_path = Path(sorted(ref_matches)[-1])
 
-    print_info("Reference FASTA", str(ref_path))
+    log.info("Reference FASTA: %s", ref_path)
 
     # --- prepare reference (gunzip + reheader if needed) ---
     ref_prefix = ref_path.stem.split(".")[0]
@@ -139,7 +138,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
         files_to_scp = idx_files + paf_files
         if files_to_scp:
             scp_cmds = [f"scp {ctx.farm_host}:{f} {scp_local_dir}" for f in files_to_scp]
-            print_info("Scp FastGA results to local", " && ".join(scp_cmds))
+            log.info("Scp FastGA results to local: %s", " && ".join(scp_cmds))
 
     print_done("FastGA submitted.")
 

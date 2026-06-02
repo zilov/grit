@@ -9,7 +9,6 @@ from grit.core.context import CurationContext
 from grit.utils.helpers import _clean_species_name, _run
 from grit.utils.output import (
     print_done,
-    print_info,
     print_step_header,
 )
 
@@ -51,9 +50,9 @@ def find_closest_reference(ctx: CurationContext, number: int = 1) -> None:
 
     ref_dir = ctx.workdir / "reference"
     species_query = _clean_species_name(ctx.species)
-    print_info("Reference dir", str(ref_dir))
-    print_info("Species (raw)", ctx.species)
-    print_info("Species (query)", species_query)
+    log.info("Reference dir: %s", ref_dir)
+    log.info("Species (raw): %s", ctx.species)
+    log.info("Species (query): %s", species_query)
 
     cmd = (
         f"mkdir -p {ref_dir} && "

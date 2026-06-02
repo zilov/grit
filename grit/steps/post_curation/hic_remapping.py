@@ -12,7 +12,7 @@ from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.helpers import _submit_bsub
 from grit.utils.modules import module_cmd
-from grit.utils.output import console, print_info, print_next_step, print_step_header
+from grit.utils.output import console, print_next_step, print_step_header
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def run_hic_remapping(ctx: CurationContext) -> None:
 
     if ctx.print_only:
         hap1_fa = hap1_fa_pattern
-        print_info("Input FASTA (pattern)", hap1_fa)
+        log.info("Input FASTA (pattern): %s", hap1_fa)
     else:
         hap1_files = glob.glob(hap1_fa_pattern)
         if not hap1_files:
@@ -56,7 +56,7 @@ def run_hic_remapping(ctx: CurationContext) -> None:
                 "Run run_pretext_to_asm first."
             )
         hap1_fa = hap1_files[0]
-        print_info("Input FASTA", hap1_fa)
+        log.info("Input FASTA: %s", hap1_fa)
 
     outdir = ctx.workdir / f"{ctx.tol_id}_curationpretext"
 

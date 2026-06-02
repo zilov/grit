@@ -11,7 +11,7 @@ from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.helpers import _run
 from grit.utils.modules import module_cmd
-from grit.utils.output import print_done, print_info, print_next_step, print_step_header
+from grit.utils.output import print_done, print_next_step, print_step_header
 
 log = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
     agp_pattern = str(ctx.workdir / f"{ctx.tol_id}*.agp*")
     if ctx.print_only:
         agp_path = agp_pattern
-        print_info("AGP (pattern)", agp_path)
+        log.info("AGP (pattern): %s", agp_path)
     else:
         agp_files = glob.glob(agp_pattern)
         if not agp_files:
@@ -64,7 +64,7 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
                 f"{ctx.farm_host}:{ctx.workdir}/"
             )
         agp_path = agp_files[0]
-        print_info("AGP", agp_path)
+        log.info("AGP: %s", agp_path)
 
     cmd = (
         f"{module_cmd('PRETEXT_TO_ASM')} && pretext-to-asm"

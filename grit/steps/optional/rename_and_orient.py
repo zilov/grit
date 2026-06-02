@@ -12,7 +12,6 @@ from grit.core.context import CurationContext
 from grit.utils.output import (
     console,
     print_done,
-    print_info,
     print_step_header,
 )
 
@@ -54,7 +53,7 @@ def run_rename_and_orient(ctx: CurationContext) -> None:
         if not hap1_matches:
             raise FileNotFoundError(f"No curated hap1 FASTA found: {hap1_pattern}")
         hap1_fa = Path(sorted(hap1_matches)[-1])
-    print_info("Curated hap1 FASTA", str(hap1_fa))
+    log.info("Curated hap1 FASTA: %s", hap1_fa)
 
     # --- find FastGA PAF ---
     fastga_dir = ctx.workdir / "fastga"
@@ -68,7 +67,7 @@ def run_rename_and_orient(ctx: CurationContext) -> None:
                 f"No FastGA PAF found: {paf_pattern}\nRun 'fastga' command first."
             )
         paf_file = Path(sorted(paf_matches)[-1])
-    print_info("FastGA PAF", str(paf_file))
+    log.info("FastGA PAF: %s", paf_file)
 
     # --- prepare output ---
     outdir = ctx.workdir / "rename_and_orient"

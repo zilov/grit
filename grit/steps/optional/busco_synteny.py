@@ -11,7 +11,6 @@ from grit.core.context import CurationContext
 from grit.utils.helpers import _run, _submit_bsub
 from grit.utils.output import (
     print_done,
-    print_info,
     print_step_header,
 )
 
@@ -71,7 +70,7 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
             break
 
     if ref_path is None or (not ctx.print_only and not ref_path.exists()):
-        print_info("No reference found, downloading closest reference")
+        log.info("No reference found, downloading closest reference")
         from grit.steps.find_reference import find_closest_reference
 
         find_closest_reference(ctx)
@@ -81,7 +80,7 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
             raise FileNotFoundError(f"No reference downloaded to {ref_dir}")
         ref_path = Path(sorted(ref_matches)[-1])
 
-    print_info("Reference FASTA", str(ref_path))
+    log.info("Reference FASTA: %s", ref_path)
 
     # --- prepare reference ---
     ref_prefix = ref_path.stem.split(".")[0]  # e.g., GCA123456
@@ -117,7 +116,7 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
     for cmd in prep_cmds:
         _run(cmd, ctx.print_only)
 
-    print_info("Prepared reference", str(ref_reheader))
+    log.info("Prepared reference: %s", ref_reheader)
 
     # --- find query fasta (curated hap1) ---
     query_pattern = str(ctx.workdir / f"{ctx.tol_id}*{ctx.hap1_prefix}*.curated.fa")
@@ -128,7 +127,7 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
         if not query_matches:
             raise FileNotFoundError(f"No curated hap1 FASTA found: {query_pattern}")
         query_fa = Path(sorted(query_matches)[-1])
-    print_info("Query FASTA", str(query_fa))
+    log.info("Query FASTA: %s", query_fa)
 
     # --- submit BUSCO synteny job ---
     inner_cmd = f"{_BUSCO_SYNTENY_SCRIPT} -r {ref_reheader} -q {query_fa} -l {lineage}"

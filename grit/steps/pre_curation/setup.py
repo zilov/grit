@@ -12,10 +12,8 @@ from grit.utils.helpers import _pick_highest_version, _run, _sort_by_mtime
 from grit.utils.output import (
     console,
     print_done,
-    print_info,
     print_next_step,
     print_step_header,
-    print_warning,
 )
 
 log = logging.getLogger(__name__)
@@ -54,7 +52,7 @@ def setup_curation(ctx: CurationContext) -> None:
     # 1. Create workdir
     mkdir_cmd = f"mkdir -p {ctx.workdir}"
     _run(mkdir_cmd, ctx.print_only)
-    print_info("Workdir", str(ctx.workdir))
+    log.info("Workdir: %s", ctx.workdir)
 
     original_fa = ctx.workdir / "original.fa"
 
@@ -68,8 +66,8 @@ def setup_curation(ctx: CurationContext) -> None:
         # In print-only mode show expected paths without checking the filesystem
         decont_hap1 = hap1_pattern
         decont_hap2 = hap2_pattern
-        print_info("hap1 FASTA (pattern)", decont_hap1)
-        print_info("hap2 FASTA (pattern)", decont_hap2)
+        log.info("hap1 FASTA (pattern): %s", decont_hap1)
+        log.info("hap2 FASTA (pattern): %s", decont_hap2)
     else:
         hap1_files = glob.glob(hap1_pattern)
         if not hap1_files:
@@ -83,7 +81,7 @@ def setup_curation(ctx: CurationContext) -> None:
             decont_hap2 = _sort_by_mtime(hap2_files)[0]
         else:
             decont_hap2 = ""
-            print_warning("Alternate haplotype FASTA not found — creating single-hap original.fa")
+            log.warning("Alternate haplotype FASTA not found — creating single-hap original.fa")
 
     zcat_cmd = f"zcat {decont_hap1} {decont_hap2} > {original_fa}"
     console.print(f"\n[yellow]Command:[/yellow] [green]{zcat_cmd}[/green]")
@@ -122,8 +120,8 @@ def copy_pretext_maps(ctx: CurationContext) -> None:
     normal_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*normal.pretext")
 
     if ctx.print_only:
-        print_info("HR map (pattern)", hr_pattern)
-        print_info("Normal map (pattern)", normal_pattern)
+        log.info("HR map (pattern): %s", hr_pattern)
+        log.info("Normal map (pattern): %s", normal_pattern)
         console.print("\n[bold]To open in PretextView, run on your local machine:[/bold]")
         for pattern in (hr_pattern, normal_pattern):
             scp = f"scp {ctx.farm_host}:{ctx.workdir}/<matched_file> ~/curations/{ctx.tol_id}/"
@@ -146,9 +144,9 @@ def copy_pretext_maps(ctx: CurationContext) -> None:
     hr_src = Path(_pick_highest_version(hr_files))
     normal_src = Path(_pick_highest_version(normal_files))
 
-    print_info("HR map", hr_src.name)
-    print_info("Normal map", normal_src.name)
-    print_info("Maps found", f"{len(hr_files)} hr, {len(normal_files)} normal")
+    log.info("HR map: %s", hr_src.name)
+    log.info("Normal map: %s", normal_src.name)
+    log.info("Maps found: %d hr, %d normal", len(hr_files), len(normal_files))
 
     for src in (hr_src, normal_src):
         cp_cmd = f"cp {src} {ctx.workdir}/"
@@ -187,30 +185,32 @@ def print_curation_summary(ctx: CurationContext) -> None:
     log.info("curation-summary | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Curation summary")
 
-    print_info("Ticket", ctx.ticket_id)
-    print_info("ToL ID", ctx.tol_id)
-    print_info("Species", ctx.species)
-    print_info(
-        "Assembly type",
-        f"{ctx.hap1_prefix}/{ctx.hap2_prefix}  (combine_for_curation={ctx.combine_for_curation})",
+    log.info("Ticket: %s", ctx.ticket_id)
+    log.info("ToL ID: %s", ctx.tol_id)
+    log.info("Species: %s", ctx.species)
+    log.info(
+        "Assembly type: %s/%s (combine_for_curation=%s)",
+        ctx.hap1_prefix,
+        ctx.hap2_prefix,
+        ctx.combine_for_curation,
     )
-    print_info("HiC dir", str(ctx.hic_dir))
-    print_info("Long reads dir", str(ctx.long_reads_dir))
-    print_info("Read type", ctx.read_type)
-    print_info("Draft assembly", str(ctx.assembly_draft_dir))
-    print_info("Workdir", str(ctx.workdir))
+    log.info("HiC dir: %s", ctx.hic_dir)
+    log.info("Long reads dir: %s", ctx.long_reads_dir)
+    log.info("Read type: %s", ctx.read_type)
+    log.info("Draft assembly: %s", ctx.assembly_draft_dir)
+    log.info("Workdir: %s", ctx.workdir)
 
     if ctx.teloseq:
-        print_info("Teloseq", ctx.teloseq)
+        log.info("Teloseq: %s", ctx.teloseq)
 
     # Optional fields from YAML
     yaml = ctx.yaml_data
     karyotype = yaml.get("karyotype") or yaml.get("expected_karyotype") or ""
     sex = yaml.get("sex") or yaml.get("expected_sex") or ""
     if karyotype:
-        print_info("Karyotype", str(karyotype))
+        log.info("Karyotype: %s", karyotype)
     if sex:
-        print_info("Sex", str(sex))
+        log.info("Sex: %s", sex)
 
 
 def run_setup(ctx: CurationContext) -> None:
