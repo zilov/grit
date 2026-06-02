@@ -19,8 +19,8 @@ from grit.steps.post_curation import (
 # ---------------------------------------------------------------------------
 
 
-@patch("grit.steps.pretext_to_asm._run")
-@patch("grit.steps.pretext_to_asm.glob.glob")
+@patch("grit.steps.post_curation.pretext_to_asm._run")
+@patch("grit.steps.post_curation.pretext_to_asm.glob.glob")
 def test_run_pretext_to_asm_builds_correct_command(mock_glob, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -40,8 +40,8 @@ def test_run_pretext_to_asm_builds_correct_command(mock_glob, mock_run, mock_ctx
     assert any(agp in c for c in calls)
 
 
-@patch("grit.steps.pretext_to_asm._run")
-@patch("grit.steps.pretext_to_asm.glob.glob", return_value=[])
+@patch("grit.steps.post_curation.pretext_to_asm._run")
+@patch("grit.steps.post_curation.pretext_to_asm.glob.glob", return_value=[])
 def test_run_pretext_to_asm_raises_when_no_agp(mock_glob, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -60,7 +60,7 @@ def test_run_pretext_to_asm_raises_when_no_original_fa(mock_ctx, tmp_path):
         run_pretext_to_asm(mock_ctx)
 
 
-@patch("grit.steps.pretext_to_asm._run")
+@patch("grit.steps.post_curation.pretext_to_asm._run")
 def test_run_pretext_to_asm_print_only_skips_checks(mock_run, mock_ctx, tmp_path):
     """In print_only mode no filesystem checks should occur."""
     mock_ctx.workdir = tmp_path
@@ -142,8 +142,8 @@ def test_run_haplotig_files_print_only(mock_ctx, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@patch("grit.steps.hic_remapping._submit_bsub")
-@patch("grit.steps.hic_remapping.glob.glob")
+@patch("grit.steps.post_curation.hic_remapping._submit_bsub")
+@patch("grit.steps.post_curation.hic_remapping.glob.glob")
 def test_run_hic_remapping_submits_bsub(mock_glob, mock_bsub, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -166,8 +166,8 @@ def test_run_hic_remapping_submits_bsub(mock_glob, mock_bsub, mock_ctx, tmp_path
     assert str(mock_ctx.hic_dir) in inner_cmd
 
 
-@patch("grit.steps.hic_remapping._submit_bsub")
-@patch("grit.steps.hic_remapping.glob.glob")
+@patch("grit.steps.post_curation.hic_remapping._submit_bsub")
+@patch("grit.steps.post_curation.hic_remapping.glob.glob")
 def test_run_hic_remapping_includes_teloseq(mock_glob, mock_bsub, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -187,8 +187,8 @@ def test_run_hic_remapping_includes_teloseq(mock_glob, mock_bsub, mock_ctx, tmp_
     assert "--teloseq TTAGG" in inner_cmd
 
 
-@patch("grit.steps.hic_remapping._submit_bsub")
-@patch("grit.steps.hic_remapping.glob.glob", return_value=[])
+@patch("grit.steps.post_curation.hic_remapping._submit_bsub")
+@patch("grit.steps.post_curation.hic_remapping.glob.glob", return_value=[])
 def test_run_hic_remapping_raises_when_no_fasta(mock_glob, mock_bsub, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -203,7 +203,7 @@ def test_run_hic_remapping_raises_when_no_fasta(mock_glob, mock_bsub, mock_ctx, 
 # ---------------------------------------------------------------------------
 
 
-@patch("grit.steps.qv._submit_bsub")
+@patch("grit.steps.post_curation.qv._submit_bsub")
 def test_run_qv_submits_bsub(mock_bsub, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -219,7 +219,7 @@ def test_run_qv_submits_bsub(mock_bsub, mock_ctx, tmp_path):
     assert "1" in inner_cmd
 
 
-@patch("grit.steps.qv._submit_bsub")
+@patch("grit.steps.post_curation.qv._submit_bsub")
 def test_run_qv_print_only(mock_bsub, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -276,8 +276,8 @@ def test_validate_curated_files_warns_on_missing_log(mock_ctx, tmp_path, capsys)
 # ---------------------------------------------------------------------------
 
 
-@patch("grit.steps.finalize_qc._run")
-@patch("grit.steps.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
 def test_finalize_for_qc_creates_curated_dir(mock_glob, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -310,7 +310,7 @@ def test_finalize_for_qc_creates_curated_dir(mock_glob, mock_run, mock_ctx, tmp_
     assert any("mkdir" in c for c in calls)
 
 
-@patch("grit.steps.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
 def test_finalize_for_qc_print_only(mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
