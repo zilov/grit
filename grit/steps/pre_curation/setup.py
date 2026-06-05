@@ -107,7 +107,7 @@ def copy_pretext_maps(ctx: CurationContext) -> None:
            ``cp {normal_pretext} {ctx.workdir}/``
         4. Print scp commands for the curator to copy maps to their local machine::
 
-               scp {ctx.farm_host}:{ctx.workdir}/{filename} ~/curations/{ctx.tol_id}/
+               scp {ctx.farm_host}:{ctx.workdir}/{filename} ~/curations/work/{ctx.tol_id}/
 
     Prints:
         Step header, map filenames chosen, copy status, and scp commands.
@@ -124,7 +124,7 @@ def copy_pretext_maps(ctx: CurationContext) -> None:
         log.info("Normal map (pattern): %s", normal_pattern)
         console.print("\n[bold]To open in PretextView, run on your local machine:[/bold]")
         for pattern in (hr_pattern, normal_pattern):
-            scp = f"scp {ctx.farm_host}:{ctx.workdir}/<matched_file> ~/curations/{ctx.tol_id}/"
+            scp = f"scp {ctx.farm_host}:{ctx.workdir}/<matched_file> ~/curations/work/{ctx.tol_id}/"
             console.print(f"  [green]{scp}[/green]")
         print_next_step("add_gap_track(ctx)")
         return
@@ -158,7 +158,7 @@ def copy_pretext_maps(ctx: CurationContext) -> None:
     console.print("\n[bold]To open in PretextView, run on your local machine:[/bold]")
     for src in (hr_src, normal_src):
         dest_name = src.name
-        scp = f"scp {ctx.farm_host}:{ctx.workdir}/{dest_name} ~/curations/{ctx.tol_id}/"
+        scp = f"scp {ctx.farm_host}:{ctx.workdir}/{dest_name} ~/curations/work/{ctx.tol_id}/"
         console.print(f"  [green]{scp}[/green]")
 
     print_next_step("add_gap_track(ctx)")
