@@ -84,10 +84,10 @@ def setup_curation(ctx: CurationContext) -> None:
             log.warning("Alternate haplotype FASTA not found — creating single-hap original.fa")
 
     zcat_cmd = f"zcat {decont_hap1} {decont_hap2} > {original_fa}"
-    console.print(f"\n[yellow]Command:[/yellow] [green]{zcat_cmd}[/green]")
     _run(zcat_cmd, ctx.print_only)
 
-    print_done(f"original.fa → {original_fa}")
+    if not ctx.print_only:
+        print_done(f"original.fa → {original_fa}")
 
 
 def copy_pretext_maps(ctx: CurationContext) -> None:
