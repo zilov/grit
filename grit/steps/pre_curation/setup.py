@@ -56,6 +56,10 @@ def setup_curation(ctx: CurationContext) -> None:
 
     original_fa = ctx.workdir / "original.fa"
 
+    if not ctx.print_only and original_fa.exists():
+        log.info("original.fa already exists, skipping copy: %s", original_fa)
+        return
+
     # Glob for decontaminated hap1 FASTA
     # assembly_draft_dir already points to the versioned subdir,
     # e.g. .../assembly/draft/uoEpiScra1.20241115
