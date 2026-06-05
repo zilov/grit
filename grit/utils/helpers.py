@@ -14,6 +14,24 @@ from grit.utils.output import console
 log = logging.getLogger(__name__)
 
 
+def require_workdir(ctx: CurationContext) -> None:
+    """
+    Abort with a helpful message if ctx.workdir does not exist on disk.
+
+    Skipped in print_only mode (workdir may not exist yet during dry-runs).
+    """
+    if ctx.print_only:
+        return
+    if not ctx.workdir.exists():
+        log.error(
+            "Workdir does not exist: %s\n"
+            "Run 'grit setup -t %s' first.",
+            ctx.workdir,
+            ctx.ticket_id,
+        )
+        raise SystemExit(1)
+
+
 def _run(cmd: str, print_only: bool = False) -> str:
     """
     Print *cmd*; execute it unless print_only is True.
