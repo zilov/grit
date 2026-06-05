@@ -253,7 +253,7 @@ def run_setup(ctx: CurationContext) -> None:
     if any(ctx.tol_id.lower().startswith(p) for p in _INSECT_PREFIXES):
         print_tip(
             f"If you see sex chromosomes on the map, run: "
-            f"grit sex-matcher -t {ctx.ticket_id}"
+            f"[bold cyan]grit sex-matcher -t {ctx.ticket_id}[/bold cyan]"
         )
 
 
