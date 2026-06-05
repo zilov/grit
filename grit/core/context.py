@@ -7,6 +7,7 @@ all step functions. Holds no global state.
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -192,7 +193,7 @@ class CurationContext:
             teloseq_raw = ""
         else:
             if gritjiraissue_module is None:
-                sys.path.insert(0, cfg.gritjiraissue_path)
+                sys.path.insert(0, os.path.expanduser(cfg.gritjiraissue_path))
                 import GritJiraIssue as gritjiraissue_module  # noqa: N811
 
             jira_issue = gritjiraissue_module.GritJiraIssue(ticket_id)
