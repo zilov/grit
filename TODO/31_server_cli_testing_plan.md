@@ -89,10 +89,10 @@ grit --yaml ticket.yaml setup -t RC-XXXX
 ```
 
 **Check:**
-- Workdir `<base_dir>/<tol_id>/` created.
-- `original.fa` (or `.fa.gz`) present in workdir.
-- Pretext map files copied.
-- Summary table printed with correct ticket, tol_id, species name, assembly type.
+- Workdir `<base_dir>/<tol_id>/` created. (Done)
+- `original.fa` (or `.fa.gz`) present in workdir. (Done)
+- Summary table printed with correct ticket, tol_id, species name, assembly type. (Done)
+- Pretext maps scp command printed (Done)
 
 ---
 

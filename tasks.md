@@ -2,6 +2,21 @@
 
 - Посмотри _helpers.py чтобы понимать названия общих функций, чтобы не дублироваться. если функция которую ты пишешь потенциально может быть полезна для многих шагов - можешь писать сразу в helpers.py
 
+# Gitflow
+
+Project uses stacked feature branches during prototyping phase.
+
+Branch hierarchy: main → dev → feature/logging → feature (depends on logging) → etc.
+
+Rules:
+- feature branches merge into dev freely (can be messy)
+- dev merges into main only when a chunk is demo-ready and doesn't break startup
+- before merging to main: rebase + squash into clean commit
+- incomplete features hidden behind simple feature flags
+
+Main is always runnable. Dev is the integration/chaos layer. Feature branches stack on each other when there are dependencies.
+
+
 # Tasks
 
 - [x] 1. Создать структуру проекта и `CurationContext` — `pyproject.toml`, `curation_pipeline/`, `context.py` с dataclass и `build_context()`, тесты `test_context.py`

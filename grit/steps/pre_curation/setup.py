@@ -12,7 +12,6 @@ from grit.utils.helpers import _pick_highest_version, _run, _sort_by_mtime
 from grit.utils.output import (
     console,
     print_done,
-    print_next_step,
     print_step_header,
 )
 
@@ -94,45 +93,18 @@ def setup_curation(ctx: CurationContext) -> None:
         print_done(f"original.fa → {original_fa}")
 
 
-def copy_pretext_maps(ctx: CurationContext) -> None:
+def _find_pretext_maps(ctx: CurationContext) -> tuple[Path, Path]:
     """
-    Finds pretext maps on NFS and copies them to workdir for editing.
-    Prints scp commands for the curator's local machine.
+    Resolves the best-matching hr and normal pretext maps in ``ctx.pretext_maps_nfs``.
 
-    Notebook source: ``pre_and_post_curation()`` — pretext map handling.
+    Returns:
+        (hr_src, normal_src) as resolved Path objects.
 
-    Steps:
-        1. Glob for maps in ``ctx.pretext_maps_nfs``:
-           - ``{tol_id}*hr.pretext``  (high-resolution)
-           - ``{tol_id}*normal.pretext``
-        2. If multiple files match, select the one with the highest version index
-           (or the file containing "RC" in its name).
-        3. ``cp {hr_pretext} {ctx.workdir}/``
-           ``cp {normal_pretext} {ctx.workdir}/``
-        4. Print scp commands for the curator to copy maps to their local machine::
-
-               scp {ctx.farm_host}:{ctx.workdir}/{filename} ~/curations/work/{ctx.tol_id}/
-
-    Prints:
-        Step header, map filenames chosen, copy status, and scp commands.
-    Next step hint: ``add_gap_track(ctx)``
+    Raises:
+        FileNotFoundError: if no match is found for either map type.
     """
-    log.info("copy-pretext-maps | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
-    print_step_header(ctx.ticket_id, ctx.tol_id, "Copy pretext maps")
-
     hr_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*hr.pretext")
     normal_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*normal.pretext")
-
-    if ctx.print_only:
-        log.info("HR map (pattern): %s", hr_pattern)
-        log.info("Normal map (pattern): %s", normal_pattern)
-        console.print("\n[bold]To open in PretextView, run on your local machine:[/bold]")
-        console.print(f"  [green]mkdir -p ~/curations/work/{ctx.tol_id}/[/green]")
-        for pattern in (hr_pattern, normal_pattern):
-            scp = f"scp {ctx.farm_host}:{ctx.workdir}/<matched_file> ~/curations/work/{ctx.tol_id}/"
-            console.print(f"  [green]{scp}[/green]")
-        print_next_step("add_gap_track(ctx)")
-        return
 
     hr_files = glob.glob(hr_pattern)
     normal_files = glob.glob(normal_pattern)
@@ -151,7 +123,30 @@ def copy_pretext_maps(ctx: CurationContext) -> None:
 
     log.info("HR map: %s", hr_src.name)
     log.info("Normal map: %s", normal_src.name)
-    log.info("Maps found: %d hr, %d normal", len(hr_files), len(normal_files))
+
+    return hr_src, normal_src
+
+
+def copy_pretext_maps(ctx: CurationContext) -> None:
+    """
+    Copies pretext maps from NFS to workdir.
+
+    Steps:
+        1. Resolve maps via :func:`_find_pretext_maps`.
+        2. ``cp {hr_pretext} {ctx.workdir}/``
+           ``cp {normal_pretext} {ctx.workdir}/``
+    """
+    log.info("copy-pretext-maps | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
+    print_step_header(ctx.ticket_id, ctx.tol_id, "Copy pretext maps")
+
+    if ctx.print_only:
+        hr_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*hr.pretext")
+        normal_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*normal.pretext")
+        for pattern in (hr_pattern, normal_pattern):
+            console.print(f"\n[yellow]Command:[/yellow] [green]cp {pattern} {ctx.workdir}/[/green]")
+        return
+
+    hr_src, normal_src = _find_pretext_maps(ctx)
 
     for src in (hr_src, normal_src):
         cp_cmd = f"cp {src} {ctx.workdir}/"
@@ -160,14 +155,33 @@ def copy_pretext_maps(ctx: CurationContext) -> None:
 
     print_done(f"Copied to {ctx.workdir}/")
 
+
+def print_pretext_scp_commands(ctx: CurationContext) -> None:
+    """
+    Finds pretext maps on NFS and prints scp commands for the curator's local machine.
+
+    The curator runs these commands on their laptop to download the maps directly
+    from NFS — no intermediate copy to workdir is required.
+    """
+    log.info("print-pretext-scp | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
+    print_step_header(ctx.ticket_id, ctx.tol_id, "Pretext map scp commands")
+
     console.print("\n[bold]To open in PretextView, run on your local machine:[/bold]")
     console.print(f"  [green]mkdir -p ~/curations/work/{ctx.tol_id}/[/green]")
-    for src in (hr_src, normal_src):
-        dest_name = src.name
-        scp = f"scp {ctx.farm_host}:{ctx.workdir}/{dest_name} ~/curations/work/{ctx.tol_id}/"
-        console.print(f"  [green]{scp}[/green]")
 
-    print_next_step("add_gap_track(ctx)")
+    if ctx.print_only:
+        hr_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*hr.pretext")
+        normal_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*normal.pretext")
+        for pattern in (hr_pattern, normal_pattern):
+            scp = f"scp {ctx.farm_host}:{pattern} ~/curations/work/{ctx.tol_id}/"
+            console.print(f"  [green]{scp}[/green]")
+        return
+
+    hr_src, normal_src = _find_pretext_maps(ctx)
+
+    for src in (hr_src, normal_src):
+        scp = f"scp {ctx.farm_host}:{src} ~/curations/work/{ctx.tol_id}/"
+        console.print(f"  [green]{scp}[/green]")
 
 
 def print_curation_summary(ctx: CurationContext) -> None:
@@ -222,11 +236,12 @@ def print_curation_summary(ctx: CurationContext) -> None:
 def run_setup(ctx: CurationContext) -> None:
     """
     Sets up the curation workspace: creates workdir, copies original.fa,
-    and prints summary.
+    and prints scp commands for pretext maps.
     """
     log.info("setup | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_curation_summary(ctx)
     setup_curation(ctx)
+    print_pretext_scp_commands(ctx)
 
 
 # ---------------------------------------------------------------------------
