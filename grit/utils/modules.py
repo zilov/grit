@@ -26,6 +26,8 @@ MODULE_VERSIONS: dict[str, str] = {
     "PRETEXTGRAPH": "pretextgraph/0.0.7--h4ac6f70_0",
     # FastGA reference comparison
     "FASTGA": "grit",
+    # sex_matcher (sex-determination from kmer data)
+    "SEX_MATCHER": "grit",
 }
 
 

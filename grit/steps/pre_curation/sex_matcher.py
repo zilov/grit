@@ -9,6 +9,7 @@ import rich_click as click
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.helpers import _run, require_workdir
+from grit.utils.modules import module_cmd
 from grit.utils.output import (
     console,
     print_done,
@@ -69,7 +70,8 @@ def run_sex_matcher(ctx: CurationContext) -> None:
 
     require_workdir(ctx)
 
-    cmd = f"cd {ctx.workdir} && sex"
+    ml = module_cmd("SEX_MATCHER")
+    cmd = f"cd {ctx.workdir} && {ml} && sex"
     _run(cmd, print_only=ctx.print_only)
 
     if not ctx.print_only:
