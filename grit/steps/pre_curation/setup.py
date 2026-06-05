@@ -95,19 +95,22 @@ def setup_curation(ctx: CurationContext) -> None:
 
 def _find_pretext_maps(ctx: CurationContext) -> tuple[Path, Path]:
     """
-    Resolves the best-matching hr and normal pretext maps in ``ctx.pretext_maps_nfs``.
+    Resolves pretext maps for *hr* and *normal* (required) and *ultra* (optional)
+    in ``ctx.pretext_maps_nfs``.
 
     Returns:
-        (hr_src, normal_src) as resolved Path objects.
+        List of resolved Path objects: [hr_src, normal_src] plus ultra_src if found.
 
     Raises:
-        FileNotFoundError: if no match is found for either map type.
+        FileNotFoundError: if no match is found for hr or normal.
     """
     hr_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*hr.pretext")
     normal_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*normal.pretext")
+    ultra_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*ultra.pretext")
 
     hr_files = glob.glob(hr_pattern)
     normal_files = glob.glob(normal_pattern)
+    ultra_files = glob.glob(ultra_pattern)
 
     if not hr_files:
         raise FileNotFoundError(
@@ -124,7 +127,13 @@ def _find_pretext_maps(ctx: CurationContext) -> tuple[Path, Path]:
     log.info("HR map: %s", hr_src.name)
     log.info("Normal map: %s", normal_src.name)
 
-    return hr_src, normal_src
+    sources = [hr_src, normal_src]
+    if ultra_files:
+        ultra_src = Path(_pick_highest_version(ultra_files))
+        log.info("Ultra map: %s", ultra_src.name)
+        sources.append(ultra_src)
+
+    return sources
 
 
 def copy_pretext_maps(ctx: CurationContext) -> None:
@@ -140,15 +149,12 @@ def copy_pretext_maps(ctx: CurationContext) -> None:
     print_step_header(ctx.ticket_id, ctx.tol_id, "Copy pretext maps")
 
     if ctx.print_only:
-        hr_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*hr.pretext")
-        normal_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*normal.pretext")
-        for pattern in (hr_pattern, normal_pattern):
+        for suffix in ("hr", "normal", "ultra"):
+            pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*{suffix}.pretext")
             console.print(f"\n[yellow]Command:[/yellow] [green]cp {pattern} {ctx.workdir}/[/green]")
         return
 
-    hr_src, normal_src = _find_pretext_maps(ctx)
-
-    for src in (hr_src, normal_src):
+    for src in _find_pretext_maps(ctx):
         cp_cmd = f"cp {src} {ctx.workdir}/"
         console.print(f"\n[yellow]Command:[/yellow] [green]{cp_cmd}[/green]")
         _run(cp_cmd, ctx.print_only)
@@ -167,12 +173,12 @@ def print_pretext_scp_commands(ctx: CurationContext) -> None:
     print_step_header(ctx.ticket_id, ctx.tol_id, "Pretext map scp commands")
 
     if ctx.print_only:
-        hr_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*hr.pretext")
-        normal_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*normal.pretext")
-        sources = [hr_pattern, normal_pattern]
+        sources = [
+            str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*{suffix}.pretext")
+            for suffix in ("hr", "normal", "ultra")
+        ]
     else:
-        hr_src, normal_src = _find_pretext_maps(ctx)
-        sources = [str(hr_src), str(normal_src)]
+        sources = [str(s) for s in _find_pretext_maps(ctx)]
 
     console.print("\n[bold]To open in PretextView, run on your local machine:[/bold]")
     console.print(f"  [green]mkdir -p ~/curations/work/{ctx.tol_id}/[/green]")
