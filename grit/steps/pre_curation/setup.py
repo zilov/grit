@@ -13,6 +13,7 @@ from grit.utils.output import (
     console,
     print_done,
     print_step_header,
+    print_tip,
 )
 
 log = logging.getLogger(__name__)
@@ -236,6 +237,9 @@ def print_curation_summary(ctx: CurationContext) -> None:
         log.info("Sex: %s", sex)
 
 
+_INSECT_PREFIXES = ("ic", "il", "id")
+
+
 def run_setup(ctx: CurationContext) -> None:
     """
     Sets up the curation workspace: creates workdir, copies original.fa,
@@ -245,6 +249,12 @@ def run_setup(ctx: CurationContext) -> None:
     print_curation_summary(ctx)
     setup_curation(ctx)
     print_pretext_scp_commands(ctx)
+
+    if any(ctx.tol_id.lower().startswith(p) for p in _INSECT_PREFIXES):
+        print_tip(
+            f"If you see sex chromosomes on the map, run: "
+            f"grit sex-matcher -t {ctx.ticket_id}"
+        )
 
 
 # ---------------------------------------------------------------------------

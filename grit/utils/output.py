@@ -18,3 +18,7 @@ def print_next_step(func_name: str) -> None:
 
 def print_done(message: str) -> None:
     console.print(f"\n[bold green]Done:[/bold green] {message}")
+
+
+def print_tip(message: str) -> None:
+    console.print(f"\n[bold yellow]Tip:[/bold yellow] {message}")
