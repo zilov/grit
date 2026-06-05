@@ -166,20 +166,17 @@ def print_pretext_scp_commands(ctx: CurationContext) -> None:
     log.info("print-pretext-scp | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Pretext map scp commands")
 
-    console.print("\n[bold]To open in PretextView, run on your local machine:[/bold]")
-    console.print(f"  [green]mkdir -p ~/curations/work/{ctx.tol_id}/[/green]")
-
     if ctx.print_only:
         hr_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*hr.pretext")
         normal_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*normal.pretext")
-        for pattern in (hr_pattern, normal_pattern):
-            scp = f"scp {ctx.farm_host}:{pattern} ~/curations/work/{ctx.tol_id}/"
-            console.print(f"  [green]{scp}[/green]")
-        return
+        sources = [hr_pattern, normal_pattern]
+    else:
+        hr_src, normal_src = _find_pretext_maps(ctx)
+        sources = [str(hr_src), str(normal_src)]
 
-    hr_src, normal_src = _find_pretext_maps(ctx)
-
-    for src in (hr_src, normal_src):
+    console.print("\n[bold]To open in PretextView, run on your local machine:[/bold]")
+    console.print(f"  [green]mkdir -p ~/curations/work/{ctx.tol_id}/[/green]")
+    for src in sources:
         scp = f"scp {ctx.farm_host}:{src} ~/curations/work/{ctx.tol_id}/"
         console.print(f"  [green]{scp}[/green]")
 
