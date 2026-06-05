@@ -8,7 +8,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run
+from grit.utils.helpers import _run, _submit_bsub, build_bsub_opts
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
     print_done,
@@ -112,15 +112,18 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
         prep_cmd = f"reheader {ref_path} > {ref_reheader}"
 
     ml_grit = module_cmd("GRIT")
-    fastga_script = "/software/grit/projects/vgp_curation_scripts/FastGA_dot_dgenies.sh"
-    bsub_cmd = (
-        f"bsub -G team135 -n 8 -e e_fastga -o o_fastga "
-        f"-M 24000 -R'select[mem>24000] rusage[mem=24000] span[hosts=1]' "
-        f"{fastga_script} {ref_reheader} {hap1_fa} {run_prefix} {outdir}"
-    )
+    _run(f"{ml_grit} && {prep_cmd}", ctx.print_only)
 
-    full_cmd = f"{ml_grit} && {prep_cmd} && {bsub_cmd}"
-    _run(full_cmd, ctx.print_only)
+    fastga_script = "/software/grit/projects/vgp_curation_scripts/FastGA_dot_dgenies.sh"
+    inner_cmd = f"{fastga_script} {ref_reheader} {hap1_fa} {run_prefix} {outdir}"
+    bsub_opts = build_bsub_opts(
+        group="team135",
+        cores=8,
+        memory_mb=24000,
+        output="o_fastga",
+        error="e_fastga",
+    )
+    _submit_bsub(inner_cmd, bsub_opts, ctx.print_only)
 
     # --- if output exists, print scp commands ---
     if ctx.print_only or outdir.exists():

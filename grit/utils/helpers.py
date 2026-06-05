@@ -62,6 +62,55 @@ def _submit_bsub(inner_cmd: str, bsub_opts: str, print_only: bool = False) -> st
     return output
 
 
+def build_bsub_opts(
+    *,
+    queue: str = "normal",
+    memory_mb: int = 4000,
+    cores: int = 1,
+    output: str = "lsf.log",
+    error: str | None = None,
+    group: str | None = None,
+    wait: bool = False,
+) -> str:
+    """
+    Build a bsub options string from named parameters.
+
+    Automatically derives ``-R 'select[mem>M] rusage[mem=M] span[hosts=1]'``
+    from *memory_mb* so callers do not repeat the boilerplate.
+
+    Args:
+        queue:     LSF queue name (default ``"normal"``).
+        memory_mb: Memory limit in MB; also used in the ``-R`` resource string.
+        cores:     Number of cores (``-n``). Omitted when 1.
+        output:    Path/name for job stdout log (``-o``).
+        error:     Path/name for job stderr log (``-e``). Omitted when ``None``.
+        group:     LSF accounting group (``-G``). Omitted when ``None``.
+        wait:      If ``True``, add ``-K`` (block caller until job finishes).
+
+    Returns:
+        Space-joined options string ready to pass to :func:`_submit_bsub`.
+
+    Example::
+
+        >>> build_bsub_opts(memory_mb=50000, wait=True,
+        ...                 output="sex_matcher.out", error="sex_matcher.err")
+        "-q normal -K -o sex_matcher.out -e sex_matcher.err -M 50000 -R'select[mem>50000] rusage[mem=50000] span[hosts=1]'"
+    """
+    parts = [f"-q {queue}"]
+    if cores > 1:
+        parts.append(f"-n {cores}")
+    if group:
+        parts.append(f"-G {group}")
+    if wait:
+        parts.append("-K")
+    parts.append(f"-o {output}")
+    if error:
+        parts.append(f"-e {error}")
+    parts.append(f"-M {memory_mb}")
+    parts.append(f"-R'select[mem>{memory_mb}] rusage[mem={memory_mb}] span[hosts=1]'")
+    return " ".join(parts)
+
+
 def _find_pretext_map_in_workdir(ctx: CurationContext) -> Path:
     """
     Returns the HR pretext map that was copied to workdir.

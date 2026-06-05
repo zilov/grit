@@ -8,7 +8,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _submit_bsub
+from grit.utils.helpers import _submit_bsub, build_bsub_opts
 from grit.utils.output import print_done, print_next_step, print_step_header
 
 log = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ def run_qv(ctx: CurationContext) -> None:
     print_step_header(ctx.ticket_id, ctx.tol_id, "QV analysis")
 
     inner_cmd = f"cd {ctx.workdir} && kmer_completeness.bash {ctx.tol_id} {ctx.release_version}"
-    bsub_opts = '-q normal -M 8000 -R"select[mem>8000] rusage[mem=8000]"'
+    bsub_opts = build_bsub_opts(memory_mb=8000, output="qv.log")
     _submit_bsub(inner_cmd, bsub_opts, ctx.print_only)
 
     print_done("QV job submitted")

@@ -8,7 +8,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, _submit_bsub
+from grit.utils.helpers import _run, _submit_bsub, build_bsub_opts
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -131,7 +131,11 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
 
     # --- submit BUSCO synteny job ---
     inner_cmd = f"{_BUSCO_SYNTENY_SCRIPT} -r {ref_reheader} -q {query_fa} -l {lineage}"
-    bsub_opts = "-n 32 -o o_busco_synt -M 50G -R'select[mem>50G] rusage[mem=50G] span[hosts=1]'"
+    bsub_opts = build_bsub_opts(
+        cores=32,
+        memory_mb=50000,
+        output="o_busco_synt",
+    )
     _submit_bsub(inner_cmd, bsub_opts, ctx.print_only)
 
     print_done("BUSCO synteny submitted.")

@@ -8,7 +8,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _submit_bsub
+from grit.utils.helpers import _submit_bsub, build_bsub_opts
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -100,9 +100,11 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     )
 
     # --- build bsub options ---
-    bsub_opts = (
-        f"-q normal -e e_busco_{mem_gb} -o o_busco_{mem_gb} -n 32 -M {mem_mb} "
-        f"-R'select[mem>{mem_mb}] rusage[mem={mem_mb}] span[hosts=1]'"
+    bsub_opts = build_bsub_opts(
+        memory_mb=mem_mb,
+        cores=32,
+        output=f"o_busco_{mem_gb}",
+        error=f"e_busco_{mem_gb}",
     )
 
     # --- submit ---

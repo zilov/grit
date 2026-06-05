@@ -14,6 +14,9 @@ from grit.utils.helpers import (
 from grit.utils.helpers import (
     _submit_bsub as _submit_bsub,
 )
+from grit.utils.helpers import (
+    build_bsub_opts as build_bsub_opts,
+)
 from grit.utils.modules import module_cmd as module_cmd
 from grit.utils.output import (
     console as console,

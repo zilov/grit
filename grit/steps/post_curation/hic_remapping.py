@@ -10,7 +10,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _submit_bsub
+from grit.utils.helpers import _submit_bsub, build_bsub_opts
 from grit.utils.modules import module_cmd
 from grit.utils.output import console, print_next_step, print_step_header
 
@@ -76,10 +76,10 @@ def run_hic_remapping(ctx: CurationContext) -> None:
     hic_cmd += " -resume"
 
     date_str = datetime.now().strftime("%d_%m_%Y")
-    bsub_opts = (
-        f"-n 1 -q oversubscribed"
-        f" -o curationpretext_{date_str}.log"
-        f' -M 1200 -R"select[mem>1200] rusage[mem=1200] span[hosts=1]"'
+    bsub_opts = build_bsub_opts(
+        queue="oversubscribed",
+        memory_mb=1200,
+        output=f"curationpretext_{date_str}.log",
     )
     _submit_bsub(hic_cmd, bsub_opts, ctx.print_only)
 

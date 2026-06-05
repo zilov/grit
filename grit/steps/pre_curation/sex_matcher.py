@@ -8,7 +8,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _submit_bsub, require_workdir
+from grit.utils.helpers import _submit_bsub, build_bsub_opts, require_workdir
 from grit.utils.output import (
     console,
     print_done,
@@ -74,10 +74,11 @@ def run_sex_matcher(ctx: CurationContext) -> None:
 
     require_workdir(ctx)
 
-    bsub_opts = (
-        f"-q normal -K"
-        f" -e {ctx.workdir}/sex_matcher.err -o {ctx.workdir}/sex_matcher.out"
-        f" -M 50000 -R'select[mem>50000] rusage[mem=50000] span[hosts=1]'"
+    bsub_opts = build_bsub_opts(
+        memory_mb=50000,
+        wait=True,
+        output=f"{ctx.workdir}/sex_matcher.out",
+        error=f"{ctx.workdir}/sex_matcher.err",
     )
     inner_cmd = f"cd {ctx.workdir} && {_SEX_MATCHER_SCRIPT}"
     _submit_bsub(inner_cmd, bsub_opts, ctx.print_only)
