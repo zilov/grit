@@ -8,8 +8,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, require_workdir
-from grit.utils.modules import module_cmd
+from grit.utils.helpers import _submit_bsub, require_workdir
 from grit.utils.output import (
     console,
     print_done,
@@ -25,6 +24,9 @@ log = logging.getLogger(__name__)
 
 # tol_id prefixes that typically require sex-matching (insects and similar)
 _INSECT_PREFIXES = ("ic", "il", "id")
+
+# Absolute path to the sex_matcher shell script on the farm
+_SEX_MATCHER_SCRIPT = "/software/grit/projects/vgp_curation_scripts/sex_matcher.sh"
 
 
 # ---------------------------------------------------------------------------
@@ -43,9 +45,11 @@ def run_sex_matcher(ctx: CurationContext) -> None:
 
     Steps:
         1. Print a reminder if the tol_id does not start with a known insect prefix.
-        2. Build and print the command::
+        2. Submit via bsub::
 
-               cd {ctx.workdir} && sex
+               bsub -q normal -K -e {workdir}/sex_matcher.err -o {workdir}/sex_matcher.out \\
+                    -M 50000 -R'select[mem>50000] rusage[mem=50000] span[hosts=1]' \\
+                    "cd {ctx.workdir} && /software/grit/projects/vgp_curation_scripts/sex_matcher.sh"
 
         3. Execute the command (unless print_only).
         4. Glob for ``Best_match*`` output files in ``ctx.workdir``.
@@ -70,9 +74,13 @@ def run_sex_matcher(ctx: CurationContext) -> None:
 
     require_workdir(ctx)
 
-    ml = module_cmd("SEX_MATCHER")
-    cmd = f"cd {ctx.workdir} && {ml} && sex"
-    _run(cmd, print_only=ctx.print_only)
+    bsub_opts = (
+        f"-q normal -K"
+        f" -e {ctx.workdir}/sex_matcher.err -o {ctx.workdir}/sex_matcher.out"
+        f" -M 50000 -R'select[mem>50000] rusage[mem=50000] span[hosts=1]'"
+    )
+    inner_cmd = f"cd {ctx.workdir} && {_SEX_MATCHER_SCRIPT}"
+    _submit_bsub(inner_cmd, bsub_opts, ctx.print_only)
 
     if not ctx.print_only:
         # Look for the Best_match* output file produced by sex_matcher
