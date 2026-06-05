@@ -216,12 +216,11 @@ def print_curation_summary(ctx: CurationContext) -> None:
 def run_setup(ctx: CurationContext) -> None:
     """
     Sets up the curation workspace: creates workdir, copies original.fa,
-    pretext maps, and prints summary.
+    and prints summary.
     """
     log.info("setup | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_curation_summary(ctx)
     setup_curation(ctx)
-    copy_pretext_maps(ctx)
 
 
 # ---------------------------------------------------------------------------
