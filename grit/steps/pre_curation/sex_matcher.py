@@ -36,7 +36,7 @@ def run_sex_matcher(ctx: CurationContext) -> None:
     Runs sex_matcher (``sex`` command) in the workdir and prints the BUSCO summary.
 
     Applicable for insects and similar clades (tol_id starting with ``ic``, ``il``,
-    ``id``, ``in``).  A reminder is printed for other taxa but the step still runs.
+    ``id``).  Aborts with an error if the tol_id does not match a known insect prefix.
 
     Notebook source: ``pre_and_post_curation()`` — sex-matcher section.
 
@@ -59,12 +59,13 @@ def run_sex_matcher(ctx: CurationContext) -> None:
 
     tol_id_lower = ctx.tol_id.lower()
     if not any(tol_id_lower.startswith(p) for p in _INSECT_PREFIXES):
-        log.warning(
+        log.error(
             "tol_id '%s' does not start with a known insect prefix (%s). "
-            "Sex-matcher is primarily used for insects — verify this is intentional.",
+            "Sex-matcher is only for insects — aborting.",
             ctx.tol_id,
             ", ".join(_INSECT_PREFIXES),
         )
+        raise SystemExit(1)
 
     cmd = f"cd {ctx.workdir} && sex"
     _run(cmd, print_only=ctx.print_only)
