@@ -127,6 +127,7 @@ def copy_pretext_maps(ctx: CurationContext) -> None:
         log.info("HR map (pattern): %s", hr_pattern)
         log.info("Normal map (pattern): %s", normal_pattern)
         console.print("\n[bold]To open in PretextView, run on your local machine:[/bold]")
+        console.print(f"  [green]mkdir -p ~/curations/work/{ctx.tol_id}/[/green]")
         for pattern in (hr_pattern, normal_pattern):
             scp = f"scp {ctx.farm_host}:{ctx.workdir}/<matched_file> ~/curations/work/{ctx.tol_id}/"
             console.print(f"  [green]{scp}[/green]")
@@ -160,6 +161,7 @@ def copy_pretext_maps(ctx: CurationContext) -> None:
     print_done(f"Copied to {ctx.workdir}/")
 
     console.print("\n[bold]To open in PretextView, run on your local machine:[/bold]")
+    console.print(f"  [green]mkdir -p ~/curations/work/{ctx.tol_id}/[/green]")
     for src in (hr_src, normal_src):
         dest_name = src.name
         scp = f"scp {ctx.farm_host}:{ctx.workdir}/{dest_name} ~/curations/work/{ctx.tol_id}/"
