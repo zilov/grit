@@ -60,7 +60,7 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
         if not agp_files:
             raise FileNotFoundError(
                 f"No AGP file found at {agp_pattern}. Copy AGP from local machine first.\n"
-                f"  scp ~/curations/{ctx.tol_id}/{ctx.tol_id}*.agp* "
+                f"  scp ~/curations/work/{ctx.tol_id}/{ctx.tol_id}*.agp* "
                 f"{ctx.farm_host}:{ctx.workdir}/"
             )
         agp_path = agp_files[0]

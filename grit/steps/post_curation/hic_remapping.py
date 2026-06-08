@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import glob
 import logging
-from datetime import datetime
 
 import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _submit_bsub, build_bsub_opts
+from grit.utils.helpers import _run
 from grit.utils.modules import module_cmd
 from grit.utils.output import console, print_next_step, print_step_header
 
@@ -23,19 +22,22 @@ log = logging.getLogger(__name__)
 
 def run_hic_remapping(ctx: CurationContext) -> None:
     """
-    Submits the HiC remapping pipeline (sanger-tol/curationpretext) via bsub.
+    Runs the HiC remapping pipeline (sanger-tol/curationpretext).
+
+    curationpretext.sh submits its own bsub job internally, so grit calls it
+    directly (cd workdir first so logs and work/ land inside the workdir).
 
     Notebook source: ``pre_and_post_curation()`` — ``hic_cmd`` section.
 
     Steps:
         1. Determine the primary curated FASTA for remapping:
            ``{ctx.workdir}/{ctx.tol_id}*.{hap1_prefix}*.primary.curated.fa``
-        2. Build the nextflow command via curationpretext.sh and submit via bsub.
+        2. cd to workdir and run curationpretext.sh.
         3. Print scp command to copy the remapped pretext map to local machine.
 
     Prints:
-        Step header, bsub command, job ID, scp command for remapped pretext.
-    Next step hint: ``run_qv(ctx)``
+        Step header, command, scp command for remapped pretext.
+    Next step hint: ``run_hic_remapping(ctx)`` done → manual wait for job
     """
     log.info("hic-remapping | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "HiC remapping")
@@ -61,6 +63,7 @@ def run_hic_remapping(ctx: CurationContext) -> None:
     outdir = ctx.workdir / f"{ctx.tol_id}_curationpretext"
 
     hic_cmd = (
+        f"cd {ctx.workdir} && "
         f"{module_cmd('CURATIONPRETEXT')} && "
         f"curationpretext.sh -profile sanger,singularity"
         f" --map_order unsorted"
@@ -75,13 +78,7 @@ def run_hic_remapping(ctx: CurationContext) -> None:
         hic_cmd += f" {ctx.teloseq}"
     hic_cmd += " -resume"
 
-    date_str = datetime.now().strftime("%d_%m_%Y")
-    bsub_opts = build_bsub_opts(
-        queue="oversubscribed",
-        memory_mb=1200,
-        output=f"curationpretext_{date_str}.log",
-    )
-    _submit_bsub(hic_cmd, bsub_opts, ctx.print_only)
+    _run(hic_cmd, ctx.print_only)
 
     remapped_pattern = f"{outdir}/pretext_maps_processed/{ctx.tol_id}*normal.pretext"
     scp_cmd = (

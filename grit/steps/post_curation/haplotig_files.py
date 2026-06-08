@@ -46,27 +46,29 @@ def run_haplotig_files(ctx: CurationContext) -> None:
     # hap1/hap2: {tol_id}.hap1.1.all_haplotigs.curated.fa
     # primary:   {tol_id}.1.all_haplotigs.curated.fa
     if ctx.assembly_type in ("hap1", "paternal"):
-        haplotig_name = (
-            f"{ctx.tol_id}.{ctx.hap1_prefix}.{ctx.release_version}.all_haplotigs.curated.fa"
-        )
+        haplotig_names = [
+            f"{ctx.tol_id}.{ctx.hap1_prefix}.{ctx.release_version}.all_haplotigs.curated.fa",
+            f"{ctx.tol_id}.{ctx.hap2_prefix}.{ctx.release_version}.all_haplotigs.curated.fa",
+        ]
     else:
-        haplotig_name = f"{ctx.tol_id}.{ctx.release_version}.all_haplotigs.curated.fa"
-
-    haplotig_path = ctx.workdir / haplotig_name
+        haplotig_names = [f"{ctx.tol_id}.{ctx.release_version}.all_haplotigs.curated.fa"]
 
     if ctx.print_only:
-        log.info("Expected haplotig file: %s", haplotig_path)
+        for name in haplotig_names:
+            log.info("Expected haplotig file: %s", ctx.workdir / name)
         print_next_step("run_hic_remapping(ctx)")
         return
 
-    if haplotig_path.exists() and haplotig_path.stat().st_size > 10:
-        log.warning("Haplotig file is non-empty: %s", haplotig_path)
-        log.info("Status: found (non-empty — verify contents)")
-    elif haplotig_path.exists():
-        log.info("Status: found (empty) — %s", haplotig_name)
-    else:
-        haplotig_path.touch()
-        log.info("Status: created empty — %s", haplotig_name)
+    for haplotig_name in haplotig_names:
+        haplotig_path = ctx.workdir / haplotig_name
+        if haplotig_path.exists() and haplotig_path.stat().st_size > 10:
+            log.warning("Haplotig file is non-empty: %s", haplotig_path)
+            log.info("Status: found (non-empty — verify contents)")
+        elif haplotig_path.exists():
+            log.info("Status: found (empty) — %s", haplotig_name)
+        else:
+            haplotig_path.touch()
+            log.info("Status: created empty — %s", haplotig_name)
 
     print_done("Haplotig files ready")
     print_next_step("run_hic_remapping(ctx)")
