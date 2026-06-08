@@ -18,6 +18,8 @@ Usage in step functions::
 # Values are the exact module names passed to ``module load``.
 
 MODULE_VERSIONS: dict[str, str] = {
+    # generic grit module (used wherever the grit environment is needed)
+    "GRIT": "grit",
     # pretext-to-asm (convert AGP + FASTA → curated assembly)
     "PRETEXT_TO_ASM": "grit",
     # HiC remapping pipeline
