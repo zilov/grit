@@ -150,9 +150,16 @@ def copy_pretext_maps(ctx: CurationContext) -> None:
     print_step_header(ctx.ticket_id, ctx.tol_id, "Copy pretext maps")
 
     if ctx.print_only:
-        for suffix in ("hr", "normal", "ultra"):
-            pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*{suffix}.pretext")
-            console.print(f"\n[yellow]Command:[/yellow] [green]cp {pattern} {ctx.workdir}/[/green]")
+        try:
+            src_paths = [str(s) for s in _find_pretext_maps(ctx)]
+        except FileNotFoundError:
+            log.warning("Pretext maps not found on NFS — showing glob patterns instead")
+            src_paths = [
+                str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*{suffix}.pretext")
+                for suffix in ("hr", "normal", "ultra")
+            ]
+        for src in src_paths:
+            console.print(f"\n[yellow]Command:[/yellow] [green]cp {src} {ctx.workdir}/[/green]")
         return
 
     for src in _find_pretext_maps(ctx):
@@ -173,13 +180,14 @@ def print_pretext_scp_commands(ctx: CurationContext) -> None:
     log.info("print-pretext-scp | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Pretext map scp commands")
 
-    if ctx.print_only:
+    try:
+        sources = [str(s) for s in _find_pretext_maps(ctx)]
+    except FileNotFoundError:
+        log.warning("Pretext maps not found on NFS — showing glob patterns instead")
         sources = [
             str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*{suffix}.pretext")
             for suffix in ("hr", "normal", "ultra")
         ]
-    else:
-        sources = [str(s) for s in _find_pretext_maps(ctx)]
 
     console.print("\n[bold]To open in PretextView, run on your local machine:[/bold]")
     console.print(f"  [green]mkdir -p ~/curations/work/{ctx.tol_id}/[/green]")
