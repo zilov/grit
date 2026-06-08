@@ -10,6 +10,10 @@ All changes go to that branch; pull it before each new round of testing.
 
 ---
 
+## Gitflow
+
+Check previous commit styles, should be minimalistic
+
 ## Prerequisites
 
 | Item | Notes |
@@ -75,17 +79,17 @@ lists its options. No `ImportError` or traceback.
 
 ## 1. Pre-curation steps
 
-### 1.1 `setup`
+### 1.1 `setup` [done]
 
 **Purpose:** creates the workdir, copies the draft assembly and pretext maps, prints
 the curation summary.
 
 ```bash
 # Dry-run first
-grit --yaml ticket.yaml --print-only setup -t RC-XXXX
+grit --print-only setup -t RC-XXXX
 
 # Real run
-grit --yaml ticket.yaml setup -t RC-XXXX
+grit setup -t RC-XXXX
 ```
 
 **Check:**
@@ -96,13 +100,13 @@ grit --yaml ticket.yaml setup -t RC-XXXX
 
 ---
 
-### 1.2 `add-gap-track`
+### 1.2 `add-gap-track` [rarely used, not in priority]
 
 **Purpose:** adds a gap track to the pretext map.
 
 ```bash
-grit --yaml ticket.yaml --print-only add-gap-track -t RC-XXXX
-grit --yaml ticket.yaml add-gap-track -t RC-XXXX
+grit --print-only add-gap-track -t RC-XXXX
+grit add-gap-track -t RC-XXXX
 ```
 
 **Check:**
@@ -111,26 +115,26 @@ grit --yaml ticket.yaml add-gap-track -t RC-XXXX
 
 ---
 
-### 1.3 `add-telo-track`
+### 1.3 `add-telo-track` [rarely used, not in priority]
 
 **Purpose:** adds a telomere track to the pretext map.
 
 ```bash
-grit --yaml ticket.yaml --print-only add-telo-track -t RC-XXXX
-grit --yaml ticket.yaml add-telo-track -t RC-XXXX
+grit --print-only add-telo-track -t RC-XXXX
+grit add-telo-track -t RC-XXXX
 ```
 
 **Check:** same pattern as gap track — job submitted, telomere track visible in map.
 
 ---
 
-### 1.4 `add-bedgraph-track`
+### 1.4 `add-bedgraph-track` [rarely used, not in priority]
 
 **Purpose:** adds a custom bedgraph coverage/signal track to the pretext map.
 
 ```bash
-grit --yaml ticket.yaml --print-only add-bedgraph-track -t RC-XXXX --file coverage.bg
-grit --yaml ticket.yaml add-bedgraph-track -t RC-XXXX --file coverage.bg
+grit --print-only add-bedgraph-track -t RC-XXXX --file coverage.bg
+grit add-bedgraph-track -t RC-XXXX --file coverage.bg
 ```
 
 **Check:**
@@ -144,8 +148,8 @@ grit --yaml ticket.yaml add-bedgraph-track -t RC-XXXX --file coverage.bg
 **Purpose:** runs the sex-determination script against kmer data.
 
 ```bash
-grit --yaml ticket.yaml --print-only sex-matcher -t RC-XXXX
-grit --yaml ticket.yaml sex-matcher -t RC-XXXX
+grit --print-only sex-matcher -t RC-XXXX
+grit sex-matcher -t RC-XXXX
 ```
 
 **Check:**
@@ -159,8 +163,8 @@ grit --yaml ticket.yaml sex-matcher -t RC-XXXX
 **Purpose:** queries NCBI/ToLID DB and downloads the closest reference genome.
 
 ```bash
-grit --yaml ticket.yaml --print-only find-reference -t RC-XXXX
-grit --yaml ticket.yaml find-reference -t RC-XXXX
+grit --print-only find-reference -t RC-XXXX
+grit find-reference -t RC-XXXX
 ```
 
 **Check:**
@@ -176,8 +180,8 @@ grit --yaml ticket.yaml find-reference -t RC-XXXX
 Only relevant for species with microchromosomes — verify with a known insect ticket.
 
 ```bash
-grit --yaml ticket.yaml --print-only microchromosome -t RC-XXXX
-grit --yaml ticket.yaml microchromosome -t RC-XXXX
+grit --print-only microchromosome -t RC-XXXX
+grit microchromosome -t RC-XXXX
 ```
 
 **Check:**
@@ -193,8 +197,8 @@ grit --yaml ticket.yaml microchromosome -t RC-XXXX
 Run **after** the curator has finished the microchromosome PretextView session.
 
 ```bash
-grit --yaml ticket.yaml --print-only microchromosome-post -t RC-XXXX
-grit --yaml ticket.yaml microchromosome-post -t RC-XXXX
+grit --print-only microchromosome-post -t RC-XXXX
+grit microchromosome-post -t RC-XXXX
 ```
 
 **Check:**
@@ -212,8 +216,8 @@ Run these **after** the curator has finished PretextView and the curated files e
 **Purpose:** converts the curator's PretextView output back to an assembly FASTA + AGP.
 
 ```bash
-grit --yaml ticket.yaml --print-only pretext-to-asm -t RC-XXXX
-grit --yaml ticket.yaml pretext-to-asm -t RC-XXXX
+grit --print-only pretext-to-asm -t RC-XXXX
+grit pretext-to-asm -t RC-XXXX
 ```
 
 **Check:**
@@ -228,8 +232,8 @@ grit --yaml ticket.yaml pretext-to-asm -t RC-XXXX
 **Purpose:** ensures haplotig FASTA files are in place (hap1/hap2 or primary/alternate).
 
 ```bash
-grit --yaml ticket.yaml --print-only haplotig-files -t RC-XXXX
-grit --yaml ticket.yaml haplotig-files -t RC-XXXX
+grit --print-only haplotig-files -t RC-XXXX
+grit haplotig-files -t RC-XXXX
 ```
 
 **Check:**
@@ -243,8 +247,8 @@ grit --yaml ticket.yaml haplotig-files -t RC-XXXX
 **Purpose:** remaps HiC reads to the curated assembly.
 
 ```bash
-grit --yaml ticket.yaml --print-only hic-remapping -t RC-XXXX
-grit --yaml ticket.yaml hic-remapping -t RC-XXXX
+grit --print-only hic-remapping -t RC-XXXX
+grit hic-remapping -t RC-XXXX
 ```
 
 **Check:**
@@ -258,8 +262,8 @@ grit --yaml ticket.yaml hic-remapping -t RC-XXXX
 **Purpose:** computes QV (quality value) metrics for the curated assembly.
 
 ```bash
-grit --yaml ticket.yaml --print-only qv -t RC-XXXX
-grit --yaml ticket.yaml qv -t RC-XXXX
+grit --print-only qv -t RC-XXXX
+grit qv -t RC-XXXX
 ```
 
 **Check:**
@@ -273,7 +277,7 @@ grit --yaml ticket.yaml qv -t RC-XXXX
 **Purpose:** checks that all required curated files are present and well-formed.
 
 ```bash
-grit --yaml ticket.yaml validate-files -t RC-XXXX
+grit validate-files -t RC-XXXX
 ```
 
 **Check:**
@@ -288,8 +292,8 @@ grit --yaml ticket.yaml validate-files -t RC-XXXX
 **Purpose:** copies curated files to the QC staging area / iRODS handoff location.
 
 ```bash
-grit --yaml ticket.yaml --print-only finalize-qc -t RC-XXXX
-grit --yaml ticket.yaml finalize-qc -t RC-XXXX
+grit --print-only finalize-qc -t RC-XXXX
+grit finalize-qc -t RC-XXXX
 ```
 
 **Check:**
@@ -305,8 +309,8 @@ grit --yaml ticket.yaml finalize-qc -t RC-XXXX
 → `hic-remapping` → `qv` → `validate-files` → `finalize-qc`.
 
 ```bash
-grit --yaml ticket.yaml --print-only post-curation -t RC-XXXX
-grit --yaml ticket.yaml post-curation -t RC-XXXX
+grit --print-only post-curation -t RC-XXXX
+grit post-curation -t RC-XXXX
 ```
 
 **Check:**
@@ -323,8 +327,8 @@ grit --yaml ticket.yaml post-curation -t RC-XXXX
 **Purpose:** runs BLAST against contamination databases in the Shrapnel service.
 
 ```bash
-grit --yaml ticket.yaml --print-only blast-contaminants -t RC-XXXX
-grit --yaml ticket.yaml blast-contaminants -t RC-XXXX
+grit --print-only blast-contaminants -t RC-XXXX
+grit blast-contaminants -t RC-XXXX
 ```
 
 **Check:**
@@ -338,8 +342,8 @@ grit --yaml ticket.yaml blast-contaminants -t RC-XXXX
 **Purpose:** runs BUSCO completeness check on the curated assembly.
 
 ```bash
-grit --yaml ticket.yaml --print-only busco-curated -t RC-XXXX --lineage insecta_odb10
-grit --yaml ticket.yaml busco-curated -t RC-XXXX --lineage insecta_odb10
+grit --print-only busco-curated -t RC-XXXX --lineage insecta_odb10
+grit busco-curated -t RC-XXXX --lineage insecta_odb10
 ```
 
 **Check:**
@@ -354,8 +358,8 @@ grit --yaml ticket.yaml busco-curated -t RC-XXXX --lineage insecta_odb10
 **Purpose:** runs BUSCO synteny analysis between curated assembly and reference.
 
 ```bash
-grit --yaml ticket.yaml --print-only busco-synteny -t RC-XXXX --lineage insecta_odb10
-grit --yaml ticket.yaml busco-synteny -t RC-XXXX --lineage insecta_odb10
+grit --print-only busco-synteny -t RC-XXXX --lineage insecta_odb10
+grit busco-synteny -t RC-XXXX --lineage insecta_odb10
 ```
 
 **Check:** same as `busco-curated`, plus a synteny plot or table in workdir.
@@ -368,8 +372,8 @@ Requires reference to be already downloaded (run `find-reference` first).
 **Purpose:** runs FastGA dot-plot comparison of curated assembly vs reference.
 
 ```bash
-grit --yaml ticket.yaml --print-only fastga -t RC-XXXX
-grit --yaml ticket.yaml fastga -t RC-XXXX
+grit --print-only fastga -t RC-XXXX
+grit fastga -t RC-XXXX
 ```
 
 **Check:**
@@ -383,8 +387,8 @@ grit --yaml ticket.yaml fastga -t RC-XXXX
 **Purpose:** renames and orients scaffolds to match the reference naming convention.
 
 ```bash
-grit --yaml ticket.yaml --print-only rename-and-orient -t RC-XXXX
-grit --yaml ticket.yaml rename-and-orient -t RC-XXXX
+grit --print-only rename-and-orient -t RC-XXXX
+grit rename-and-orient -t RC-XXXX
 ```
 
 **Check:**
@@ -402,10 +406,10 @@ Paste the **full terminal output** (stdout + stderr) when sending results.
 
 ```bash
 # Should show step start + major decisions only
-grit --logging-level INFO --yaml ticket.yaml setup -t RC-XXXX
+grit --logging-level INFO setup -t RC-XXXX
 
 # Should also show LSF command strings, resolved paths
-grit --logging-level DEBUG --yaml ticket.yaml setup -t RC-XXXX
+grit --logging-level DEBUG setup -t RC-XXXX
 ```
 
 **Expected:** `DEBUG` output contains full command strings and path resolutions;
@@ -416,7 +420,7 @@ grit --logging-level DEBUG --yaml ticket.yaml setup -t RC-XXXX
 Always run every command with `--print-only` first before the real run.
 
 ```bash
-grit --yaml ticket.yaml --print-only setup -t RC-XXXX
+grit --print-only setup -t RC-XXXX
 ```
 
 **Expected:** No LSF jobs submitted; commands printed to the log instead.
@@ -427,7 +431,7 @@ Force a failure (e.g. rename a required input file) and run any command.
 Then restore the file.
 
 ```bash
-grit --yaml ticket.yaml setup -t RC-XXXX
+grit setup -t RC-XXXX
 echo "exit code: $?"
 ```
 

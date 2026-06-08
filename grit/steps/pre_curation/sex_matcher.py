@@ -76,7 +76,6 @@ def run_sex_matcher(ctx: CurationContext) -> None:
 
     bsub_opts = build_bsub_opts(
         memory_mb=50000,
-        wait=True,
         output=f"{ctx.workdir}/sex_matcher.out",
         error=f"{ctx.workdir}/sex_matcher.err",
     )
