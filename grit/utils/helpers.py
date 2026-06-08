@@ -32,17 +32,24 @@ def require_workdir(ctx: CurationContext) -> None:
         raise SystemExit(1)
 
 
-def _run(cmd: str, print_only: bool = False) -> str:
+def _run(cmd: str, print_only: bool = False, *, capture: bool = True) -> str:
     """
     Print *cmd*; execute it unless print_only is True.
 
-    Returns stdout (stripped) when run, otherwise an empty string.
+    When *capture* is ``True`` (default), stdout is captured and returned.
+    When *capture* is ``False``, stdout and stderr are passed through to the
+    terminal so the caller can see live output; the return value is ``""``.
+
+    Returns stdout (stripped) when captured, otherwise an empty string.
     """
     console.print(f"\n[yellow]Command:[/yellow] [green]{cmd}[/green]")
     if print_only:
         return ""
-    result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
-    return result.stdout.strip()
+    if capture:
+        result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+        return result.stdout.strip()
+    subprocess.run(cmd, shell=True, check=True)
+    return ""
 
 
 def _submit_bsub(inner_cmd: str, bsub_opts: str, print_only: bool = False) -> str:

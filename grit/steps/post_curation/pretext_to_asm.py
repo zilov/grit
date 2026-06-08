@@ -72,7 +72,7 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
         f" -p {agp_path}"
         f" -o {out_fa}"
     )
-    _run(cmd, ctx.print_only)
+    _run(cmd, ctx.print_only, capture=False)
     print_done(f"Curated FASTA → {out_fa}")
     print_next_step("ensure_haplotig_files(ctx)")
 
