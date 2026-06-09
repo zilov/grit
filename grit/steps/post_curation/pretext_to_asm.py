@@ -43,6 +43,13 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
     log.info("pretext-to-asm | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Pretext to ASM")
 
+    if not ctx.print_only:
+        curated_files = glob.glob(str(ctx.workdir / f"{ctx.tol_id}*.curated.fa"))
+        if curated_files:
+            log.info("Curated FASTA already exists — skipping: %s", curated_files[0])
+            print_done(f"Already done → {curated_files[0]}")
+            return
+
     original_fa = ctx.workdir / "original.fa"
     out_fa = ctx.workdir / f"{ctx.tol_id}.fa"
 

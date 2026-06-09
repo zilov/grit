@@ -59,6 +59,12 @@ def run_haplotig_files(ctx: CurationContext) -> None:
         print_next_step("run_hic_remapping(ctx)")
         return
 
+    if all((ctx.workdir / name).exists() for name in haplotig_names):
+        log.info("All haplotig files already exist — skipping")
+        print_done("Haplotig files already present")
+        print_next_step("run_hic_remapping(ctx)")
+        return
+
     for haplotig_name in haplotig_names:
         haplotig_path = ctx.workdir / haplotig_name
         if haplotig_path.exists() and haplotig_path.stat().st_size > 10:

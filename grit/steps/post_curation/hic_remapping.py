@@ -11,7 +11,7 @@ from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.helpers import _run
 from grit.utils.modules import module_cmd
-from grit.utils.output import console, print_next_step, print_step_header
+from grit.utils.output import console, print_done, print_next_step, print_step_header
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +42,13 @@ def run_hic_remapping(ctx: CurationContext) -> None:
     log.info("hic-remapping | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "HiC remapping")
 
+    outdir = ctx.workdir / f"{ctx.tol_id}_curationpretext"
+
+    if not ctx.print_only and outdir.exists():
+        log.info("curationpretext folder already exists — skipping: %s", outdir)
+        print_done(f"Already done → {outdir}")
+        return
+
     hap1_fa_pattern = str(ctx.workdir / f"{ctx.tol_id}*.{ctx.hap1_prefix}*.primary.curated.fa")
 
     if ctx.print_only:
@@ -59,8 +66,6 @@ def run_hic_remapping(ctx: CurationContext) -> None:
             )
         hap1_fa = hap1_files[0]
         log.info("Input FASTA: %s", hap1_fa)
-
-    outdir = ctx.workdir / f"{ctx.tol_id}_curationpretext"
 
     hic_cmd = (
         f"cd {ctx.workdir} && "
