@@ -36,9 +36,14 @@ def run_qv(ctx: CurationContext) -> None:
     log.info("qv | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "QV analysis")
 
+    run_dir = ctx.tracker.start("qv", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
+
     inner_cmd = f"cd {ctx.workdir} && kmer_completeness.bash {ctx.tol_id} {ctx.release_version}"
-    bsub_opts = build_bsub_opts(memory_mb=8000, output="qv.log")
-    _submit_bsub(inner_cmd, bsub_opts, ctx.print_only)
+    bsub_opts = build_bsub_opts(memory_mb=8000, output=str(ctx.workdir / "qv.log"))
+    job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only)
+
+    if ctx.tracker and run_dir and job_id:
+        ctx.tracker.record_job("qv", run_dir, job_id)
 
     print_done("QV job submitted")
     print_next_step("validate_curated_files(ctx)")

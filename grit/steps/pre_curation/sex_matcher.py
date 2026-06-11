@@ -75,13 +75,18 @@ def run_sex_matcher(ctx: CurationContext) -> None:
 
     require_workdir(ctx)
 
+    run_dir = ctx.tracker.start("sex_matcher", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
+
     bsub_opts = build_bsub_opts(
         memory_mb=50000,
-        output=f"{ctx.workdir}/sex_matcher.out",
-        error=f"{ctx.workdir}/sex_matcher.err",
+        output=str(ctx.workdir / "sex_matcher.out"),
+        error=str(ctx.workdir / "sex_matcher.err"),
     )
     inner_cmd = f"{module_cmd('GRIT')} && cd {ctx.workdir} && {_SEX_MATCHER_SCRIPT}"
-    _submit_bsub(inner_cmd, bsub_opts, ctx.print_only)
+    job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only)
+
+    if ctx.tracker and run_dir and job_id:
+        ctx.tracker.record_job("sex_matcher", run_dir, job_id)
 
     if not ctx.print_only:
         # Look for the Best_match* output file produced by sex_matcher

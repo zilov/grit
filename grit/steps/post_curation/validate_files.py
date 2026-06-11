@@ -94,20 +94,26 @@ def run_validate_files(ctx: CurationContext) -> None:
                     console.print(f"  {line.rstrip()}")
 
     # --- check expected files ---
-    console.print("\n[bold]Expected files in workdir:[/bold]")
-    expected_patterns = [
-        f"{ctx.tol_id}*.primary.curated.fa",
-        f"{ctx.tol_id}*.chromosome.list.csv",
-        f"{ctx.tol_id}*haplotigs*.fa",
-        f"{ctx.tol_id}*.agp*",
-        f"{ctx.tol_id}*.log",
+    # Curated files live in the pretext_to_asm run_dir; AGP/log remain in workdir.
+    if ctx.tracker and not ctx.print_only:
+        pta_dir = ctx.tracker.latest_run_dir("pretext_to_asm") or ctx.workdir
+    else:
+        pta_dir = ctx.workdir
+
+    console.print("\n[bold]Expected files:[/bold]")
+    curated_patterns = [
+        (pta_dir, f"{ctx.tol_id}*.curated.fa"),
+        (pta_dir, f"{ctx.tol_id}*.chromosome.list.csv"),
+        (pta_dir, f"{ctx.tol_id}*haplotigs*.fa"),
+        (ctx.workdir, f"{ctx.tol_id}*.agp*"),
+        (ctx.workdir, f"{ctx.tol_id}*.log"),
     ]
     all_ok = True
-    for pattern in expected_patterns:
+    for base, pattern in curated_patterns:
         if ctx.print_only:
-            console.print(f"  [dim]{ctx.workdir / pattern}[/dim]")
+            console.print(f"  [dim]{base / pattern}[/dim]")
         else:
-            found = glob.glob(str(ctx.workdir / pattern))
+            found = glob.glob(str(base / pattern))
             status = "[green]✓[/green]" if found else "[red]✗ MISSING[/red]"
             console.print(f"  {status}  {pattern}")
             if not found:

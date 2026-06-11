@@ -24,17 +24,20 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
     """
     Converts the curated AGP + original.fa into a curated FASTA via pretext-to-asm.
 
+    Output FASTA goes into a timestamped run directory:
+    ``{workdir}/pretext_to_asm/<timestamp>/{tol_id}.fa``
+
     Notebook source: ``pre_and_post_curation()`` — ``generate_fasta_from_agp`` section.
 
     Steps:
         1. Verify ``{ctx.workdir}/original.fa`` exists (or warn in print_only mode).
         2. Verify ``{ctx.workdir}/{ctx.tol_id}*.agp*`` glob matches at least one file.
-        3. Build and execute the command::
+        3. Build and execute::
 
                module load grit && pretext-to-asm \
-                   -a {ctx.workdir}/original.fa \
+                   -a {workdir}/original.fa \
                    -p {agp_path} \
-                   -o {ctx.workdir}/{ctx.tol_id}.fa
+                   -o {run_dir}/{tol_id}.fa
 
     Prints:
         Step header, AGP path found, command executed.
@@ -43,28 +46,37 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
     log.info("pretext-to-asm | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Pretext to ASM")
 
-    if not ctx.print_only:
-        curated_files = glob.glob(str(ctx.workdir / f"{ctx.tol_id}*.curated.fa"))
-        if curated_files:
-            log.info("Curated FASTA already exists — skipping: %s", curated_files[0])
-            print_done(f"Already done → {curated_files[0]}")
+    # Check for existing successful run
+    if not ctx.print_only and ctx.tracker:
+        prev_dir = ctx.tracker.latest_run_dir("pretext_to_asm")
+        if prev_dir and any(prev_dir.glob(f"{ctx.tol_id}*.curated.fa")):
+            log.info("Curated FASTA already exists — skipping: %s", prev_dir)
+            print_done(f"Already done → {prev_dir}")
             return
 
+    # Start tracking
+    run_dir = ctx.tracker.start("pretext_to_asm", ctx.ticket_id, ctx.tol_id) if ctx.tracker else ctx.workdir / "pretext_to_asm" / "untracked"
+    out_fa = run_dir / f"{ctx.tol_id}.fa"
     original_fa = ctx.workdir / "original.fa"
-    out_fa = ctx.workdir / f"{ctx.tol_id}.fa"
 
     if not ctx.print_only and not original_fa.exists():
+        if ctx.tracker:
+            ctx.tracker.finish("pretext_to_asm", run_dir, "failed")
         raise FileNotFoundError(
             f"original.fa not found at {original_fa}. Run setup_curation first."
         )
 
+    # AGP is uploaded by the user to workdir
     agp_pattern = str(ctx.workdir / f"{ctx.tol_id}*.agp*")
     if ctx.print_only:
         agp_path = agp_pattern
         log.info("AGP (pattern): %s", agp_path)
+        log.info("Output → %s", out_fa)
     else:
         agp_files = glob.glob(agp_pattern)
         if not agp_files:
+            if ctx.tracker:
+                ctx.tracker.finish("pretext_to_asm", run_dir, "failed")
             raise FileNotFoundError(
                 f"No AGP file found at {agp_pattern}. Copy AGP from local machine first.\n"
                 f"  scp ~/curations/work/{ctx.tol_id}/{ctx.tol_id}*.agp* "
@@ -79,7 +91,15 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
         f" -p {agp_path}"
         f" -o {out_fa}"
     )
-    _run(cmd, ctx.print_only, capture=False)
+    try:
+        _run(cmd, ctx.print_only, capture=False)
+        if ctx.tracker:
+            ctx.tracker.finish("pretext_to_asm", run_dir, "success")
+    except Exception:
+        if ctx.tracker:
+            ctx.tracker.finish("pretext_to_asm", run_dir, "failed")
+        raise
+
     print_done(f"Curated FASTA → {out_fa}")
     print_next_step("ensure_haplotig_files(ctx)")
 

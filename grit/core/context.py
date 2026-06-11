@@ -11,7 +11,10 @@ import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from grit.core.run_tracker import RunTracker
 
 
 @dataclass
@@ -89,6 +92,9 @@ class CurationContext:
     # --- raw data ---
     yaml_data: dict[str, Any] = field(default_factory=dict)
 
+    # --- run tracking (populated by from_yaml) ---
+    tracker: RunTracker | None = field(default=None, repr=False, compare=False)
+
     @property
     def tol_id_versioned(self) -> str:
         """Example: sDipInt39.1"""
@@ -147,6 +153,8 @@ class CurationContext:
 
         workdir = _derive_workdir(assembly_draft_dir.parent, cfg.username, tol_id)
 
+        from grit.core.run_tracker import RunTracker
+
         return cls(
             ticket_id=ticket_id,
             tol_id=tol_id,
@@ -171,6 +179,7 @@ class CurationContext:
             release_version=release_version,
             print_only=print_only,
             yaml_data=yaml_data,
+            tracker=RunTracker(workdir, print_only=print_only),
         )
 
     @classmethod

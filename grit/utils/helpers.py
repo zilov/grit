@@ -52,14 +52,24 @@ def _run(cmd: str, print_only: bool = False, *, capture: bool = True) -> str:
     return ""
 
 
-def _submit_bsub(inner_cmd: str, bsub_opts: str, print_only: bool = False) -> str:
+def _submit_bsub(
+    inner_cmd: str,
+    bsub_opts: str,
+    print_only: bool = False,
+    *,
+    epilogue_cmd: str | None = None,
+) -> str:
     """
     Wrap *inner_cmd* in a bsub call, submit it, and return the job ID string.
 
     *bsub_opts* is inserted between ``bsub`` and the quoted command, e.g.
     ``'-q oversubscribed -M 1200'``.
+
+    *epilogue_cmd*: when provided, appended as ``-Ep '...'`` so LSF runs it
+    after the job completes. Typically used to call ``grit _state-update``.
     """
-    bsub_cmd = f'bsub {bsub_opts} "{inner_cmd}"'
+    epilogue_part = f" -Ep '{epilogue_cmd}'" if epilogue_cmd else ""
+    bsub_cmd = f'bsub{epilogue_part} {bsub_opts} "{inner_cmd}"'
     output = _run(bsub_cmd, print_only)
     # bsub outputs: Job <12345> is submitted to queue ...
     if output and "Job <" in output:
@@ -67,6 +77,35 @@ def _submit_bsub(inner_cmd: str, bsub_opts: str, print_only: bool = False) -> st
         log.info("Job ID: %s", job_id)
         return job_id
     return output
+
+
+def _check_bjobs(job_ids: list[str]) -> dict[str, str]:
+    """
+    Query LSF for the status of the given job IDs.
+
+    Returns a dict of {job_id: status_string} where status_string is one of:
+    'PEND', 'RUN', 'DONE', 'EXIT', 'ZOMBI', 'UNKWN', or 'gone' (not found).
+    """
+    if not job_ids:
+        return {}
+    result: dict[str, str] = {jid: "gone" for jid in job_ids}
+    try:
+        ids_arg = " ".join(job_ids)
+        output = subprocess.run(
+            f"bjobs -noheader {ids_arg}",
+            shell=True,
+            capture_output=True,
+            text=True,
+        )
+        for line in output.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 3:
+                jid, _user, status = parts[0], parts[1], parts[2]
+                if jid in result:
+                    result[jid] = status
+    except Exception:
+        log.debug("bjobs query failed — LSF may not be available")
+    return result
 
 
 def build_bsub_opts(

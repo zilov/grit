@@ -24,32 +24,47 @@ def run_hic_remapping(ctx: CurationContext) -> None:
     """
     Runs the HiC remapping pipeline (sanger-tol/curationpretext).
 
+    Output goes into a timestamped run directory:
+    ``{workdir}/hic_remapping/<timestamp>/``
+
     curationpretext.sh submits its own bsub job internally, so grit calls it
-    directly (cd workdir first so logs and work/ land inside the workdir).
+    directly (cd workdir first so logs and work/ land inside the run_dir).
 
     Notebook source: ``pre_and_post_curation()`` — ``hic_cmd`` section.
 
     Steps:
-        1. Determine the primary curated FASTA for remapping:
-           ``{ctx.workdir}/{ctx.tol_id}*.{hap1_prefix}*.primary.curated.fa``
-        2. cd to workdir and run curationpretext.sh.
-        3. Print scp command to copy the remapped pretext map to local machine.
+        1. Find the primary curated FASTA from the latest pretext_to_asm run.
+        2. Start a new hic_remapping run_dir via tracker.
+        3. cd to workdir and run curationpretext.sh with run_dir as outdir.
+        4. Print scp command to copy the remapped pretext map to local machine.
 
     Prints:
         Step header, command, scp command for remapped pretext.
-    Next step hint: ``run_hic_remapping(ctx)`` done → manual wait for job
+    Next step hint: ``run_qv(ctx)``
     """
     log.info("hic-remapping | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "HiC remapping")
 
-    outdir = ctx.workdir / f"{ctx.tol_id}_curationpretext"
+    # Check for existing successful run
+    if not ctx.print_only and ctx.tracker:
+        prev_dir = ctx.tracker.latest_run_dir("hic_remapping")
+        if prev_dir and any(prev_dir.glob(f"pretext_maps_processed/{ctx.tol_id}*hr.pretext")):
+            log.info("HiC remapping already done — skipping: %s", prev_dir)
+            print_done(f"Already done → {prev_dir}")
+            return
 
-    if not ctx.print_only and outdir.exists():
-        log.info("curationpretext folder already exists — skipping: %s", outdir)
-        print_done(f"Already done → {outdir}")
-        return
+    # Start tracking — run_dir is the nextflow outdir
+    run_dir = ctx.tracker.start("hic_remapping", ctx.ticket_id, ctx.tol_id) if ctx.tracker else ctx.workdir / "hic_remapping" / "untracked"
 
-    hap1_fa_pattern = str(ctx.workdir / f"{ctx.tol_id}*.{ctx.hap1_prefix}*.primary.curated.fa")
+    # Resolve input FASTA from pretext_to_asm run_dir (or workdir as fallback)
+    if ctx.print_only:
+        pta_dir = ctx.workdir / "pretext_to_asm" / "<timestamp>"
+    elif ctx.tracker:
+        pta_dir = ctx.tracker.latest_run_dir("pretext_to_asm") or ctx.workdir
+    else:
+        pta_dir = ctx.workdir
+
+    hap1_fa_pattern = str(pta_dir / f"{ctx.tol_id}*.{ctx.hap1_prefix}*.curated.fa")
 
     if ctx.print_only:
         hap1_fa = hap1_fa_pattern
@@ -57,11 +72,12 @@ def run_hic_remapping(ctx: CurationContext) -> None:
     else:
         hap1_files = glob.glob(hap1_fa_pattern)
         if not hap1_files:
-            # fallback: any primary curated fa
-            hap1_files = glob.glob(str(ctx.workdir / f"{ctx.tol_id}*.primary.curated.fa"))
+            hap1_files = glob.glob(str(pta_dir / f"{ctx.tol_id}*.curated.fa"))
         if not hap1_files:
+            if ctx.tracker:
+                ctx.tracker.finish("hic_remapping", run_dir, "failed")
             raise FileNotFoundError(
-                f"No primary curated FASTA found at {hap1_fa_pattern}. "
+                f"No curated FASTA found at {hap1_fa_pattern}. "
                 "Run run_pretext_to_asm first."
             )
         hap1_fa = hap1_files[0]
@@ -77,15 +93,22 @@ def run_hic_remapping(ctx: CurationContext) -> None:
         f" --cram {ctx.hic_dir}"
         f" --reads {ctx.long_reads_dir}/fasta"
         f" --read_type {ctx.read_type}"
-        f" --outdir {outdir}"
+        f" --outdir {run_dir}"
     )
     if ctx.teloseq:
         hic_cmd += f" {ctx.teloseq}"
     hic_cmd += " -resume"
 
-    _run(hic_cmd, ctx.print_only)
+    try:
+        _run(hic_cmd, ctx.print_only)
+        if ctx.tracker:
+            ctx.tracker.finish("hic_remapping", run_dir, "success")
+    except Exception:
+        if ctx.tracker:
+            ctx.tracker.finish("hic_remapping", run_dir, "failed")
+        raise
 
-    remapped_pattern = f"{outdir}/pretext_maps_processed/{ctx.tol_id}*normal.pretext"
+    remapped_pattern = f"{run_dir}/pretext_maps_processed/{ctx.tol_id}*normal.pretext"
     scp_cmd = (
         f"scp {ctx.farm_host}:{remapped_pattern}"
         f" ~/curations/{ctx.tol_id}/{ctx.tol_id}_remapped.pretext"

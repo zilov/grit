@@ -52,13 +52,17 @@ TEST_YAML_PRIMARY = {
 @pytest.fixture
 def mock_ctx():
     """CurationContext for a dual-haplotype assembly (hap1/hap2)."""
-    return CurationContext.from_ticket("RC-1234", TEST_USER_CONFIG, yaml_override=TEST_YAML_HAP1)
+    ctx = CurationContext.from_ticket("RC-1234", TEST_USER_CONFIG, yaml_override=TEST_YAML_HAP1)
+    ctx.tracker = None  # unit tests must not touch the filesystem via tracker
+    return ctx
 
 
 @pytest.fixture
 def mock_ctx_primary():
     """CurationContext for a single-haplotype assembly (primary/alternate)."""
-    return CurationContext.from_ticket("RC-5678", TEST_USER_CONFIG, yaml_override=TEST_YAML_PRIMARY)
+    ctx = CurationContext.from_ticket("RC-5678", TEST_USER_CONFIG, yaml_override=TEST_YAML_PRIMARY)
+    ctx.tracker = None
+    return ctx
 
 
 # --- real YAML fixtures (loaded from files) ---
@@ -154,5 +158,9 @@ def fake_workdir(tmp_path, mock_ctx):
          "ticket_id": mock_ctx.ticket_id, "tol_id": tol_id, "run_dir": str(hic_dir)},
     ]
     (grit_dir / "runs.jsonl").write_text("\n".join(json.dumps(r) for r in runs) + "\n")
+
+    # Attach a tracker pointing to the real tmp_path
+    from grit.core.run_tracker import RunTracker
+    mock_ctx.tracker = RunTracker(tmp_path)
 
     return tmp_path

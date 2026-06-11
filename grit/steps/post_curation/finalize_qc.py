@@ -29,18 +29,27 @@ def finalize_for_qc(ctx: CurationContext) -> None:
     Steps:
         1. Create curated assembly directory: ``mkdir {ctx.assembly_curated_dir}``
         2. Copy curated FASTA files, chromosome lists, and haplotig files
-           to ``{ctx.assembly_curated_dir}/``.
-        3. Copy the remapped pretext map to the NFS curated pretext maps directory.
+           from the pretext_to_asm run_dir to ``{ctx.assembly_curated_dir}/``.
+        3. Copy the remapped pretext map from the hic_remapping run_dir to NFS.
            Destination path uses a two-level prefix structure:
            ``{curated_pretext_maps_nfs}/{tol_id[0]}_*/{tol_id[1]}_*/``
         4. Run kmer_completeness.bash if no merquryk folder exists in
            ``{ctx.assembly_curated_dir}``.
+        5. Mark ticket as done in the global registry.
 
     Prints:
         Step header, each copy command executed, reminder to update Jira.
     """
     log.info("finalize-qc | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Finalize for QC")
+
+    # Resolve run dirs for curated files
+    if ctx.tracker and not ctx.print_only:
+        pta_dir = ctx.tracker.latest_run_dir("pretext_to_asm") or ctx.workdir
+        hic_dir = ctx.tracker.latest_run_dir("hic_remapping") or ctx.workdir
+    else:
+        pta_dir = ctx.workdir
+        hic_dir = ctx.workdir / f"{ctx.tol_id}_curationpretext"
 
     curated_dir = ctx.assembly_curated_dir
 
@@ -49,10 +58,10 @@ def finalize_for_qc(ctx: CurationContext) -> None:
     _run(mkdir_cmd, ctx.print_only)
     log.info("Curated dir: %s", curated_dir)
 
-    # 2. gather curated files
-    curated_fa_pattern = str(ctx.workdir / f"{ctx.tol_id}*.curated.fa")
-    chr_list_pattern = str(ctx.workdir / f"{ctx.tol_id}*.chromosome.list.csv")
-    haplotig_pattern = str(ctx.workdir / f"{ctx.tol_id}*haplotigs*.fa")
+    # 2. gather curated files from pretext_to_asm run_dir
+    curated_fa_pattern = str(pta_dir / f"{ctx.tol_id}*.curated.fa")
+    chr_list_pattern = str(pta_dir / f"{ctx.tol_id}*.chromosome.list.csv")
+    haplotig_pattern = str(pta_dir / f"{ctx.tol_id}*haplotigs*.fa")
 
     if ctx.print_only:
         for pattern in (curated_fa_pattern, chr_list_pattern, haplotig_pattern):
@@ -66,13 +75,8 @@ def finalize_for_qc(ctx: CurationContext) -> None:
             else:
                 log.warning("No files matched: %s", pattern)
 
-    # 3. copy remapped pretext map to NFS
-    remapped_pattern = str(
-        ctx.workdir
-        / f"{ctx.tol_id}_curationpretext"
-        / "pretext_maps_processed"
-        / f"{ctx.tol_id}*normal.pretext"
-    )
+    # 3. copy remapped pretext map from hic_remapping run_dir to NFS
+    remapped_pattern = str(hic_dir / "pretext_maps_processed" / f"{ctx.tol_id}*normal.pretext")
 
     tol_id = ctx.tol_id
     nfs_base = ctx.curated_pretext_maps_nfs
@@ -110,6 +114,11 @@ def finalize_for_qc(ctx: CurationContext) -> None:
         qv_cmd = f"cd {ctx.workdir} && kmer_completeness.bash {ctx.tol_id} {ctx.release_version}"
         console.print("\n[bold]Running QV analysis (merquryk not found):[/bold]")
         _run(qv_cmd, ctx.print_only)
+
+    # 5. Mark done in global registry
+    if not ctx.print_only:
+        from grit.core.registry import RegistryManager
+        RegistryManager().mark_done(ctx.ticket_id)
 
     print_done("All files copied to curated directory")
     console.print(

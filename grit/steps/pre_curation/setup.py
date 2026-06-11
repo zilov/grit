@@ -254,9 +254,28 @@ def run_setup(ctx: CurationContext) -> None:
     and prints scp commands for pretext maps.
     """
     log.info("setup | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
+
+    # Record in global registry
+    if not ctx.print_only:
+        from grit.core.registry import RegistryManager
+        RegistryManager().add_ticket(
+            ctx.ticket_id, ctx.tol_id, ctx.species, ctx.workdir
+        )
+
+    # Track execution
+    if ctx.tracker:
+        run_dir = ctx.tracker.start("setup_curation", ctx.ticket_id, ctx.tol_id)
+
     print_curation_summary(ctx)
-    setup_curation(ctx)
-    print_pretext_scp_commands(ctx)
+    try:
+        setup_curation(ctx)
+        print_pretext_scp_commands(ctx)
+        if ctx.tracker and not ctx.print_only:
+            ctx.tracker.finish("setup_curation", run_dir, "success")
+    except Exception:
+        if ctx.tracker and not ctx.print_only:
+            ctx.tracker.finish("setup_curation", run_dir, "failed")
+        raise
 
     if any(ctx.tol_id.lower().startswith(p) for p in _INSECT_PREFIXES):
         print_tip(
