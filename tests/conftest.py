@@ -80,3 +80,79 @@ def real_ctx_primary():
     with open(_FIXTURES_DIR / "xbLimHian1_primary.yaml") as f:
         yaml_data = _yaml.safe_load(f)
     return CurationContext.from_ticket("RC-real-primary", TEST_USER_CONFIG, yaml_override=yaml_data)
+
+
+@pytest.fixture
+def fake_workdir(tmp_path, mock_ctx):
+    """
+    Populate a tmp_path with a minimal workdir structure for a hap1/hap2 ticket.
+
+    Creates the canonical files that real step runs would produce, so tests for
+    context-from-workdir (_extend_from_workdir) and RunTracker can run without
+    a server or real data.
+
+    Layout produced:
+        tmp_path/
+            original.fa                                 (setup output)
+            sDipInt39.1.hap1.hr.pretext                 (copy_pretext_maps output)
+            reference/
+                GCA_000001.fa                           (find_reference output)
+            sex_matcher/
+                Best_match_sDipInt39.txt                (sex_matcher output)
+            pretext_to_asm/
+                2025-06-02T14:00:00/
+                    sDipInt39.1.hap1.curated.fa
+                    sDipInt39.1.curated.agp
+            hic_remapping/
+                2025-06-02T15:00:00/
+                    sDipInt39.1.hap1.hr.pretext         (remapped map)
+            .grit/
+                runs.jsonl                              (RunTracker log)
+    """
+    import json
+
+    mock_ctx.workdir = tmp_path
+    tol_id = mock_ctx.tol_id          # sDipInt39
+    tol_id_v = mock_ctx.tol_id_versioned  # sDipInt39.1
+
+    # setup outputs
+    (tmp_path / "original.fa").write_text(">seq1\nACGT\n")
+    (tmp_path / f"{tol_id_v}.hap1.hr.pretext").write_text("")
+
+    # find_reference output
+    ref_dir = tmp_path / "reference"
+    ref_dir.mkdir()
+    (ref_dir / "GCA_000001.fa").write_text(">ref\nACGT\n")
+
+    # sex_matcher output
+    sm_dir = tmp_path / "sex_matcher"
+    sm_dir.mkdir()
+    (sm_dir / f"Best_match_{tol_id}.txt").write_text("XX\n")
+
+    # pretext_to_asm run dir
+    pta_ts = "2025-06-02T14:00:00"
+    pta_dir = tmp_path / "pretext_to_asm" / pta_ts
+    pta_dir.mkdir(parents=True)
+    (pta_dir / f"{tol_id_v}.hap1.curated.fa").write_text(">curated\nACGT\n")
+    (pta_dir / f"{tol_id_v}.curated.agp").write_text("")
+
+    # hic_remapping run dir
+    hic_ts = "2025-06-02T15:00:00"
+    hic_dir = tmp_path / "hic_remapping" / hic_ts
+    hic_dir.mkdir(parents=True)
+    (hic_dir / f"{tol_id_v}.hap1.hr.pretext").write_text("")
+
+    # .grit/runs.jsonl
+    grit_dir = tmp_path / ".grit"
+    grit_dir.mkdir()
+    runs = [
+        {"step": "setup_curation", "timestamp": "2025-06-02T10:00:00", "status": "success",
+         "ticket_id": mock_ctx.ticket_id, "tol_id": tol_id, "run_dir": str(tmp_path)},
+        {"step": "pretext_to_asm", "timestamp": pta_ts, "status": "success",
+         "ticket_id": mock_ctx.ticket_id, "tol_id": tol_id, "run_dir": str(pta_dir)},
+        {"step": "hic_remapping", "timestamp": hic_ts, "status": "success",
+         "ticket_id": mock_ctx.ticket_id, "tol_id": tol_id, "run_dir": str(hic_dir)},
+    ]
+    (grit_dir / "runs.jsonl").write_text("\n".join(json.dumps(r) for r in runs) + "\n")
+
+    return tmp_path

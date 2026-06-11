@@ -86,8 +86,6 @@ def load_user_config(config_path: Path) -> dict:
 
 
 def build_context(state: GlobalState) -> CurationContext:
-    if not state.ticket:
-        raise click.UsageError("Missing option '--ticket' / '-t'.")
     user_config = load_user_config(Path(state.config_path))
     yaml_override = None
     if state.yaml:
