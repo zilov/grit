@@ -287,7 +287,7 @@ def _show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
 
     print_tip(
         f"To copy AGP from your local machine:\n"
-        f"  [bold cyan]scp ~/curations/work/{tol_id}/{tol_id}.agp "
+        f"  [bold cyan]scp ~/curations/work/{tol_id}/{tol_id}*.pretext.agp_1 "
         f"{farm_host}:{workdir}/[/bold cyan]"
     )
 
