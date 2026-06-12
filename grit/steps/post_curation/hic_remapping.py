@@ -88,7 +88,7 @@ def run_hic_remapping(ctx: CurationContext) -> None:
         log.info("Input FASTA: %s", hap1_fa)
 
     hic_cmd = (
-        f"cd {ctx.workdir} && "
+        f"cd {run_dir} && "
         f"{module_cmd('CURATIONPRETEXT')} && "
         f"curationpretext.sh -profile sanger,singularity"
         f" --map_order unsorted"
