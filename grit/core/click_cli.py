@@ -246,6 +246,8 @@ def _show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     table.add_column("Status")
     table.add_column("Job ID")
 
+    tol_id = ticket.get("tol_id", "")
+
     for step, entry in step_latest.items():
         status = entry.get("status", "")
         job_id = entry.get("job_id") or ""
@@ -262,6 +264,15 @@ def _show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
                 status = f"running ({bjobs_status})"
             elif bjobs_status == "gone":
                 status = "unknown (gone)"
+        # hic_remapping is async — check output files to enrich 'started' status
+        elif step == "hic_remapping" and status == "started" and not job_id:
+            run_dir_path = Path(entry.get("run_dir", ""))
+            if run_dir_path.exists() and any(
+                run_dir_path.glob(f"pretext_maps_processed/{tol_id}*hr.pretext")
+            ):
+                status = "success"
+            else:
+                status = "running"
 
         style = ""
         if "success" in status:
@@ -279,7 +290,6 @@ def _show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             job_id,
         )
 
-    tol_id = ticket.get("tol_id", "")
     agp_files = sorted(workdir.glob(f"{tol_id}*.pretext.agp_1"), key=lambda p: p.stat().st_mtime)
     if agp_files:
         import datetime

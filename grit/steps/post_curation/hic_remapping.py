@@ -50,6 +50,10 @@ def run_hic_remapping(ctx: CurationContext) -> None:
         prev_dir = ctx.tracker.latest_run_dir("hic_remapping")
         if prev_dir and any(prev_dir.glob(f"pretext_maps_processed/{ctx.tol_id}*hr.pretext")):
             log.info("HiC remapping already done — skipping: %s", prev_dir)
+            # Retroactively record success if the last log entry is still 'started'
+            last = ctx.tracker.history("hic_remapping")
+            if last and last[-1].get("status") == "started":
+                ctx.tracker.finish("hic_remapping", prev_dir, "success")
             print_done(f"Already done → {prev_dir}")
             return
 
@@ -101,8 +105,8 @@ def run_hic_remapping(ctx: CurationContext) -> None:
 
     try:
         _run(hic_cmd, ctx.print_only)
-        if ctx.tracker:
-            ctx.tracker.finish("hic_remapping", run_dir, "success")
+        # curationpretext.sh submits its own bsub jobs and returns immediately;
+        # actual success is recorded when output files appear (on re-run or via status check)
     except Exception:
         if ctx.tracker:
             ctx.tracker.finish("hic_remapping", run_dir, "failed")
