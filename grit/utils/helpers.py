@@ -79,6 +79,19 @@ def _submit_bsub(
     return output
 
 
+def _state_update_epilogue(workdir: Path, step: str, run_dir: Path) -> str:
+    """
+    Build the bsub -Ep epilogue command that calls `grit _state-update` when a job finishes.
+
+    Uses $LSB_JOB_EXIT_CODE (set by LSF) to determine success vs failed.
+    The `grit` command must be on $PATH on compute nodes.
+    """
+    return (
+        f"grit _state-update --workdir {workdir} --step {step} --run-dir {run_dir} "
+        f"--status $([ $LSB_JOB_EXIT_CODE -eq 0 ] && echo success || echo failed)"
+    )
+
+
 def _check_bjobs(job_ids: list[str]) -> dict[str, str]:
     """
     Query LSF for the status of the given job IDs.

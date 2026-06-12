@@ -8,7 +8,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _submit_bsub, build_bsub_opts
+from grit.utils.helpers import _state_update_epilogue, _submit_bsub, build_bsub_opts
 from grit.utils.output import print_done, print_next_step, print_step_header
 
 log = logging.getLogger(__name__)
@@ -40,7 +40,8 @@ def run_qv(ctx: CurationContext) -> None:
 
     inner_cmd = f"cd {ctx.workdir} && kmer_completeness.bash {ctx.tol_id} {ctx.release_version}"
     bsub_opts = build_bsub_opts(memory_mb=8000, output=str(ctx.workdir / "qv.log"))
-    job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only)
+    epilogue = _state_update_epilogue(ctx.workdir, "qv", run_dir) if run_dir else None
+    job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
 
     if ctx.tracker and run_dir and job_id:
         ctx.tracker.record_job("qv", run_dir, job_id)

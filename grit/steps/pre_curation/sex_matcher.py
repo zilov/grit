@@ -8,7 +8,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _submit_bsub, build_bsub_opts, require_workdir
+from grit.utils.helpers import _state_update_epilogue, _submit_bsub, build_bsub_opts, require_workdir
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
     console,
@@ -83,7 +83,8 @@ def run_sex_matcher(ctx: CurationContext) -> None:
         error=str(ctx.workdir / "sex_matcher.err"),
     )
     inner_cmd = f"{module_cmd('GRIT')} && cd {ctx.workdir} && {_SEX_MATCHER_SCRIPT}"
-    job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only)
+    epilogue = _state_update_epilogue(ctx.workdir, "sex_matcher", run_dir) if run_dir else None
+    job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
 
     if ctx.tracker and run_dir and job_id:
         ctx.tracker.record_job("sex_matcher", run_dir, job_id)

@@ -104,9 +104,14 @@ def run_hic_remapping(ctx: CurationContext) -> None:
     hic_cmd += " -resume"
 
     try:
-        _run(hic_cmd, ctx.print_only)
-        # curationpretext.sh submits its own bsub jobs and returns immediately;
-        # actual success is recorded when output files appear (on re-run or via status check)
+        output = _run(hic_cmd, ctx.print_only)
+        # curationpretext.sh prints the bsub job ID — parse and record it so
+        # grit status can poll bjobs for live status while the job runs
+        if ctx.tracker and run_dir and output and "Job <" in output:
+            import re
+            m = re.search(r"Job <(\d+)>", output)
+            if m:
+                ctx.tracker.record_job("hic_remapping", run_dir, m.group(1))
     except Exception:
         if ctx.tracker:
             ctx.tracker.finish("hic_remapping", run_dir, "failed")
