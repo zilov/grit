@@ -178,13 +178,16 @@ def _show_global_status(registry) -> None:
                 last_entry = history[-1]
                 last_step = last_entry.get("step", "")
                 last_run = last_entry.get("timestamp", "")
+            status_display = t.get("status", "")
+        else:
+            status_display = "[red]workdir missing[/red]"
         table.add_row(
             t["ticket_id"],
             t.get("tol_id", ""),
             t.get("species", ""),
             last_step,
             last_run,
-            t.get("status", ""),
+            status_display,
         )
 
     console.print(table)
