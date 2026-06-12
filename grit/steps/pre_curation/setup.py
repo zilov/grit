@@ -81,6 +81,9 @@ def setup_curation(ctx: CurationContext) -> None:
         decont_hap1 = _sort_by_mtime(hap1_files)[0]
 
         hap2_files = glob.glob(hap2_pattern)
+        if not hap2_files:
+            # some primary assemblies use 'haplotigs' rather than 'alternate'
+            hap2_files = glob.glob(f"{ctx.assembly_draft_dir}/{ctx.tol_id}*haplotigs.decontaminated.fa*")
         if hap2_files:
             decont_hap2 = _sort_by_mtime(hap2_files)[0]
         else:
