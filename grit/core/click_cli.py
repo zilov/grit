@@ -144,7 +144,8 @@ def status_cmd(ctx, ticket):
     registry.refresh_statuses()
 
     if ticket:
-        _show_ticket_history(registry, ticket)
+        user_config = load_user_config(Path(ctx.obj.config_path))
+        _show_ticket_history(registry, ticket, user_config)
     else:
         _show_global_status(registry)
 
@@ -199,7 +200,7 @@ def _show_global_status(registry) -> None:
             console.print(f"  [dim]{t['ticket_id']} ({t.get('tol_id', '')}) — {t.get('status', '')}[/dim]")
 
 
-def _show_ticket_history(registry, ticket_id: str) -> None:
+def _show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     """Print per-step run history for a single ticket."""
     from grit.core.run_tracker import RunTracker
     from grit.utils.helpers import _check_bjobs
@@ -279,6 +280,26 @@ def _show_ticket_history(registry, ticket_id: str) -> None:
         )
 
     console.print(table)
+
+    tol_id = ticket.get("tol_id", "")
+    farm_host = user_config.get("farm_host", "<farm_host>")
+    from grit.utils.output import print_tip
+
+    print_tip(
+        f"To copy AGP from your local machine:\n"
+        f"  [bold cyan]scp ~/curations/work/{tol_id}/{tol_id}.agp "
+        f"{farm_host}:{workdir}/[/bold cyan]"
+    )
+
+    last_success = next(
+        (r["step"] for r in reversed(history) if r.get("status") == "success"),
+        None,
+    )
+    if last_success == "setup_curation":
+        print_tip(
+            f"Curation done? Run post-curation steps:\n"
+            f"  [bold cyan]grit post-curation -t {ticket_id}[/bold cyan]"
+        )
 
 
 @cli.command("_state-update", hidden=True)
