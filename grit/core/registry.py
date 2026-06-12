@@ -144,9 +144,10 @@ class RegistryManager:
                 continue
             last_step = success_steps[-1]
             new_status = STEP_TO_STATUS.get(last_step, ticket["status"])
-            # If AGP already copied to workdir, treat as agp_copied step
+            # If AGP already copied to workdir and no post-curation steps ran yet,
+            # promote to post_curation — but don't override progress from later steps
             tol_id = ticket.get("tol_id", "")
-            if tol_id and list(workdir.glob(f"{tol_id}*.pretext.agp_1")):
+            if new_status == "in_curation" and tol_id and list(workdir.glob(f"{tol_id}*.pretext.agp_1")):
                 new_status = STEP_TO_STATUS.get("agp_copied", new_status)
             if new_status != ticket["status"]:
                 ticket["status"] = new_status
