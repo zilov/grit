@@ -305,7 +305,7 @@ def _show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     )
     if last_success == "setup_curation":
         print_tip(
-            f"Curation done? Run post-curation steps:\n"
+            f"Curation done and AGP copied? Run post-curation steps:\n"
             f"  [bold cyan]grit post-curation -t {ticket_id}[/bold cyan]"
         )
 
