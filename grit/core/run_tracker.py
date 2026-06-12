@@ -53,7 +53,7 @@ class RunTracker:
         if not self.print_only:
             if create_dir:
                 run_dir.mkdir(parents=True, exist_ok=True)
-            self.grit_dir.mkdir(exist_ok=True)
+            self.grit_dir.mkdir(parents=True, exist_ok=True)
             self._append(
                 {
                     "step": step,
