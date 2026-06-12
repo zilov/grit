@@ -279,9 +279,17 @@ def _show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             job_id,
         )
 
+    tol_id = ticket.get("tol_id", "")
+    agp_files = sorted(workdir.glob(f"{tol_id}*.pretext.agp_1"), key=lambda p: p.stat().st_mtime)
+    if agp_files:
+        import datetime
+        agp_mtime = datetime.datetime.fromtimestamp(agp_files[-1].stat().st_mtime).strftime("%Y-%m-%dT%H:%M:%S")
+        table.add_row("agp_copied", "-", agp_mtime, "[green]found[/green]", "")
+    else:
+        table.add_row("agp_copied", "-", "", "[yellow]missing[/yellow]", "")
+
     console.print(table)
 
-    tol_id = ticket.get("tol_id", "")
     farm_host = user_config.get("farm_host", "<farm_host>")
     from grit.utils.output import print_tip
 
