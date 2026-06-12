@@ -38,9 +38,12 @@ class RunTracker:
     # Core API
     # ------------------------------------------------------------------
 
-    def start(self, step: str, ticket_id: str, tol_id: str) -> Path:
+    def start(self, step: str, ticket_id: str, tol_id: str, *, create_dir: bool = True) -> Path:
         """
         Record step start; create and return the timestamped run_dir.
+
+        Pass ``create_dir=False`` for steps that place output directly in workdir
+        and don't need a dedicated run subdirectory.
 
         In print_only mode: returns a virtual path without touching the filesystem.
         """
@@ -48,7 +51,8 @@ class RunTracker:
         run_dir = self.workdir / step / ts
 
         if not self.print_only:
-            run_dir.mkdir(parents=True, exist_ok=True)
+            if create_dir:
+                run_dir.mkdir(parents=True, exist_ok=True)
             self.grit_dir.mkdir(exist_ok=True)
             self._append(
                 {

@@ -264,7 +264,7 @@ def run_setup(ctx: CurationContext) -> None:
 
     # Track execution
     if ctx.tracker:
-        run_dir = ctx.tracker.start("setup_curation", ctx.ticket_id, ctx.tol_id)
+        run_dir = ctx.tracker.start("setup_curation", ctx.ticket_id, ctx.tol_id, create_dir=False)
 
     print_curation_summary(ctx)
     try:
