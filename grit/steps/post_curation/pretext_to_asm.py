@@ -46,13 +46,24 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
     log.info("pretext-to-asm | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Pretext to ASM")
 
-    # Check for existing successful run
+    # Check for existing successful run; re-run if AGP is newer than curated FASTA
     if not ctx.print_only and ctx.tracker:
         prev_dir = ctx.tracker.latest_run_dir("pretext_to_asm")
-        if prev_dir and any(prev_dir.glob(f"{ctx.tol_id}*.curated.fa")):
-            log.info("Curated FASTA already exists — skipping: %s", prev_dir)
-            print_done(f"Already done → {prev_dir}")
-            return
+        curated_fas = list(prev_dir.glob(f"{ctx.tol_id}*.curated.fa")) if prev_dir else []
+        if curated_fas:
+            agp_files = glob.glob(str(ctx.workdir / f"{ctx.tol_id}*.pretext.agp_1"))
+            if not agp_files:
+                agp_files = glob.glob(str(ctx.workdir / f"{ctx.tol_id}*.agp*"))
+            curated_mtime = min(f.stat().st_mtime for f in curated_fas)
+            agp_newer = agp_files and max(
+                Path(f).stat().st_mtime for f in agp_files
+            ) > curated_mtime
+            if agp_newer:
+                log.info("AGP is newer than curated FASTA — re-running pretext_to_asm")
+            else:
+                log.info("Curated FASTA already exists — skipping: %s", prev_dir)
+                print_done(f"Already done → {prev_dir}")
+                return
 
     # Start tracking
     run_dir = ctx.tracker.start("pretext_to_asm", ctx.ticket_id, ctx.tol_id) if ctx.tracker else ctx.workdir / "pretext_to_asm" / "untracked"

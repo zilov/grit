@@ -45,17 +45,30 @@ def run_hic_remapping(ctx: CurationContext) -> None:
     log.info("hic-remapping | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "HiC remapping")
 
-    # Check for existing successful run
+    # Check for existing successful run; re-run if curated FASTA is newer than remapped pretext
     if not ctx.print_only and ctx.tracker:
         prev_dir = ctx.tracker.latest_run_dir("hic_remapping")
-        if prev_dir and any(prev_dir.glob(f"pretext_maps_processed/{ctx.tol_id}*hr.pretext")):
-            log.info("HiC remapping already done — skipping: %s", prev_dir)
-            # Retroactively record success if the last log entry is still 'started'
-            last = ctx.tracker.history("hic_remapping")
-            if last and last[-1].get("status") == "started":
-                ctx.tracker.finish("hic_remapping", prev_dir, "success")
-            print_done(f"Already done → {prev_dir}")
-            return
+        hr_pretexts = (
+            list(prev_dir.glob(f"pretext_maps_processed/{ctx.tol_id}*hr.pretext"))
+            if prev_dir else []
+        )
+        if hr_pretexts:
+            pta_dir = ctx.tracker.latest_run_dir("pretext_to_asm") or ctx.workdir
+            curated_fas = list(pta_dir.glob(f"{ctx.tol_id}*.curated.fa"))
+            pretext_mtime = min(f.stat().st_mtime for f in hr_pretexts)
+            fa_newer = curated_fas and max(
+                f.stat().st_mtime for f in curated_fas
+            ) > pretext_mtime
+            if fa_newer:
+                log.info("Curated FASTA is newer than remapped pretext — re-running hic_remapping")
+            else:
+                log.info("HiC remapping already done — skipping: %s", prev_dir)
+                # Retroactively record success if the last log entry is still 'started'
+                last = ctx.tracker.history("hic_remapping")
+                if last and last[-1].get("status") == "started":
+                    ctx.tracker.finish("hic_remapping", prev_dir, "success")
+                print_done(f"Already done → {prev_dir}")
+                return
 
     # Start tracking — run_dir is the nextflow outdir
     run_dir = ctx.tracker.start("hic_remapping", ctx.ticket_id, ctx.tol_id) if ctx.tracker else ctx.workdir / "hic_remapping" / "untracked"
