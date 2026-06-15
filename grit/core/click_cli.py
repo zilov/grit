@@ -247,6 +247,7 @@ def _show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     table.add_column("Job ID")
 
     tol_id = ticket.get("tol_id", "")
+    hic_success_run_dir: Path | None = None
 
     for step, entry in step_latest.items():
         status = entry.get("status", "")
@@ -277,6 +278,9 @@ def _show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             else:
                 status = "running"
 
+        if step == "hic_remapping" and status == "success":
+            hic_success_run_dir = Path(entry.get("run_dir", ""))
+
         style = ""
         if "success" in status:
             style = "green"
@@ -305,6 +309,14 @@ def _show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
 
     farm_host = user_config.get("farm_host", "<farm_host>")
     from grit.utils.output import print_tip
+
+    if hic_success_run_dir:
+        remapped_pattern = f"{hic_success_run_dir}/pretext_maps_processed/{tol_id}*normal.pretext"
+        print_tip(
+            f"To copy remapped pretext map to your local machine:\n"
+            f"  [bold cyan]scp {farm_host}:{remapped_pattern} "
+            f"~/curations/work/{tol_id}/[/bold cyan]"
+        )
 
     print_tip(
         f"To copy AGP from your local machine:\n"
