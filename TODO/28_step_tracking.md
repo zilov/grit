@@ -1,5 +1,8 @@
 ## 28. Step Run Tracking
 
+> **STATUS: ✅ РЕАЛИЗОВАНО** — поглощено задачей 32. Ветка `claude/hungry-booth-48f1a3`, коммит `625da0e`.
+> Реализовано в `grit/core/run_tracker.py`.
+
 ### Goal
 
 - Record every step execution with timestamp, inputs, outputs, and exit status.
@@ -11,17 +14,17 @@
 ```
 {workdir}/
     pretext_to_asm/
-        2025-06-02T14:05:22/        # first run — outputs here
+        2025-06-02T14_05_22/        # first run — outputs here
             xbLimHian1.fa
             xbLimHian1.agp
-        2025-06-02T17:30:11/        # second run
+        2025-06-02T17_30_11/        # second run
             xbLimHian1.fa
             xbLimHian1.agp
     .grit/
         runs.jsonl                  # append-only execution log
         pretext_to_asm/
-            2025-06-02T14:05:22.log # copy of stdout/stderr per run
-            2025-06-02T17:30:11.log
+            2025-06-02T14_05_22.log # copy of stdout/stderr per run
+            2025-06-02T17_30_11.log
 ```
 
 - `runs.jsonl`: one JSON object per line. Fields: `step`, `timestamp`, `status` (`started` / `success` / `failed`), `ticket_id`, `tol_id`, `run_dir`.
@@ -49,7 +52,7 @@ class RunTracker:
         self.grit_dir.mkdir(exist_ok=True)
 
     def start(self, step: str, ticket_id: str, tol_id: str) -> Path:
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H_%M_%S")
         run_dir = self.workdir / step / ts
         run_dir.mkdir(parents=True, exist_ok=True)
         self._append({"step": step, "timestamp": ts, "status": "started",
@@ -58,7 +61,7 @@ class RunTracker:
         return run_dir
 
     def finish(self, step: str, run_dir: Path, status: str) -> None:
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H_%M_%S")
         self._append({"step": step, "timestamp": ts, "status": status,
                       "run_dir": str(run_dir)})
 
@@ -93,7 +96,7 @@ class RunTracker:
 def run_pretext_to_asm(ctx: CurationContext) -> None:
     tracker = RunTracker(ctx.workdir)
     run_dir = tracker.start("pretext_to_asm", ctx.ticket_id, ctx.tol_id)
-    # run_dir = workdir/pretext_to_asm/2025-06-02T17:30:11/
+    # run_dir = workdir/pretext_to_asm/2025-06-02T17_30_11/
     try:
         ...
         _run(cmd_with_output_to(run_dir), log_file=tracker.log_path("pretext_to_asm", run_dir))
@@ -117,9 +120,9 @@ For a CLI tool invoked one-at-a-time, appending a single JSON line is atomic eno
 $ grit status -t RC-1234
 step                  runs  last run              last status   outputs
 --------------------  ----  --------------------  -----------   -------
-setup_curation           1  2025-06-02T10:12:01   success       ok
-pretext_to_asm           2  2025-06-02T17:30:11   success       MISSING
-hic_remapping            1  2025-06-02T10:45:00   failed        —
+setup_curation           1  2025-06-02T10_12_01   success       ok
+pretext_to_asm           2  2025-06-02T17_30_11   success       MISSING
+hic_remapping            1  2025-06-02T10_45_00   failed        —
 ```
 
 - Filtered by `ticket_id` — with 20+ tickets in flight, an unfiltered view would be noisy.
