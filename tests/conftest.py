@@ -104,11 +104,11 @@ def fake_workdir(tmp_path, mock_ctx):
             sex_matcher/
                 Best_match_sDipInt39.txt                (sex_matcher output)
             pretext_to_asm/
-                2025-06-02T14:00:00/
+                2025-06-02T14_00_00/
                     sDipInt39.1.hap1.curated.fa
                     sDipInt39.1.curated.agp
             hic_remapping/
-                2025-06-02T15:00:00/
+                2025-06-02T15_00_00/
                     sDipInt39.1.hap1.hr.pretext         (remapped map)
             .grit/
                 runs.jsonl                              (RunTracker log)
@@ -134,14 +134,14 @@ def fake_workdir(tmp_path, mock_ctx):
     (sm_dir / f"Best_match_{tol_id}.txt").write_text("XX\n")
 
     # pretext_to_asm run dir
-    pta_ts = "2025-06-02T14:00:00"
+    pta_ts = "2025-06-02T14_00_00"
     pta_dir = tmp_path / "pretext_to_asm" / pta_ts
     pta_dir.mkdir(parents=True)
     (pta_dir / f"{tol_id_v}.hap1.curated.fa").write_text(">curated\nACGT\n")
     (pta_dir / f"{tol_id_v}.curated.agp").write_text("")
 
     # hic_remapping run dir
-    hic_ts = "2025-06-02T15:00:00"
+    hic_ts = "2025-06-02T15_00_00"
     hic_dir = tmp_path / "hic_remapping" / hic_ts
     hic_dir.mkdir(parents=True)
     (hic_dir / f"{tol_id_v}.hap1.hr.pretext").write_text("")
@@ -150,7 +150,7 @@ def fake_workdir(tmp_path, mock_ctx):
     grit_dir = tmp_path / ".grit"
     grit_dir.mkdir()
     runs = [
-        {"step": "setup_curation", "timestamp": "2025-06-02T10:00:00", "status": "success",
+        {"step": "setup_curation", "timestamp": "2025-06-02T10_00_00", "status": "success",
          "ticket_id": mock_ctx.ticket_id, "tol_id": tol_id, "run_dir": str(tmp_path)},
         {"step": "pretext_to_asm", "timestamp": pta_ts, "status": "success",
          "ticket_id": mock_ctx.ticket_id, "tol_id": tol_id, "run_dir": str(pta_dir)},

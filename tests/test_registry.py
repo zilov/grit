@@ -91,11 +91,11 @@ def test_refresh_statuses(reg, tmp_path):
     grit_dir = workdir / ".grit"
     grit_dir.mkdir()
     runs = [
-        {"step": "setup_curation", "timestamp": "2025-06-01T10:00:00", "status": "success",
+        {"step": "setup_curation", "timestamp": "2025-06-01T10_00_00", "status": "success",
          "ticket_id": "RC-1234", "tol_id": "sDipInt39", "run_dir": str(workdir)},
-        {"step": "pretext_to_asm", "timestamp": "2025-06-01T12:00:00", "status": "success",
+        {"step": "pretext_to_asm", "timestamp": "2025-06-01T12_00_00", "status": "success",
          "ticket_id": "RC-1234", "tol_id": "sDipInt39",
-         "run_dir": str(workdir / "pretext_to_asm" / "2025-06-01T12:00:00")},
+         "run_dir": str(workdir / "pretext_to_asm" / "2025-06-01T12_00_00")},
     ]
     (grit_dir / "runs.jsonl").write_text("\n".join(_json.dumps(r) for r in runs) + "\n")
 

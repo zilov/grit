@@ -47,7 +47,7 @@ class RunTracker:
 
         In print_only mode: returns a virtual path without touching the filesystem.
         """
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H_%M_%S")
         run_dir = self.workdir / step / ts
 
         if not self.print_only:
@@ -78,7 +78,7 @@ class RunTracker:
         _state-update CLI command will write the final 'success'/'failed' entry
         when the job's -Ep epilogue fires.
         """
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H_%M_%S")
         record: dict = {
             "step": step,
             "timestamp": ts,
