@@ -6,6 +6,8 @@ from pathlib import Path
 
 import rich_click as click
 
+_REPO_ROOT = Path(__file__).parent.parent.parent
+
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.helpers import _state_update_epilogue, _submit_bsub, build_bsub_opts, require_workdir
@@ -26,8 +28,8 @@ log = logging.getLogger(__name__)
 # tol_id prefixes that typically require sex-matching (insects and similar)
 _INSECT_PREFIXES = ("ic", "il", "id")
 
-# Absolute path to the sex_matcher shell script on the farm
-_SEX_MATCHER_SCRIPT = "/software/grit/projects/vgp_curation_scripts/sex_matcher.sh"
+# Path to the bundled sex-matcher script (relative to repo root)
+_SEX_MATCHER_SCRIPT = _REPO_ROOT / "scripts" / "sex-matcher.sh"
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +111,7 @@ def run_sex_matcher(ctx: CurationContext) -> None:
         output=str(work_dir / "sex_matcher.out"),
         error=str(work_dir / "sex_matcher.err"),
     )
-    inner_cmd = f"{module_cmd('GRIT')} && cd {work_dir} && {_SEX_MATCHER_SCRIPT}"
+    inner_cmd = f"{module_cmd('GRIT')} && cd {work_dir} && bash {_SEX_MATCHER_SCRIPT} {ctx.tol_id}"
     epilogue = _state_update_epilogue(ctx.workdir, "sex_matcher", run_dir) if run_dir else None
     job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
 
