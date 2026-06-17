@@ -102,18 +102,15 @@ def run_sex_matcher(ctx: CurationContext) -> None:
         ctx.tracker.record_job("sex_matcher", run_dir, job_id)
 
     if not ctx.print_only:
-        # Look for the Best_match* output file produced by sex_matcher
-        matches = glob.glob(str(ctx.workdir / "Best_match*"))
+        matches = glob.glob(str(work_dir / "Best_match*"))
         if matches:
             best_match = Path(sorted(matches)[0])
             log.info("Best match file: %s", best_match)
             _print_sex_summary(best_match)
         else:
-            log.warning(
-                "No Best_match* file found in %s. "
-                "Sex-matcher may not have produced output yet — "
-                "re-run after the job completes.",
-                ctx.workdir,
+            log.info(
+                "Job submitted — output will appear in %s once the job completes.",
+                work_dir,
             )
 
     print_done("Sex-matcher step complete.")
