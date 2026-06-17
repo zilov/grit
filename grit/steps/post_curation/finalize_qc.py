@@ -122,8 +122,11 @@ def finalize_for_qc(ctx: CurationContext) -> None:
 
     print_done("All files copied to curated directory")
     console.print(
-        "\n[bold yellow]⚠  Remember to move the ticket to 'Curation QC' in Jira![/bold yellow]"
+        "\n[bold yellow]⚠  Please don't forget about Submission Text and attaching latest savestate to the ticket, curation summary:[/bold yellow]"
     )
+
+    from grit.utils.output import print_curation_results
+    print_curation_results(ctx.tracker, ctx.workdir, ctx.tol_id)
 
 
 # ---------------------------------------------------------------------------
