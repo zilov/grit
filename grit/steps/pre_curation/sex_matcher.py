@@ -6,7 +6,7 @@ from pathlib import Path
 
 import rich_click as click
 
-_REPO_ROOT = Path(__file__).parent.parent.parent
+_REPO_ROOT = Path(__file__).parent.parent.parent.parent
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
