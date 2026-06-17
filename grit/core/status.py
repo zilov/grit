@@ -176,13 +176,13 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
         )
         print_tip(
             f"To copy remapped pretext map to your local machine:\n"
-            f"  [bold cyan]scp {farm_host}:{remapped_pattern} "
+            f"[bold cyan]scp {farm_host}:'{remapped_pattern}' "
             f"~/curations/work/{tol_id}/[/bold cyan]"
         )
 
     print_tip(
         f"To copy AGP from your local machine:\n"
-        f"  [bold cyan]scp ~/curations/work/{tol_id}/{tol_id}*.pretext.agp_1 "
+        f"[bold cyan]scp ~/curations/work/{tol_id}/{tol_id}*.pretext.agp_1 "
         f"{farm_host}:{workdir}/[/bold cyan]"
     )
 
@@ -193,17 +193,17 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     if last_success == "setup_curation":
         print_tip(
             f"Curation done and AGP copied? Run post-curation steps:\n"
-            f"  [bold cyan]grit post-curation -t {ticket_id}[/bold cyan]"
+            f"[bold cyan]grit post-curation -t {ticket_id}[/bold cyan]"
         )
     from grit.utils.helpers import agp_newer_than_curated_fa
     pta_dir = tracker.latest_run_dir("pretext_to_asm")
     if agp_newer_than_curated_fa(workdir, tol_id, pta_dir):
         print_tip(
             f"AGP is newer than curated FASTA — re-run all post-curation steps:\n"
-            f"  [bold cyan]grit post-curation -t {ticket_id}[/bold cyan]"
+            f"[bold cyan]grit post-curation -t {ticket_id}[/bold cyan]"
         )
     elif hic_success_run_dir:
         print_tip(
             f"HiC remapping done — next step:\n"
-            f"  [bold cyan]grit finalize-qc -t {ticket_id}[/bold cyan]"
+            f"[bold cyan]grit finalize-qc -t {ticket_id}[/bold cyan]"
         )
