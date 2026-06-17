@@ -115,11 +115,6 @@ def finalize_for_qc(ctx: CurationContext) -> None:
         console.print("\n[bold]Running QV analysis (merquryk not found):[/bold]")
         _run(qv_cmd, ctx.print_only)
 
-    # 5. Mark done in global registry
-    if not ctx.print_only:
-        from grit.core.registry import RegistryManager
-        RegistryManager().mark_done(ctx.ticket_id)
-
     print_done("All files copied to curated directory")
     console.print(
         "\n[bold yellow]⚠  Please don't forget about Submission Text and attaching latest savestate to the ticket, curation summary:[/bold yellow]"
