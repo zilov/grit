@@ -196,7 +196,15 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             f"  [bold cyan]grit post-curation -t {ticket_id}[/bold cyan]"
         )
     if hic_success_run_dir:
-        print_tip(
-            f"HiC remapping done — next step:\n"
-            f"  [bold cyan]grit finalize-qc -t {ticket_id}[/bold cyan]"
-        )
+        from grit.utils.helpers import agp_newer_than_curated_fa
+        pta_dir = tracker.latest_run_dir("pretext_to_asm")
+        if agp_newer_than_curated_fa(workdir, tol_id, pta_dir):
+            print_tip(
+                f"AGP is newer than curated FASTA — re-run assembly steps:\n"
+                f"  [bold cyan]grit post-curation -t {ticket_id}[/bold cyan]"
+            )
+        else:
+            print_tip(
+                f"HiC remapping done — next step:\n"
+                f"  [bold cyan]grit finalize-qc -t {ticket_id}[/bold cyan]"
+            )

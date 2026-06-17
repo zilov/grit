@@ -170,6 +170,17 @@ def build_bsub_opts(
     return " ".join(parts)
 
 
+def agp_newer_than_curated_fa(workdir: Path, tol_id: str, pta_dir: Path | None) -> bool:
+    """Return True if the AGP in workdir is newer than the curated FASTA in pta_dir."""
+    curated_fas = list(pta_dir.glob(f"{tol_id}*.curated.fa")) if pta_dir else []
+    if not curated_fas:
+        return False
+    agp_files = list(workdir.glob(f"{tol_id}*.pretext.agp_1")) or list(workdir.glob(f"{tol_id}*.agp*"))
+    if not agp_files:
+        return False
+    return max(f.stat().st_mtime for f in agp_files) > min(f.stat().st_mtime for f in curated_fas)
+
+
 def _find_pretext_map_in_workdir(ctx: CurationContext) -> Path:
     """
     Returns the HR pretext map that was copied to workdir.

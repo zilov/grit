@@ -10,7 +10,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run
+from grit.utils.helpers import _run, agp_newer_than_curated_fa
 from grit.utils.modules import module_cmd
 from grit.utils.output import print_done, print_next_step, print_step_header
 
@@ -50,16 +50,8 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
     # Check for existing successful run; re-run if AGP is newer than curated FASTA
     if not ctx.print_only and ctx.tracker:
         prev_dir = ctx.tracker.latest_run_dir("pretext_to_asm")
-        curated_fas = list(prev_dir.glob(f"{ctx.tol_id}*.curated.fa")) if prev_dir else []
-        if curated_fas:
-            agp_files = glob.glob(str(ctx.workdir / f"{ctx.tol_id}*.pretext.agp_1"))
-            if not agp_files:
-                agp_files = glob.glob(str(ctx.workdir / f"{ctx.tol_id}*.agp*"))
-            curated_mtime = min(f.stat().st_mtime for f in curated_fas)
-            agp_newer = agp_files and max(
-                Path(f).stat().st_mtime for f in agp_files
-            ) > curated_mtime
-            if agp_newer:
+        if prev_dir and list(prev_dir.glob(f"{ctx.tol_id}*.curated.fa")):
+            if agp_newer_than_curated_fa(ctx.workdir, ctx.tol_id, prev_dir):
                 log.info("AGP is newer than curated FASTA — re-running pretext_to_asm")
             else:
                 log.info("Curated FASTA already exists — skipping: %s", prev_dir)
