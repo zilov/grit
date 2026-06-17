@@ -77,6 +77,21 @@ def run_sex_matcher(ctx: CurationContext) -> None:
 
     require_workdir(ctx)
 
+    if not ctx.print_only and ctx.tracker:
+        history = ctx.tracker.history("sex_matcher")
+        if history:
+            last = history[-1]
+            if last["status"] == "success":
+                print_done(f"Already done → {last['run_dir']}")
+                return
+            if last["status"] == "started":
+                log.warning(
+                    "sex_matcher job already submitted and may still be running — skipping. "
+                    "Run dir: %s",
+                    last.get("run_dir"),
+                )
+                return
+
     run_dir = ctx.tracker.start("sex_matcher", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
     work_dir = run_dir if run_dir else ctx.workdir
 
