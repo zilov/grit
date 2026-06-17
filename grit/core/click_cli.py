@@ -306,6 +306,9 @@ def _show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
 
     console.print(table)
 
+    from grit.utils.output import print_curation_results
+    print_curation_results(tracker, workdir, tol_id)
+
     farm_host = user_config.get("farm_host", "<farm_host>")
     from grit.utils.output import print_tip
 
