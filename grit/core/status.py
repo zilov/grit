@@ -195,3 +195,8 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             f"Curation done and AGP copied? Run post-curation steps:\n"
             f"  [bold cyan]grit post-curation -t {ticket_id}[/bold cyan]"
         )
+    if hic_success_run_dir:
+        print_tip(
+            f"HiC remapping done — next step:\n"
+            f"  [bold cyan]grit finalize-qc -t {ticket_id}[/bold cyan]"
+        )
