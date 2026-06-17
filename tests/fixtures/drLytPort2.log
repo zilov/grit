@@ -1,0 +1,84 @@
+Pretext resolution = 4,494 bp per texel
+
+Contig:
+          862,620  HAP1_SCAFFOLD_1:18808022-19670641(+)
+cut into:
+          419,418  HAP1_SCAFFOLD_1:18808022-19227439(+) Cut
+          443,202  HAP1_SCAFFOLD_1:19227440-19670641(+) Cut
+
+Contig:
+       18,777,361  HAP1_SCAFFOLD_1:1-18777361(+)
+cut into:
+       18,346,518  HAP1_SCAFFOLD_1:1-18346518(+) Cut
+          430,843  HAP1_SCAFFOLD_1:18346519-18777361(+) Cut
+
+Contig:
+        6,283,247  HAP1_SCAFFOLD_1:41102878-47386124(+)
+cut into:
+        6,264,580  HAP1_SCAFFOLD_1:41102878-47367457(+) Cut
+           18,667  HAP1_SCAFFOLD_1:47367458-47386124(+) Cut
+
+Contig:
+        8,041,294  HAP1_SCAFFOLD_3:18247101-26288394(+)
+cut into:
+        7,708,594  HAP1_SCAFFOLD_3:18247101-25955694(+) Cut
+          332,700  HAP1_SCAFFOLD_3:25955695-26288394(+) Cut
+
+Contig:
+       18,247,000  HAP1_SCAFFOLD_3:1-18247000(+)
+cut into:
+       16,049,832  HAP1_SCAFFOLD_3:1-16049832(+) Cut
+          152,813  HAP1_SCAFFOLD_3:16049833-16202645(+) Cut
+           62,923  HAP1_SCAFFOLD_3:16202646-16265568(+) Cut
+        1,388,798  HAP1_SCAFFOLD_3:16265569-17654366(+) Cut
+          314,615  HAP1_SCAFFOLD_3:17654367-17968981(+) Cut
+          278,019  HAP1_SCAFFOLD_3:17968982-18247000(+) Cut
+
+Contig:
+       18,595,054  HAP1_SCAFFOLD_4:1-18595054(+)
+cut into:
+           13,483  HAP1_SCAFFOLD_4:1-13483(+) Cut
+       18,581,571  HAP1_SCAFFOLD_4:13484-18595054(+) Cut
+
+Contig:
+       25,196,739  HAP1_SCAFFOLD_4:18595155-43791893(+)
+cut into:
+        3,225,607  HAP1_SCAFFOLD_4:18595155-21820761(+) Cut
+        1,591,050  HAP1_SCAFFOLD_4:21820762-23411811(+) Cut
+       20,380,082  HAP1_SCAFFOLD_4:23411812-43791893(+) Cut
+
+
+drLytPort2.1.primary
+        238,661,744  bp sequence (minus gaps)
+  Autosomes:
+    n = 7
+         51,895,371  SUPER_1
+                ...  ...
+             13,483  SUPER_7
+        238,657,744  bp total
+  Unplaced:
+    n = 3
+              2,000  HAP1_SCAFFOLD_2167
+              1,000  HAP1_SCAFFOLD_2182
+              1,000  HAP1_SCAFFOLD_2193
+              4,000  bp total
+
+drLytPort2.1.contaminants
+         13,384,881  bp sequence (minus gaps)
+    n = 269
+            279,683  HAP1_SCAFFOLD_29
+                ...  ...
+              2,000  HAP1_SCAFFOLD_2169
+         13,384,881  bp total
+
+drLytPort2.1.all_haplotigs
+         42,409,339  bp sequence (minus gaps)
+    n = 890
+          1,994,700  HAP2_SCAFFOLD_5
+                ...  ...
+              3,338  HAP2_SCAFFOLD_3223
+         42,409,339  bp total
+
+Curation made 12 cuts in contigs, 14 breaks at gaps and 25 joins
+Assembly placed in chromosomes = 81.1%
+Interventions per Gbp = 132.448
