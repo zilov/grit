@@ -91,8 +91,8 @@ def run_sex_matcher(ctx: CurationContext) -> None:
         memory_mb=80000,
         cores=32,
         group="team135",
-        output=str(ctx.workdir / "sex_matcher.out"),
-        error=str(ctx.workdir / "sex_matcher.err"),
+        output=str(work_dir / "sex_matcher.out"),
+        error=str(work_dir / "sex_matcher.err"),
     )
     inner_cmd = f"{module_cmd('GRIT')} && cd {work_dir} && {_SEX_MATCHER_SCRIPT}"
     epilogue = _state_update_epilogue(ctx.workdir, "sex_matcher", run_dir) if run_dir else None
