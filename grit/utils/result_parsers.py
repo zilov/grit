@@ -19,16 +19,16 @@ class CurationResults:
     breaks: int | None = None
     joins: int | None = None
     sex_matches: list[tuple[str, str]] = field(default_factory=list)  # (scaffold, count)
-    qv_rows: list[tuple[str, str]] = field(default_factory=list)       # (assembly, QV)
-    completeness_rows: list[tuple[str, str]] = field(default_factory=list)  # (assembly, %)
+    qv_text: str | None = None          # raw file content including header
+    completeness_text: str | None = None  # raw file content including header
 
     def has_any(self) -> bool:
         return any([
             self.chromosomes_total is not None,
             self.cuts is not None,
             self.sex_matches,
-            self.qv_rows,
-            self.completeness_rows,
+            self.qv_text,
+            self.completeness_text,
         ])
 
 
@@ -81,46 +81,38 @@ def parse_sex_matcher(path: Path, n: int = 5) -> list[tuple[str, str]]:
     return results
 
 
-def parse_qv(path: Path) -> list[tuple[str, str]]:
-    """Return [(assembly, QV), ...] from a *.qv file."""
-    rows = []
-    for line in path.read_text().splitlines()[1:]:  # skip header
-        parts = line.split()
-        if len(parts) >= 5:
-            rows.append((parts[0], parts[4]))
-    return rows
-
-
-def parse_completeness(path: Path) -> list[tuple[str, str]]:
-    """Return [(assembly, pct_covered), ...] from a *.completeness.stats file."""
-    rows = []
-    for line in path.read_text().splitlines()[1:]:  # skip header
-        parts = line.split()
-        if len(parts) >= 5:
-            rows.append((parts[0], parts[4]))
-    return rows
+def read_tabular(path: Path) -> str:
+    """Return file content with whitespace-only lines stripped."""
+    return "\n".join(
+        line for line in path.read_text().splitlines() if line.strip()
+    )
 
 
 # ---------------------------------------------------------------------------
 # Collector
 # ---------------------------------------------------------------------------
 
-def collect_curation_results(tracker, workdir: Path, tol_id: str) -> CurationResults:
+def collect_curation_results(
+    tracker,
+    workdir: Path,
+    tol_id: str,
+    curated_dir: Path | None = None,
+) -> CurationResults:
     """
     Gather all available curation result data for a ticket workdir.
 
-    Searches pretext_to_asm, sex_matcher, and qv run dirs (via tracker),
-    falling back to workdir for files that land there directly.
+    Searches pretext_to_asm and sex_matcher run dirs (via tracker).
+    QV / completeness files are looked up in:
+      1. curated_dir/merquryk/  (assembly curated dir, passed from ctx)
+      2. workdir/merquryk/      (fallback)
     """
     r = CurationResults()
 
     pta_dir = tracker.latest_run_dir("pretext_to_asm") if tracker else None
     sex_dir = tracker.latest_run_dir("sex_matcher") if tracker else None
-    qv_dir = tracker.latest_run_dir("qv") if tracker else None
 
     # --- chromosome list ---
-    search_dirs = [d for d in (pta_dir, workdir) if d and d.exists()]
-    for d in search_dirs:
+    for d in [d for d in (pta_dir, workdir) if d and d.exists()]:
         csv_files = list(d.glob(f"{tol_id}*.chromosome.list.csv"))
         if csv_files:
             try:
@@ -141,8 +133,7 @@ def collect_curation_results(tracker, workdir: Path, tol_id: str) -> CurationRes
                 pass
 
     # --- sex matcher ---
-    search_dirs = [d for d in (sex_dir, workdir) if d and d.exists()]
-    for d in search_dirs:
+    for d in [d for d in (sex_dir, workdir) if d and d.exists()]:
         best_files = list(d.glob("Best_match*"))
         if best_files:
             try:
@@ -151,22 +142,22 @@ def collect_curation_results(tracker, workdir: Path, tol_id: str) -> CurationRes
                 pass
             break
 
-    # --- QV ---
-    if qv_dir and qv_dir.exists():
-        qv_files = list(qv_dir.glob("*.qv"))
-        if qv_files:
-            try:
-                r.qv_rows = parse_qv(qv_files[0])
-            except Exception:
-                pass
+    # --- QV and completeness: always in curated_dir/merquryk ---
+    if curated_dir:
+        mdir = curated_dir / "merquryk"
+        if mdir.exists():
+            qv_files = list(mdir.glob(f"{tol_id}.qv"))
+            if qv_files:
+                try:
+                    r.qv_text = read_tabular(qv_files[0])
+                except Exception:
+                    pass
 
-    # --- Completeness ---
-    if qv_dir and qv_dir.exists():
-        comp_files = list(qv_dir.glob("*.completeness.stats"))
-        if comp_files:
-            try:
-                r.completeness_rows = parse_completeness(comp_files[0])
-            except Exception:
-                pass
+            comp_files = list(mdir.glob("*.completeness.stats"))
+            if comp_files:
+                try:
+                    r.completeness_text = read_tabular(comp_files[0])
+                except Exception:
+                    pass
 
     return r

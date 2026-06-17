@@ -24,11 +24,11 @@ def print_tip(message: str) -> None:
     console.print(f"\n[bold yellow]Tip:[/bold yellow] {message}")
 
 
-def print_curation_results(tracker, workdir, tol_id: str) -> None:
+def print_curation_results(tracker, workdir, tol_id: str, curated_dir=None) -> None:
     """Print a 'Curation Results' panel with data parsed from step output files."""
     from grit.utils.result_parsers import collect_curation_results
 
-    r = collect_curation_results(tracker, workdir, tol_id)
+    r = collect_curation_results(tracker, workdir, tol_id, curated_dir=curated_dir)
     if not r.has_any():
         return
 
@@ -42,19 +42,17 @@ def print_curation_results(tracker, workdir, tol_id: str) -> None:
 
     if r.cuts is not None:
         lines.append(
-            f"[bold]Curation     :[/bold] {r.cuts} cuts, {r.breaks} breaks, {r.joins} joins"
+            f"[bold]Curation     :[/bold] {r.breaks} breaks, {r.cuts + r.joins} joins"
         )
 
     if r.sex_matches:
         matches_str = "  ".join(f"{s} ({c})" for s, c in r.sex_matches)
         lines.append(f"[bold]Sex matches  :[/bold] {matches_str}")
 
-    if r.qv_rows:
-        qv_str = "  ".join(f"{asm}={qv}" for asm, qv in r.qv_rows)
-        lines.append(f"[bold]QV           :[/bold] {qv_str}")
+    if r.qv_text:
+        lines.append(f"[bold]QV           :[/bold]\n{r.qv_text}")
 
-    if r.completeness_rows:
-        comp_str = "  ".join(f"{asm}={pct}%" for asm, pct in r.completeness_rows)
-        lines.append(f"[bold]Completeness :[/bold] {comp_str}")
+    if r.completeness_text:
+        lines.append(f"[bold]Completeness :[/bold]\n{r.completeness_text}")
 
     console.print(Panel("\n".join(lines), title="Curation Results", border_style="cyan"))

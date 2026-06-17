@@ -126,7 +126,7 @@ def finalize_for_qc(ctx: CurationContext) -> None:
     )
 
     from grit.utils.output import print_curation_results
-    print_curation_results(ctx.tracker, ctx.workdir, ctx.tol_id)
+    print_curation_results(ctx.tracker, ctx.workdir, ctx.tol_id, curated_dir=ctx.assembly_curated_dir)
 
 
 # ---------------------------------------------------------------------------
