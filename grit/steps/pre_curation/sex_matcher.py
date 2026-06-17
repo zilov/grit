@@ -46,13 +46,15 @@ def run_sex_matcher(ctx: CurationContext) -> None:
 
     Steps:
         1. Print a reminder if the tol_id does not start with a known insect prefix.
-        2. Submit via bsub::
+        2. Create symlink ``sex_matcher/{timestamp}/original.fa → workdir/original.fa``
+           so that sex_matcher.sh finds the assembly in its working directory.
+        3. Submit via bsub::
 
-               bsub -q normal -K -e {workdir}/sex_matcher.err -o {workdir}/sex_matcher.out \\
-                    -M 50000 -R'select[mem>50000] rusage[mem=50000] span[hosts=1]' \\
-                    "cd {ctx.workdir} && /software/grit/projects/vgp_curation_scripts/sex_matcher.sh"
+               bsub -q normal -n 32 -G team135 -e {workdir}/sex_matcher.err -o {workdir}/sex_matcher.out \\
+                    -M 80000 -R'select[mem>80000] rusage[mem=80000] span[hosts=1]' \\
+                    "cd {run_dir} && /software/grit/projects/vgp_curation_scripts/sex_matcher.sh"
 
-        3. Execute the command (unless print_only).
+        4. Execute the command (unless print_only).
         4. Glob for ``Best_match*`` output files in ``ctx.workdir``.
         5. If found, call ``_print_sex_summary()`` to display the first 10 lines
            of the BUSCO table.
@@ -76,13 +78,23 @@ def run_sex_matcher(ctx: CurationContext) -> None:
     require_workdir(ctx)
 
     run_dir = ctx.tracker.start("sex_matcher", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
+    work_dir = run_dir if run_dir else ctx.workdir
+
+    if not ctx.print_only and run_dir:
+        symlink = run_dir / "original.fa"
+        if not symlink.exists():
+            symlink.symlink_to(ctx.workdir / "original.fa")
+    else:
+        log.info("ln -s %s/original.fa %s/original.fa", ctx.workdir, work_dir)
 
     bsub_opts = build_bsub_opts(
-        memory_mb=50000,
+        memory_mb=80000,
+        cores=32,
+        group="team135",
         output=str(ctx.workdir / "sex_matcher.out"),
         error=str(ctx.workdir / "sex_matcher.err"),
     )
-    inner_cmd = f"{module_cmd('GRIT')} && cd {ctx.workdir} && {_SEX_MATCHER_SCRIPT}"
+    inner_cmd = f"{module_cmd('GRIT')} && cd {work_dir} && {_SEX_MATCHER_SCRIPT}"
     epilogue = _state_update_epilogue(ctx.workdir, "sex_matcher", run_dir) if run_dir else None
     job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
 
