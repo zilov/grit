@@ -45,4 +45,5 @@ grep -f $sexFile $myDirPath/full_table.tsv > sex_table.tsv
 wait
 /software/grit/projects/vgp_curation_scripts/sex_matcher.py -p $myDirPath -i $myTolPrefix
 wait
-rm -r $myDirPath/busco*
+rm -r $myDirPath/busco* || true
+exit 0
