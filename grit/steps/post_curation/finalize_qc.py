@@ -120,8 +120,9 @@ def finalize_for_qc(ctx: CurationContext) -> None:
         "\n[bold yellow]⚠  Please don't forget about Submission Text and attaching latest savestate to the ticket, curation summary:[/bold yellow]"
     )
 
-    from grit.utils.output import print_curation_results
+    from grit.utils.output import print_curation_results, print_tip
     print_curation_results(ctx.tracker, ctx.workdir, ctx.tol_id, curated_dir=ctx.assembly_curated_dir)
+    print_tip("Submission notes: https://gist.github.com/zilov/93b1e6c68a6e2553b7c12770d6a0a3ef")
 
 
 # ---------------------------------------------------------------------------
