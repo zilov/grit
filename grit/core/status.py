@@ -136,6 +136,13 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             elif status == "started":
                 status = "running"
 
+        # sex_matcher: file-based check — Best_match* presence means success
+        if step == "sex_matcher" and status in ("started", "failed", "unknown (gone)"):
+            run_dir_path = Path(entry.get("run_dir", ""))
+            if run_dir_path.exists() and any(run_dir_path.glob("Best_match*")):
+                status = "success"
+                tracker.finish("sex_matcher", run_dir_path, "success")
+
         if step == "hic_remapping" and status == "success":
             hic_success_run_dir = Path(entry.get("run_dir", ""))
 
