@@ -130,8 +130,6 @@ def run_sex_matcher(ctx: CurationContext) -> None:
                 work_dir,
             )
 
-    print_done("Sex-matcher step complete.")
-
 
 def _print_sex_summary(busco_table_path: Path) -> None:
     """
