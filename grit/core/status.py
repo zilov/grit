@@ -190,7 +190,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
         print_tip(
             f"To copy remapped pretext map to your local machine:\n"
             f"[bold cyan]scp {farm_host}:'{remapped_pattern}' "
-            f"~/curations/work/{tol_id}/[/bold cyan]"
+            f"~/curations/work/{tol_id}/{tol_id}_remapped.pretext[/bold cyan]"
         )
 
     print_tip(
