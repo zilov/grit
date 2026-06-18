@@ -10,7 +10,6 @@ from grit.core.context import CurationContext
 from grit.utils.helpers import _run
 from grit.utils.output import (
     print_done,
-    print_next_step,
     print_step_header,
 )
 
@@ -96,7 +95,6 @@ def run_microchromosome_curation(ctx: CurationContext) -> None:
         f"~/curations/work/{ctx.tol_id}/second_shot_microchromosomes"
     )
     log.info("Scp micro pretext map to local for curation: %s", scp_pretext_micro)
-    print_next_step("microchromosome-post  (after curating the micro pretext map locally)")
 
 
 def run_microchromosome_post_curation(ctx: CurationContext) -> None:

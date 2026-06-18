@@ -10,7 +10,6 @@ from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.output import (
     print_done,
-    print_next_step,
     print_step_header,
 )
 
@@ -67,13 +66,11 @@ def run_haplotig_files(ctx: CurationContext) -> None:
     if ctx.print_only:
         for name in haplotig_names:
             log.info("Expected haplotig file: %s", base_dir / name)
-        print_next_step("run_hic_remapping(ctx)")
         return
 
     if all((base_dir / name).exists() for name in haplotig_names):
         log.info("All haplotig files already exist — skipping")
         print_done("Haplotig files already present")
-        print_next_step("run_hic_remapping(ctx)")
         return
 
     for haplotig_name in haplotig_names:
@@ -88,7 +85,6 @@ def run_haplotig_files(ctx: CurationContext) -> None:
             log.info("Status: created empty — %s", haplotig_name)
 
     print_done("Haplotig files ready")
-    print_next_step("run_hic_remapping(ctx)")
 
 
 # ---------------------------------------------------------------------------

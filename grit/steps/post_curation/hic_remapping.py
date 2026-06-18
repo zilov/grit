@@ -11,7 +11,7 @@ from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.helpers import _run
 from grit.utils.modules import module_cmd
-from grit.utils.output import console, print_done, print_next_step, print_step_header
+from grit.utils.output import console, print_done, print_step_header
 
 log = logging.getLogger(__name__)
 
@@ -138,7 +138,6 @@ def run_hic_remapping(ctx: CurationContext) -> None:
     console.print("\n[bold]After remapping, copy the map to your local machine:[/bold]")
     console.print(f"  [green]{scp_cmd}[/green]")
 
-    print_next_step("run_qv(ctx)")
 
 
 # ---------------------------------------------------------------------------

@@ -12,7 +12,6 @@ from grit.core.context import CurationContext
 from grit.utils.output import (
     console,
     print_done,
-    print_next_step,
     print_step_header,
 )
 
@@ -125,7 +124,6 @@ def run_validate_files(ctx: CurationContext) -> None:
         else:
             log.warning("Some expected files are missing — see above")
 
-    print_next_step("finalize_for_qc(ctx)")
 
 
 # ---------------------------------------------------------------------------

@@ -12,7 +12,6 @@ from grit.utils.helpers import _find_pretext_map_in_workdir, _run
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
     print_done,
-    print_next_step,
     print_step_header,
 )
 
@@ -98,7 +97,6 @@ def add_gap_track(ctx: CurationContext) -> None:
     )
     _run(cmd, ctx.print_only)
     print_done("Gap track added.")
-    print_next_step("add_telo_track(ctx)")
 
 
 def add_telo_track(ctx: CurationContext) -> None:

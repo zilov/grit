@@ -12,7 +12,7 @@ from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.helpers import _run, agp_newer_than_curated_fa
 from grit.utils.modules import module_cmd
-from grit.utils.output import print_done, print_next_step, print_step_header
+from grit.utils.output import print_done, print_step_header
 
 log = logging.getLogger(__name__)
 
@@ -105,7 +105,6 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
         raise
 
     print_done(f"Curated FASTA → {out_fa}")
-    print_next_step("ensure_haplotig_files(ctx)")
 
 
 # ---------------------------------------------------------------------------

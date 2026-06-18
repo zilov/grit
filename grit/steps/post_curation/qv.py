@@ -9,7 +9,7 @@ import rich_click as click
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.helpers import _state_update_epilogue, _submit_bsub, build_bsub_opts
-from grit.utils.output import print_done, print_next_step, print_step_header
+from grit.utils.output import print_done, print_step_header
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +47,6 @@ def run_qv(ctx: CurationContext) -> None:
         ctx.tracker.record_job("qv", run_dir, job_id)
 
     print_done("QV job submitted")
-    print_next_step("validate_curated_files(ctx)")
 
 
 # ---------------------------------------------------------------------------
