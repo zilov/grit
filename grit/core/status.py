@@ -166,7 +166,13 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
 
     console.print(table)
 
-    print_curation_results(tracker, workdir, tol_id)
+    # Derive assembly_curated_dir: workdir = .../working/<user>_curation/<tol_id>/
+    # assembly_curated_dir = .../assembly/curated/<tol_id>.<release>/
+    curated_base = workdir.parent.parent.parent / "assembly" / "curated"
+    curated_dirs = sorted(curated_base.glob(f"{tol_id}.*")) if curated_base.exists() else []
+    curated_dir = curated_dirs[0] if curated_dirs else None
+
+    print_curation_results(tracker, workdir, tol_id, curated_dir=curated_dir)
 
     farm_host = user_config.get("farm_host", "<farm_host>")
 

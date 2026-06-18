@@ -49,10 +49,10 @@ def print_curation_results(tracker, workdir, tol_id: str, curated_dir=None) -> N
         matches_str = "  ".join(f"{s} ({c})" for s, c in r.sex_matches)
         lines.append(f"[bold]Sex matches  :[/bold] {matches_str}")
 
-    if r.qv_text:
-        lines.append(f"[bold]QV           :[/bold]\n{r.qv_text}")
-
     if r.completeness_text:
         lines.append(f"[bold]Completeness :[/bold]\n{r.completeness_text}")
 
-    console.print(Panel("\n".join(lines), title="Curation Results", border_style="cyan"))
+    if r.qv_text:
+        lines.append(f"[bold]QV           :[/bold]\n{r.qv_text}")
+
+    console.print("\n".join(lines))
