@@ -63,8 +63,8 @@ def setup_curation(ctx: CurationContext) -> None:
     # Glob for decontaminated hap1 FASTA
     # assembly_draft_dir already points to the versioned subdir,
     # e.g. .../assembly/draft/uoEpiScra1.20241115
-    hap1_pattern = f"{ctx.assembly_draft_dir}/{ctx.tol_id}*{ctx.hap1_prefix}.decontaminated.fa*"
-    hap2_pattern = f"{ctx.assembly_draft_dir}/{ctx.tol_id}*{ctx.hap2_prefix}.decontaminated.fa*"
+    hap1_pattern = str(ctx.assembly_draft_dir / f"{ctx.tol_id}*{ctx.hap1_prefix}.decontaminated.fa*")
+    hap2_pattern = str(ctx.assembly_draft_dir / f"{ctx.tol_id}*{ctx.hap2_prefix}.decontaminated.fa*")
 
     if ctx.print_only:
         # In print-only mode show expected paths without checking the filesystem
@@ -75,7 +75,7 @@ def setup_curation(ctx: CurationContext) -> None:
     else:
         hap1_files = glob.glob(hap1_pattern)
         if not hap1_files:
-            hap1_files = glob.glob(f"{ctx.assembly_draft_dir}/{ctx.tol_id}*.decontaminated.fa*")
+            hap1_files = glob.glob(str(ctx.assembly_draft_dir / f"{ctx.tol_id}*.decontaminated.fa*"))
         if not hap1_files:
             raise FileNotFoundError(f"No decontaminated hap1 FASTA found at: {hap1_pattern}")
         decont_hap1 = _sort_by_mtime(hap1_files)[0]
@@ -83,7 +83,7 @@ def setup_curation(ctx: CurationContext) -> None:
         hap2_files = glob.glob(hap2_pattern)
         if not hap2_files:
             # some primary assemblies use 'haplotigs' rather than 'alternate'
-            hap2_files = glob.glob(f"{ctx.assembly_draft_dir}/{ctx.tol_id}*haplotigs.decontaminated.fa*")
+            hap2_files = glob.glob(str(ctx.assembly_draft_dir / f"{ctx.tol_id}*haplotigs.decontaminated.fa*"))
         if hap2_files:
             decont_hap2 = _sort_by_mtime(hap2_files)[0]
         else:

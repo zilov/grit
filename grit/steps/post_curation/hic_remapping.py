@@ -130,7 +130,7 @@ def run_hic_remapping(ctx: CurationContext) -> None:
             ctx.tracker.finish("hic_remapping", run_dir, "failed")
         raise
 
-    remapped_pattern = f"{run_dir}/pretext_maps_processed/{ctx.tol_id}*normal.pretext"
+    remapped_pattern = str(run_dir / "pretext_maps_processed" / f"{ctx.tol_id}*normal.pretext")
     scp_cmd = (
         f"scp {ctx.farm_host}:{remapped_pattern}"
         f" ~/curations/{ctx.tol_id}/{ctx.tol_id}_remapped.pretext"

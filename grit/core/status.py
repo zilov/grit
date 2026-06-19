@@ -184,8 +184,8 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     farm_host = user_config.get("farm_host", "<farm_host>")
 
     if hic_success_run_dir:
-        remapped_pattern = (
-            f"{hic_success_run_dir}/pretext_maps_processed/{tol_id}*normal.pretext"
+        remapped_pattern = str(
+            hic_success_run_dir / "pretext_maps_processed" / f"{tol_id}*normal.pretext"
         )
         print_tip(
             f"To copy remapped pretext map to your local machine:\n"

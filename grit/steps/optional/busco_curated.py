@@ -92,7 +92,7 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     output_dir = ctx.workdir / f"{ctx.tol_id}_busco_singularity"
 
     # --- build inner command ---
-    busco_lineage = f"{_BUSCO_LINEAGES}/{lineage}"
+    busco_lineage = str(Path(_BUSCO_LINEAGES) / lineage)
     inner_cmd = (
         f"singularity exec -B /lustre {_BUSCO_SIF} busco "
         f"-i {curated_fa} -o {output_dir} -m genome "
