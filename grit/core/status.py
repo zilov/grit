@@ -142,6 +142,9 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             ):
                 status = "success"
                 tracker.finish("hic_remapping", run_dir_path, "success")
+            elif status == "unknown (gone)":
+                status = "failed"
+                tracker.finish("hic_remapping", run_dir_path, "failed")
             elif status == "started":
                 status = "running"
 

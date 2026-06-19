@@ -6,6 +6,7 @@ import glob
 import logging
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 from grit.core.context import CurationContext
@@ -86,8 +87,9 @@ def _state_update_epilogue(workdir: Path, step: str, run_dir: Path) -> str:
     Uses $LSB_JOB_EXIT_CODE (set by LSF) to determine success vs failed.
     The `grit` command must be on $PATH on compute nodes.
     """
+    grit_bin = sys.argv[0]  # full path — ensures grit is found in bsub epilogue environment
     return (
-        f"grit _state-update --workdir {workdir} --step {step} --run-dir {run_dir} "
+        f"{grit_bin} _state-update --workdir {workdir} --step {step} --run-dir {run_dir} "
         f"--status $([ $LSB_JOB_EXIT_CODE -eq 0 ] && echo success || echo failed)"
     )
 
