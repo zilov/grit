@@ -118,6 +118,9 @@ class RegistryManager:
         from grit.core.manifests import STEP_TO_STATUS
         from grit.core.run_tracker import RunTracker
 
+        self._refresh_pending_jobs()
+
+
         tickets = self._load()
         changed = False
         for ticket in tickets:
@@ -149,6 +152,56 @@ class RegistryManager:
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
+
+    def _refresh_pending_jobs(self) -> None:
+        """Bulk-check all pending bsub jobs and write success/failed to each tracker."""
+        from grit.core.run_tracker import RunTracker
+        from grit.utils.helpers import _check_bjobs
+
+        # Collect pending job_id → (tracker, entry, tol_id) across all active tickets
+        pending: dict[str, tuple] = {}
+        for ticket in self._load():
+            if ticket.get("status") == "done":
+                continue
+            workdir = Path(ticket["workdir"])
+            if not workdir.exists():
+                continue
+            tracker = RunTracker(workdir)
+            tol_id = ticket.get("tol_id", "")
+            for entry in tracker.pending_jobs():
+                job_id = entry.get("job_id")
+                if job_id and job_id not in pending:
+                    pending[job_id] = (tracker, entry, tol_id)
+
+        if not pending:
+            return
+
+        live = _check_bjobs(list(pending.keys()))
+
+        for job_id, bjobs_status in live.items():
+            if job_id not in pending:
+                continue
+            tracker, entry, tol_id = pending[job_id]
+            step = entry.get("step", "")
+            run_dir = Path(entry.get("run_dir", ""))
+
+            if bjobs_status == "EXIT":
+                tracker.finish(step, run_dir, "failed")
+            elif bjobs_status == "gone":
+                self._resolve_gone_job(tracker, step, run_dir, tol_id)
+
+    @staticmethod
+    def _resolve_gone_job(tracker, step: str, run_dir: Path, tol_id: str) -> None:
+        """Resolve a gone bsub job via output file presence."""
+        if step == "hic_remapping":
+            found = run_dir.exists() and any(
+                run_dir.glob(f"pretext_maps_processed/{tol_id}*hr.pretext")
+            )
+            tracker.finish(step, run_dir, "success" if found else "failed")
+        elif step == "sex_matcher":
+            found = run_dir.exists() and any(run_dir.glob("Best_match*"))
+            tracker.finish(step, run_dir, "success" if found else "failed")
+        # other bsub steps: leave as-is until epilogue fix propagates
 
     def _load(self) -> list[dict]:
         if not self.registry_path.exists():

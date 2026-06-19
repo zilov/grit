@@ -134,26 +134,8 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             elif bjobs_status == "gone":
                 status = "unknown (gone)"
 
-        # hic_remapping: file-based check when job is gone or no job_id
-        if step == "hic_remapping" and status in ("started", "unknown (gone)"):
-            run_dir_path = Path(entry.get("run_dir", ""))
-            if run_dir_path.exists() and any(
-                run_dir_path.glob(f"pretext_maps_processed/{tol_id}*hr.pretext")
-            ):
-                status = "success"
-                tracker.finish("hic_remapping", run_dir_path, "success")
-            elif status == "unknown (gone)":
-                status = "failed"
-                tracker.finish("hic_remapping", run_dir_path, "failed")
-            elif status == "started":
-                status = "running"
-
-        # sex_matcher: file-based check — Best_match* presence means success
-        if step == "sex_matcher" and status in ("started", "failed", "unknown (gone)"):
-            run_dir_path = Path(entry.get("run_dir", ""))
-            if run_dir_path.exists() and any(run_dir_path.glob("Best_match*")):
-                status = "success"
-                tracker.finish("sex_matcher", run_dir_path, "success")
+        if status == "started":
+            status = "running"
 
         if step == "hic_remapping" and status == "success":
             hic_success_run_dir = Path(entry.get("run_dir", ""))
