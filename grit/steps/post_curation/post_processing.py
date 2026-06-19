@@ -53,7 +53,7 @@ def run_post_processing(ctx: CurationContext) -> None:
     if not ctx.print_only:
         script = "\n".join(script_lines)
         try:
-            subprocess.run(["bash", "-l"], input=script, text=True, check=True)
+            subprocess.run(["bash"], input=script, text=True, check=True)
             if ctx.tracker and run_dir:
                 ctx.tracker.finish("post_processing", run_dir, "success")
         except subprocess.CalledProcessError:
