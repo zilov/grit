@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 
 import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, require_workdir
-from grit.utils.output import print_done, print_step_header
+from grit.utils.helpers import require_workdir
+from grit.utils.output import console, print_done, print_step_header
 
 log = logging.getLogger(__name__)
 
@@ -37,21 +38,27 @@ def run_post_processing(ctx: CurationContext) -> None:
 
     run_dir = ctx.tracker.start("post_processing", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
 
-    cmd = (
-        f"bash -c '. {_MODULES_INIT} && module purge && "
-        f"source {_POST_PROC_CONF} && "
-        f"cd {ctx.assembly_curated_dir} && "
-        f"post_process_rc {ctx.ticket_id}'"
-    )
+    script_lines = [
+        f". {_MODULES_INIT}",
+        "module purge",
+        f"source {_POST_PROC_CONF}",
+        f"cd {ctx.assembly_curated_dir}",
+        f"post_process_rc {ctx.ticket_id}",
+    ]
+    console.print("\n[yellow]Commands:[/yellow]")
+    for line in script_lines:
+        console.print(f"  [green]{line}[/green]")
 
-    try:
-        _run(cmd, ctx.print_only, capture=False)
-        if ctx.tracker and run_dir:
-            ctx.tracker.finish("post_processing", run_dir, "success")
-    except Exception:
-        if ctx.tracker and run_dir:
-            ctx.tracker.finish("post_processing", run_dir, "failed")
-        raise
+    if not ctx.print_only:
+        script = "\n".join(script_lines)
+        try:
+            subprocess.run(["bash"], input=script, text=True, check=True)
+            if ctx.tracker and run_dir:
+                ctx.tracker.finish("post_processing", run_dir, "success")
+        except subprocess.CalledProcessError:
+            if ctx.tracker and run_dir:
+                ctx.tracker.finish("post_processing", run_dir, "failed")
+            raise
 
     print_done("Post-processing complete.")
 
