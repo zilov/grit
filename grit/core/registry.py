@@ -101,7 +101,7 @@ class RegistryManager:
             log.warning("Registry: ticket %s not found (cannot mark done)", ticket_id)
             return
 
-        ticket["status"] = "qc"
+        ticket["status"] = "done"
         done = self._load(self.done_path)
         # Replace any existing done entry for this ticket
         done = [t for t in done if t["ticket_id"] != ticket_id]
@@ -149,7 +149,13 @@ class RegistryManager:
             tol_id = ticket.get("tol_id", "")
             if new_status == "in_curation" and tol_id and list(workdir.glob(f"{tol_id}*.pretext.agp_1")):
                 new_status = STEP_TO_STATUS.get("agp_copied", new_status)
-            if new_status != ticket["status"]:
+            if new_status == "done":
+                self.mark_done(ticket["ticket_id"])
+                # mark_done rewrites registry.json, so reload and restart
+                tickets = self._load(self.registry_path)
+                changed = False
+                break
+            elif new_status != ticket["status"]:
                 ticket["status"] = new_status
                 changed = True
 

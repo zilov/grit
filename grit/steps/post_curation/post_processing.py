@@ -59,6 +59,8 @@ def run_post_processing(ctx: CurationContext) -> None:
             subprocess.run(["bash"], input=script, text=True, check=True)
             if ctx.tracker and run_dir:
                 ctx.tracker.finish("post_processing", run_dir, "success")
+            from grit.core.registry import RegistryManager
+            RegistryManager().mark_done(ctx.ticket_id)
         except subprocess.CalledProcessError:
             if ctx.tracker and run_dir:
                 ctx.tracker.finish("post_processing", run_dir, "failed")

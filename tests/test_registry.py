@@ -59,7 +59,7 @@ def test_mark_done_moves_to_done(reg):
     done = reg.done_tickets()
     assert len(done) == 1
     assert done[0]["ticket_id"] == "RC-1234"
-    assert done[0]["status"] == "qc"
+    assert done[0]["status"] == "done"
 
 
 def test_mark_done_missing_ticket_warns(reg, caplog):

@@ -67,4 +67,5 @@ STEP_TO_STATUS: dict[str, str] = {
     "qv": "ready_for_qc",
     "validate_files": "ready_for_qc",
     "finalize_qc": "post_processing",
+    "post_processing": "done",
 }
