@@ -42,13 +42,10 @@ def run_post_processing(ctx: CurationContext) -> None:
         f". {_MODULES_INIT}",
         "module purge",
         f"source {_POST_PROC_CONF}",
+        # contamination_screen.conf prepends tola_production venv to PATH,
+        # but its python3 is not accessible; strip it so the conda snakemake is used instead
+        r"export PATH=$(echo \"$PATH\" | tr ':' '\n' | grep -v 'tola_production/.venv' | tr '\n' ':' | sed 's/:$//')",
         "shopt -s expand_aliases",
-        "echo '=== DEBUG ===' >&2",
-        "echo \"PATH=$PATH\" >&2",
-        "echo \"which snakemake: $(which snakemake 2>&1)\" >&2",
-        "echo \"snakemake head: $(head -1 $(which snakemake 2>/dev/null) 2>&1)\" >&2",
-        "echo \"conda env: ${CONDA_DEFAULT_ENV:-none}\" >&2",
-        "echo '=== END DEBUG ===' >&2",
         f"cd {ctx.assembly_curated_dir}",
         f"post_process_rc {ctx.ticket_id}",
     ]
@@ -59,7 +56,7 @@ def run_post_processing(ctx: CurationContext) -> None:
     if not ctx.print_only:
         script = "\n".join(script_lines)
         try:
-            subprocess.run(["bash"], input=script, text=True, check=True, stderr=None)
+            subprocess.run(["bash"], input=script, text=True, check=True)
             if ctx.tracker and run_dir:
                 ctx.tracker.finish("post_processing", run_dir, "success")
         except subprocess.CalledProcessError:
