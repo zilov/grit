@@ -14,6 +14,7 @@ from grit.utils.output import print_done, print_step_header
 log = logging.getLogger(__name__)
 
 _POST_PROC_CONF = "/software/grit/projects/contamination_screen/conf/contamination_screen.conf"
+_MODULES_INIT = "/etc/profile.d/modules.sh"
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -37,7 +38,8 @@ def run_post_processing(ctx: CurationContext) -> None:
     run_dir = ctx.tracker.start("post_processing", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
 
     cmd = (
-        f"bash -c 'source {_POST_PROC_CONF} && "
+        f"bash -c '. {_MODULES_INIT} && module purge && "
+        f"source {_POST_PROC_CONF} && "
         f"cd {ctx.assembly_curated_dir} && "
         f"post_process_rc {ctx.ticket_id}'"
     )
