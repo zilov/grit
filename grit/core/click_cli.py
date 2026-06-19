@@ -111,6 +111,7 @@ from grit.steps.optional.fastga import fastga_cmd  # noqa: E402
 from grit.steps.optional.rename_and_orient import rename_and_orient_cmd  # noqa: E402
 from grit.steps.post_curation.finalize_qc import finalize_qc_cmd  # noqa: E402
 from grit.steps.post_curation.haplotig_files import haplotig_files_cmd  # noqa: E402
+from grit.steps.post_curation.post_processing import post_processing_cmd, pp_cmd  # noqa: E402
 from grit.steps.post_curation.hic_remapping import hic_remapping_cmd  # noqa: E402
 from grit.steps.post_curation.post_curation import post_curation_cmd  # noqa: E402
 from grit.steps.post_curation.pretext_to_asm import pretext_to_asm_cmd  # noqa: E402
@@ -164,6 +165,8 @@ def state_update_cmd(workdir, step, run_dir, status, job_id):
 
 cli.add_command(sex_matcher_cmd)
 cli.add_command(finalize_qc_cmd)
+cli.add_command(post_processing_cmd)
+cli.add_command(pp_cmd)
 cli.add_command(add_bedgraph_track_cmd)
 cli.add_command(add_gap_track_cmd)
 cli.add_command(add_telo_track_cmd)
