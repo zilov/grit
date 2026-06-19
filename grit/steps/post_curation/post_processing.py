@@ -42,6 +42,7 @@ def run_post_processing(ctx: CurationContext) -> None:
         f". {_MODULES_INIT}",
         "module purge",
         f"source {_POST_PROC_CONF}",
+        "shopt -s expand_aliases",
         f"cd {ctx.assembly_curated_dir}",
         f"post_process_rc {ctx.ticket_id}",
     ]
