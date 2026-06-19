@@ -217,6 +217,5 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             f"[bold cyan]grit finalize-qc -t {ticket_id}[/bold cyan]"
         )
 
-    finalize_entry = step_latest.get("finalize_qc")
-    if finalize_entry and finalize_entry.get("status") == "success":
+    if curated_dir and (curated_dir / "merquryk").exists():
         print_tip("Submission notes: https://gist.github.com/zilov/93b1e6c68a6e2553b7c12770d6a0a3ef")
