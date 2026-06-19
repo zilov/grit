@@ -44,6 +44,8 @@ def finalize_for_qc(ctx: CurationContext) -> None:
     log.info("finalize-qc | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Finalize for QC")
 
+    run_dir = ctx.tracker.start("finalize_qc", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
+
     # Resolve run dirs for curated files
     if ctx.tracker and not ctx.print_only:
         pta_dir = ctx.tracker.latest_run_dir("pretext_to_asm") or ctx.workdir
@@ -116,6 +118,9 @@ def finalize_for_qc(ctx: CurationContext) -> None:
     console.print(
         "\n[bold yellow]⚠  Please don't forget about Submission Text and attaching latest savestate to the ticket, curation summary:[/bold yellow]"
     )
+
+    if ctx.tracker and run_dir:
+        ctx.tracker.finish("finalize_qc", run_dir, "success")
 
     from grit.utils.output import print_curation_results, print_tip
     print_curation_results(ctx.tracker, ctx.workdir, ctx.tol_id, curated_dir=ctx.assembly_curated_dir)

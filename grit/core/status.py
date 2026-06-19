@@ -31,6 +31,7 @@ def show_global_status(registry) -> None:
         workdir = Path(t["workdir"])
         last_step = ""
         last_run = ""
+        step_status = ""
         if workdir.exists():
             tracker = RunTracker(workdir)
             history = tracker.history()
@@ -38,7 +39,16 @@ def show_global_status(registry) -> None:
                 last_entry = history[-1]
                 last_step = last_entry.get("step", "")
                 last_run = last_entry.get("timestamp", "")
-            status_display = t.get("status", "")
+                raw_status = last_entry.get("status", "")
+                if raw_status == "success":
+                    step_status = "[green]success[/green]"
+                elif raw_status in ("failed",):
+                    step_status = "[red]failed[/red]"
+                elif raw_status == "started":
+                    step_status = "[yellow]started[/yellow]"
+                else:
+                    step_status = raw_status
+            status_display = step_status or t.get("status", "")
         else:
             status_display = "[red]workdir missing[/red]"
         table.add_row(
