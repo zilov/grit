@@ -74,8 +74,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     from grit.core.run_tracker import RunTracker
     from grit.utils.helpers import _check_bjobs
 
-    tickets = registry.all_tickets() + registry.done_tickets(limit=20)
-    ticket = next((t for t in tickets if t["ticket_id"] == ticket_id), None)
+    ticket = registry.find_ticket(ticket_id)
     if ticket is None:
         console.print(f"[red]Ticket {ticket_id} not found in registry.[/red]")
         return

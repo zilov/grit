@@ -1,8 +1,10 @@
 """
 RegistryManager — global ticket registry stored in ~/.grit/registry.json.
 
-Tracks all tickets that have passed through `grit setup`. Completed tickets
-are moved to ~/.grit/done.json when finalize_for_qc succeeds.
+All tickets live in a single file. The ``status`` field controls visibility:
+active tickets (status != "done") appear in ``grit status``; done tickets are
+filtered out but remain in the file so they can be returned to work and queried
+later (e.g. ``grit summary`` for per-period counts).
 
 Registry record format:
     {
@@ -28,12 +30,11 @@ _DEFAULT_DIR = Path.home() / ".grit"
 
 
 class RegistryManager:
-    """Manages the global ticket registry in ~/.grit/."""
+    """Manages the global ticket registry in ~/.grit/registry.json."""
 
     def __init__(self, registry_dir: Path | None = None) -> None:
         self.dir = registry_dir or _DEFAULT_DIR
         self.registry_path = self.dir / "registry.json"
-        self.done_path = self.dir / "done.json"
 
     # ------------------------------------------------------------------
     # Public API
@@ -55,7 +56,7 @@ class RegistryManager:
         the status but preserves added_at.
         """
         self.dir.mkdir(exist_ok=True)
-        tickets = self._load(self.registry_path)
+        tickets = self._load()
 
         existing = next((t for t in tickets if t["ticket_id"] == ticket_id), None)
         if existing:
@@ -76,49 +77,35 @@ class RegistryManager:
             )
             log.info("Registry: added ticket %s (%s)", ticket_id, tol_id)
 
-        self._save(self.registry_path, tickets)
+        self._save(tickets)
 
     def update_status(self, ticket_id: str, status: str) -> None:
-        """Update the status of an active ticket."""
-        tickets = self._load(self.registry_path)
+        """Update the status of any ticket."""
+        tickets = self._load()
         for t in tickets:
             if t["ticket_id"] == ticket_id:
                 t["status"] = status
-                self._save(self.registry_path, tickets)
+                self._save(tickets)
                 log.debug("Registry: %s → %s", ticket_id, status)
                 return
         log.warning("Registry: ticket %s not found (cannot update status)", ticket_id)
 
     def mark_done(self, ticket_id: str) -> None:
-        """
-        Move a ticket from the active registry to done.json.
+        """Set ticket status to 'done'. Ticket stays in registry.json."""
+        self.update_status(ticket_id, "done")
+        log.info("Registry: ticket %s marked as done", ticket_id)
 
-        Called from finalize_for_qc on success.
-        """
-        tickets = self._load(self.registry_path)
-        ticket = next((t for t in tickets if t["ticket_id"] == ticket_id), None)
-        if ticket is None:
-            log.warning("Registry: ticket %s not found (cannot mark done)", ticket_id)
-            return
-
-        ticket["status"] = "done"
-        done = self._load(self.done_path)
-        # Replace any existing done entry for this ticket
-        done = [t for t in done if t["ticket_id"] != ticket_id]
-        done.append(ticket)
-        self._save(self.done_path, done)
-
-        remaining = [t for t in tickets if t["ticket_id"] != ticket_id]
-        self._save(self.registry_path, remaining)
-        log.info("Registry: ticket %s moved to done", ticket_id)
+    def find_ticket(self, ticket_id: str) -> dict | None:
+        """Find any ticket by ID regardless of status."""
+        return next((t for t in self._load() if t["ticket_id"] == ticket_id), None)
 
     def all_tickets(self) -> list[dict]:
-        """Return all active tickets from the registry."""
-        return self._load(self.registry_path)
+        """Return active tickets (status != 'done')."""
+        return [t for t in self._load() if t.get("status") != "done"]
 
     def done_tickets(self, limit: int = 5) -> list[dict]:
         """Return the most recently completed tickets."""
-        done = self._load(self.done_path)
+        done = [t for t in self._load() if t.get("status") == "done"]
         return done[-limit:]
 
     def refresh_statuses(self) -> None:
@@ -126,14 +113,16 @@ class RegistryManager:
         Re-derive each active ticket's status from its runs.jsonl.
 
         Called by `grit status` to show up-to-date info without requiring
-        every step to call update_status() perfectly.
+        every step to call update_status() perfectly. Skips done tickets.
         """
         from grit.core.manifests import STEP_TO_STATUS
         from grit.core.run_tracker import RunTracker
 
-        tickets = self._load(self.registry_path)
+        tickets = self._load()
         changed = False
         for ticket in tickets:
+            if ticket.get("status") == "done":
+                continue
             workdir = Path(ticket["workdir"])
             if not workdir.exists():
                 continue
@@ -144,37 +133,32 @@ class RegistryManager:
                 continue
             last_step = success_steps[-1]
             new_status = STEP_TO_STATUS.get(last_step, ticket["status"])
-            # If AGP already copied to workdir and no post-curation steps ran yet,
-            # promote to post_curation — but don't override progress from later steps
             tol_id = ticket.get("tol_id", "")
             if new_status == "in_curation" and tol_id and list(workdir.glob(f"{tol_id}*.pretext.agp_1")):
                 new_status = STEP_TO_STATUS.get("agp_copied", new_status)
             if new_status == "done":
-                self.mark_done(ticket["ticket_id"])
-                # mark_done rewrites registry.json, so reload and restart
-                tickets = self._load(self.registry_path)
-                changed = False
-                break
+                ticket["status"] = "done"
+                changed = True
             elif new_status != ticket["status"]:
                 ticket["status"] = new_status
                 changed = True
 
         if changed:
-            self._save(self.registry_path, tickets)
+            self._save(tickets)
 
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
 
-    def _load(self, path: Path) -> list[dict]:
-        if not path.exists():
+    def _load(self) -> list[dict]:
+        if not self.registry_path.exists():
             return []
         try:
-            return json.loads(path.read_text())
+            return json.loads(self.registry_path.read_text())
         except (json.JSONDecodeError, OSError):
-            log.warning("Registry: could not read %s", path)
+            log.warning("Registry: could not read %s", self.registry_path)
             return []
 
-    def _save(self, path: Path, data: list[dict]) -> None:
+    def _save(self, data: list[dict]) -> None:
         self.dir.mkdir(exist_ok=True)
-        path.write_text(json.dumps(data, indent=2))
+        self.registry_path.write_text(json.dumps(data, indent=2))
