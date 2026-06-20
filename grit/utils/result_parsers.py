@@ -13,18 +13,18 @@ from pathlib import Path
 
 @dataclass
 class CurationResults:
-    chromosomes_total: int | None = None
-    sex_chromosomes: list[str] = field(default_factory=list)
+    autosomes: int | None = None      # non-sex, non-unloc chromosomes
+    allosomes: str = ""               # e.g. "ZW", "XY", "Z1W1W2"
     cuts: int | None = None
     breaks: int | None = None
     joins: int | None = None
     sex_matches: list[tuple[str, str]] = field(default_factory=list)  # (scaffold, count)
-    qv_text: str | None = None          # raw file content including header
-    completeness_text: str | None = None  # raw file content including header
+    qv_text: str | None = None
+    completeness_text: str | None = None
 
     def has_any(self) -> bool:
         return any([
-            self.chromosomes_total is not None,
+            self.autosomes is not None,
             self.cuts is not None,
             self.sex_matches,
             self.qv_text,
@@ -37,9 +37,13 @@ class CurationResults:
 # ---------------------------------------------------------------------------
 
 def parse_chromosome_list(path: Path) -> tuple[int, list[str]]:
-    """Return (total_chromosomes, [sex_chromosome_scaffold_names])."""
-    total = 0
-    sex = []
+    """Return (autosome_count, [sex_chrom_ids]) from one haplotype CSV.
+
+    Unlocalized scaffolds (_unloc_) are excluded from both counts.
+    sex_chrom_ids are the raw chromosome IDs (e.g. "Z", "W", "Z1", "W1").
+    """
+    autosomes = 0
+    sex_ids = []
     for line in path.read_text().splitlines():
         line = line.strip()
         if not line:
@@ -47,11 +51,36 @@ def parse_chromosome_list(path: Path) -> tuple[int, list[str]]:
         parts = line.split(",")
         if len(parts) < 2:
             continue
-        total += 1
-        chrom_id = parts[1].strip().upper()
-        if any(c in chrom_id for c in ("X", "Y", "Z", "W")):
-            sex.append(parts[0].strip())
-    return total, sex
+        chrom_id = parts[1].strip()
+        if "_unloc_" in chrom_id.lower():
+            continue
+        if re.search(r'[XYZW]', chrom_id, re.IGNORECASE):
+            sex_ids.append(chrom_id.strip())
+        else:
+            autosomes += 1
+    return autosomes, sex_ids
+
+
+_SEX_SORT_ORDER = {"Z": 0, "X": 0, "W": 1, "Y": 1}
+
+
+def _build_allosome_string(sex_ids: list[str]) -> str:
+    """Build canonical allosome string from sex chrom IDs across all haplotypes.
+
+    Single sex chrom found → append "O" (e.g. "Z" → "ZO").
+    Multiple → sort Z/X before W/Y, then join (e.g. ["W", "Z"] → "ZW").
+    """
+    if not sex_ids:
+        return ""
+    if len(sex_ids) == 1:
+        return sex_ids[0] + "O"
+
+    def sort_key(s: str) -> tuple:
+        letter = re.sub(r'\d', '', s).upper()
+        num = int(m.group()) if (m := re.search(r'\d+', s)) else 0
+        return (_SEX_SORT_ORDER.get(letter, 2), num, letter)
+
+    return "".join(sorted(sex_ids, key=sort_key))
 
 
 def parse_pta_log(path: Path) -> tuple[int, int, int] | None:
@@ -111,12 +140,18 @@ def collect_curation_results(
     pta_dir = tracker.latest_run_dir("pretext_to_asm") if tracker else None
     sex_dir = tracker.latest_run_dir("sex_matcher") if tracker else None
 
-    # --- chromosome list ---
+    # --- chromosome list (aggregate across all haplotype CSVs) ---
     for d in [d for d in (pta_dir, workdir) if d and d.exists()]:
-        csv_files = list(d.glob(f"{tol_id}*.chromosome.list.csv"))
+        csv_files = sorted(d.glob(f"{tol_id}*.chromosome.list.csv"))
         if csv_files:
             try:
-                r.chromosomes_total, r.sex_chromosomes = parse_chromosome_list(csv_files[0])
+                all_sex_ids: list[str] = []
+                for i, csv_path in enumerate(csv_files):
+                    autosomes, sex_ids = parse_chromosome_list(csv_path)
+                    if i == 0:
+                        r.autosomes = autosomes  # use first hap for autosome count
+                    all_sex_ids.extend(sex_ids)
+                r.allosomes = _build_allosome_string(all_sex_ids)
             except Exception:
                 pass
             break

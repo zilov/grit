@@ -34,11 +34,10 @@ def print_curation_results(tracker, workdir, tol_id: str, curated_dir=None) -> N
 
     lines = []
 
-    if r.chromosomes_total is not None:
-        chrom_str = f"{r.chromosomes_total} chromosomes"
-        if r.sex_chromosomes:
-            chrom_str += f", sex: {', '.join(r.sex_chromosomes)}"
-        lines.append(f"[bold]Chromosomes  :[/bold] {chrom_str}")
+    if r.autosomes is not None:
+        lines.append(f"[bold]Autosomes    :[/bold] {r.autosomes}")
+    if r.allosomes:
+        lines.append(f"[bold]Allosomes    :[/bold] {r.allosomes}")
 
     if r.cuts is not None:
         lines.append(
