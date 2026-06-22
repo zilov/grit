@@ -8,7 +8,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, _submit_bsub, build_bsub_opts
+from grit.utils.helpers import _run, _state_update_epilogue, _submit_bsub, build_bsub_opts
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -119,10 +119,12 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
     log.info("Prepared reference: %s", ref_reheader)
 
     # --- find query fasta (curated hap1) ---
-    query_pattern = str(ctx.workdir / f"{ctx.tol_id}*{ctx.hap1_prefix}*.curated.fa")
+    # haplotig-files writes *.curated.fa into the pretext_to_asm run dir, not workdir root
     if ctx.print_only:
         query_fa = ctx.workdir / f"{ctx.tol_id}.{ctx.hap1_prefix}.primary.curated.fa"
     else:
+        base_dir = (ctx.tracker.latest_run_dir("pretext_to_asm") or ctx.workdir) if ctx.tracker else ctx.workdir
+        query_pattern = str(base_dir / f"{ctx.tol_id}*{ctx.hap1_prefix}*.curated.fa")
         query_matches = glob.glob(query_pattern)
         if not query_matches:
             raise FileNotFoundError(f"No curated hap1 FASTA found: {query_pattern}")
@@ -136,7 +138,11 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
         memory_mb=50000,
         output="o_busco_synt",
     )
-    _submit_bsub(inner_cmd, bsub_opts, ctx.print_only)
+    run_dir = ctx.tracker.start("busco_synteny", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
+    epilogue = _state_update_epilogue(ctx.workdir, "busco_synteny", run_dir) if run_dir else None
+    job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
+    if ctx.tracker and run_dir and job_id:
+        ctx.tracker.record_job("busco_synteny", run_dir, job_id)
 
     print_done("BUSCO synteny submitted.")
 

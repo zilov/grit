@@ -8,7 +8,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _submit_bsub, build_bsub_opts
+from grit.utils.helpers import _state_update_epilogue, _submit_bsub, build_bsub_opts
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -110,7 +110,11 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     )
 
     # --- submit ---
-    _submit_bsub(inner_cmd, bsub_opts, ctx.print_only)
+    run_dir = ctx.tracker.start("busco_curated", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
+    epilogue = _state_update_epilogue(ctx.workdir, "busco_curated", run_dir) if run_dir else None
+    job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
+    if ctx.tracker and run_dir and job_id:
+        ctx.tracker.record_job("busco_curated", run_dir, job_id)
 
     print_done("BUSCO on curated genome submitted.")
 

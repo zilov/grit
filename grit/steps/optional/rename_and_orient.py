@@ -96,7 +96,16 @@ def run_rename_and_orient(ctx: CurationContext) -> None:
     console.print(f"\n[yellow]Command:[/yellow] [green]{cmd}[/green]")
     if ctx.print_only:
         return
-    subprocess.run(cmd, shell=True, check=True)
+
+    run_dir = ctx.tracker.start("rename_and_orient", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
+    try:
+        subprocess.run(cmd, shell=True, check=True)
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("rename_and_orient", run_dir, "success")
+    except Exception:
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("rename_and_orient", run_dir, "failed")
+        raise
     print_done(f"Renamed FASTA saved to {outdir}")
 
 

@@ -57,6 +57,18 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     log.info("blast-contaminants | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Blast contaminants search")
 
+    run_dir = ctx.tracker.start("blast_contaminants", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
+    try:
+        _blast_contaminants_body(ctx)
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("blast_contaminants", run_dir, "success")
+    except Exception:
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("blast_contaminants", run_dir, "failed")
+        raise
+
+
+def _blast_contaminants_body(ctx: CurationContext) -> None:
     # Get target phylum from species lineage
     cleaned_species = _clean_species_name(ctx.species)
     log.info("Species: %s", cleaned_species)
