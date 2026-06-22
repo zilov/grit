@@ -71,7 +71,9 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     log.info("Target phylum: %s", target_phylum)
 
     # 1. Find curated FASTA
-    curated_fa_pattern = str(ctx.workdir / f"{ctx.tol_id}*.curated.fa")
+    # haplotig-files writes *.curated.fa into the pretext_to_asm run dir, not workdir root
+    base_dir = (ctx.tracker.latest_run_dir("pretext_to_asm") or ctx.workdir) if ctx.tracker else ctx.workdir
+    curated_fa_pattern = str(base_dir / f"{ctx.tol_id}*.curated.fa")
     curated_fa_files = glob.glob(curated_fa_pattern)
     if not curated_fa_files:
         raise FileNotFoundError(f"No curated FASTA found: {curated_fa_pattern}")

@@ -58,14 +58,16 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO on curated genome")
 
     # --- find curated FASTA ---
-    curated_pattern = str(ctx.workdir / f"{ctx.tol_id}*.curated.fa")
+    # haplotig-files writes *.curated.fa into the pretext_to_asm run dir, not workdir root
     if ctx.print_only:
         curated_fa = ctx.workdir / f"{ctx.tol_id}_merged_curated.{ctx.hap1_prefix}.fa"
     else:
+        base_dir = (ctx.tracker.latest_run_dir("pretext_to_asm") or ctx.workdir) if ctx.tracker else ctx.workdir
+        curated_pattern = str(base_dir / f"{ctx.tol_id}*.curated.fa")
         curated_matches = glob.glob(curated_pattern)
         if not curated_matches:
             raise FileNotFoundError(f"No curated FASTA found: {curated_pattern}")
-        curated_fa = Path(sorted(curated_matches)[-1])  # take the latest
+        curated_fa = Path(sorted(curated_matches)[-1])
     log.info("Curated FASTA: %s", curated_fa)
 
     # --- determine file size and memory ---
