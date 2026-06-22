@@ -9,7 +9,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run
+from grit.utils.helpers import _run, find_latest_dir
 from grit.utils.modules import module_cmd
 from grit.utils.output import console, print_done, print_step_header
 
@@ -53,7 +53,7 @@ def run_hic_remapping(ctx: CurationContext) -> None:
             if prev_dir else []
         )
         if hr_pretexts:
-            pta_dir = ctx.tracker.latest_run_dir("pretext_to_asm") or ctx.workdir
+            pta_dir = find_latest_dir(ctx, "pretext_to_asm")
             curated_fas = list(pta_dir.glob(f"{ctx.tol_id}*.curated.fa"))
             pretext_mtime = min(f.stat().st_mtime for f in hr_pretexts)
             fa_newer = curated_fas and max(
@@ -76,10 +76,8 @@ def run_hic_remapping(ctx: CurationContext) -> None:
     # Resolve input FASTA from pretext_to_asm run_dir (or workdir as fallback)
     if ctx.print_only:
         pta_dir = ctx.workdir / "pretext_to_asm" / "<timestamp>"
-    elif ctx.tracker:
-        pta_dir = ctx.tracker.latest_run_dir("pretext_to_asm") or ctx.workdir
     else:
-        pta_dir = ctx.workdir
+        pta_dir = find_latest_dir(ctx, "pretext_to_asm")
 
     hap1_fa_pattern = str(pta_dir / f"{ctx.tol_id}*.{ctx.hap1_prefix}*.curated.fa")
 

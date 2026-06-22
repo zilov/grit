@@ -8,7 +8,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, _state_update_epilogue, _submit_bsub, build_bsub_opts
+from grit.utils.helpers import _run, _state_update_epilogue, _submit_bsub, build_bsub_opts, find_latest_dir
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -123,7 +123,7 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
     if ctx.print_only:
         query_fa = ctx.workdir / f"{ctx.tol_id}.{ctx.hap1_prefix}.primary.curated.fa"
     else:
-        base_dir = (ctx.tracker.latest_run_dir("pretext_to_asm") or ctx.workdir) if ctx.tracker else ctx.workdir
+        base_dir = find_latest_dir(ctx, "pretext_to_asm")
         query_pattern = str(base_dir / f"{ctx.tol_id}*{ctx.hap1_prefix}*.curated.fa")
         query_matches = glob.glob(query_pattern)
         if not query_matches:

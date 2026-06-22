@@ -183,7 +183,28 @@ def agp_newer_than_curated_fa(workdir: Path, tol_id: str, pta_dir: Path | None) 
     return max(f.stat().st_mtime for f in agp_files) > min(f.stat().st_mtime for f in curated_fas)
 
 
-def _find_pretext_map_in_workdir(ctx: CurationContext) -> Path:
+def find_latest_dir(ctx: "CurationContext", step: str) -> Path:
+    """
+    Return the output directory for *step*, trying locations in priority order:
+      1. tracker.latest_run_dir(step)     — tracked run (success or started)
+      2. workdir / step / "untracked"    — run before tracking, convention from tracker.start()
+      3. workdir                          — last resort
+
+    All steps follow the convention: if tracker is absent, run_dir falls back to
+    ``workdir/<step>/untracked``.  Steps that don't create that dir (bsub-only)
+    safely skip to workdir.
+    """
+    if ctx.tracker and not ctx.print_only:
+        tracked = ctx.tracker.latest_run_dir(step)
+        if tracked and tracked.exists():
+            return tracked
+    untracked = ctx.workdir / step / "untracked"
+    if untracked.exists():
+        return untracked
+    return ctx.workdir
+
+
+def _find_pretext_map_in_workdir(ctx: "CurationContext") -> Path:
     """
     Returns the HR pretext map that was copied to workdir.
 

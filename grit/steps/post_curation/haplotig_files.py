@@ -8,6 +8,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
+from grit.utils.helpers import find_latest_dir
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -48,10 +49,7 @@ def run_haplotig_files(ctx: CurationContext) -> None:
 
     # Resolve base dir: prefer the pretext_to_asm run_dir so haplotig files
     # stay alongside the curated FA for that run.
-    if ctx.tracker and not ctx.print_only:
-        base_dir = ctx.tracker.latest_run_dir("pretext_to_asm") or ctx.workdir
-    else:
-        base_dir = ctx.workdir
+    base_dir = find_latest_dir(ctx, "pretext_to_asm")
 
     # hap1/hap2: {tol_id}.hap1.1.all_haplotigs.curated.fa
     # primary:   {tol_id}.1.all_haplotigs.curated.fa

@@ -49,7 +49,7 @@ def run_rename_and_orient(ctx: CurationContext) -> None:
     if ctx.print_only:
         hap1_fa = ctx.workdir / f"{ctx.tol_id}.{ctx.hap1_prefix}.primary.curated.fa"
     else:
-        base_dir = (ctx.tracker.latest_run_dir("pretext_to_asm") or ctx.workdir) if ctx.tracker else ctx.workdir
+        base_dir = find_latest_dir(ctx, "pretext_to_asm")
         hap1_pattern = str(base_dir / f"{ctx.tol_id}*{ctx.hap1_prefix}*.curated.fa")
         hap1_matches = glob.glob(hap1_pattern)
         if not hap1_matches:

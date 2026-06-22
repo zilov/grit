@@ -10,7 +10,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run
+from grit.utils.helpers import _run, find_latest_dir
 from grit.utils.output import console, print_done, print_step_header
 
 log = logging.getLogger(__name__)
@@ -47,12 +47,8 @@ def finalize_for_qc(ctx: CurationContext) -> None:
     run_dir = ctx.tracker.start("finalize_qc", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
 
     # Resolve run dirs for curated files
-    if ctx.tracker and not ctx.print_only:
-        pta_dir = ctx.tracker.latest_run_dir("pretext_to_asm") or ctx.workdir
-        hic_dir = ctx.tracker.latest_run_dir("hic_remapping") or ctx.workdir
-    else:
-        pta_dir = ctx.workdir
-        hic_dir = ctx.workdir / f"{ctx.tol_id}_curationpretext"
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+    hic_dir = find_latest_dir(ctx, "hic_remapping") if not ctx.print_only else ctx.workdir / f"{ctx.tol_id}_curationpretext"
 
     curated_dir = ctx.assembly_curated_dir
 

@@ -9,6 +9,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
+from grit.utils.helpers import find_latest_dir
 from grit.utils.output import (
     console,
     print_done,
@@ -94,10 +95,7 @@ def run_validate_files(ctx: CurationContext) -> None:
 
     # --- check expected files ---
     # Curated files live in the pretext_to_asm run_dir; AGP/log remain in workdir.
-    if ctx.tracker and not ctx.print_only:
-        pta_dir = ctx.tracker.latest_run_dir("pretext_to_asm") or ctx.workdir
-    else:
-        pta_dir = ctx.workdir
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
 
     console.print("\n[bold]Expected files:[/bold]")
     curated_patterns = [
