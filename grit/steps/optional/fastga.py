@@ -69,18 +69,18 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     log.info("Curated hap1 FASTA: %s", hap1_fa)
 
     # --- find reference ---
-    ref_dir = ctx.workdir / "reference"
     if reference_path:
         ref_path = Path(reference_path)
         if not ctx.print_only and not ref_path.exists():
             raise FileNotFoundError(f"Reference not found: {ref_path}")
         log.info("Reference FASTA (explicit): %s", ref_path)
     else:
+        ref_dir = find_latest_dir(ctx, "find_reference")
         ref_patterns = [
-            str(ctx.workdir / "GC*.fna.gz"),
-            str(ctx.workdir / "GC*.fna"),
             str(ref_dir / "*.fna.gz"),
             str(ref_dir / "*.fna"),
+            str(ref_dir / "*.fa.gz"),
+            str(ref_dir / "*.fa"),
         ]
         ref_path = None
         for pattern in ref_patterns:
@@ -93,13 +93,14 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
                 break
 
         if ref_path is None or (not ctx.print_only and not ref_path.exists()):
-            log.info("No reference found, downloading closest reference")
-            from grit.steps.find_reference import find_closest_reference
+            log.info("No reference found, running find-reference first")
+            from grit.steps.pre_curation.find_reference import find_closest_reference
 
             find_closest_reference(ctx)
+            ref_dir = find_latest_dir(ctx, "find_reference")
             ref_matches = glob.glob(str(ref_dir / "*.fna.gz")) + glob.glob(str(ref_dir / "*.fna"))
             if not ref_matches:
-                raise FileNotFoundError(f"No reference downloaded to {ref_dir}")
+                raise FileNotFoundError(f"No reference found in {ref_dir}")
             ref_path = Path(sorted(ref_matches)[-1])
 
         log.info("Reference FASTA: %s", ref_path)
@@ -110,7 +111,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     ref_prefix = raw_stem.removesuffix("_reheader")
     assembly_prefix = hap1_fa.stem.split(".")[0]
     run_prefix = f"{ref_prefix}_vs_{assembly_prefix}"
-    ref_reheader = ref_dir / f"{ref_prefix}_reheader.fna"
+    ref_reheader = ref_path.parent / f"{ref_prefix}_reheader.fna"
 
     if not ctx.print_only and ref_reheader.exists():
         log.info("Reheadered reference already exists — skipping prep: %s", ref_reheader)

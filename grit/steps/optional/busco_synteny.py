@@ -50,7 +50,7 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO synteny")
 
     # --- ensure reference is available ---
-    ref_dir = ctx.workdir / "reference"
+    ref_dir = find_latest_dir(ctx, "find_reference")
     ref_patterns = [
         str(ref_dir / "*_reheader.fa"),
         str(ref_dir / "*_reheader.fna"),
@@ -70,22 +70,23 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
             break
 
     if ref_path is None or (not ctx.print_only and not ref_path.exists()):
-        log.info("No reference found, downloading closest reference")
-        from grit.steps.find_reference import find_closest_reference
+        log.info("No reference found, running find-reference first")
+        from grit.steps.pre_curation.find_reference import find_closest_reference
 
         find_closest_reference(ctx)
-        # After download, find again
+        ref_dir = find_latest_dir(ctx, "find_reference")
         ref_matches = glob.glob(str(ref_dir / "*.fa.gz")) + glob.glob(str(ref_dir / "*.fa"))
         if not ref_matches:
-            raise FileNotFoundError(f"No reference downloaded to {ref_dir}")
+            raise FileNotFoundError(f"No reference found in {ref_dir}")
         ref_path = Path(sorted(ref_matches)[-1])
 
     log.info("Reference FASTA: %s", ref_path)
 
     # --- prepare reference ---
-    ref_prefix = ref_path.stem.split(".")[0]  # e.g., GCA123456
-    ref_fna = ctx.workdir / f"{ref_prefix}.fna"
-    ref_reheader = ctx.workdir / f"{ref_prefix}_reheader.fna"
+    raw_stem = ref_path.stem.split(".")[0]
+    ref_prefix = raw_stem.removesuffix("_reheader")
+    ref_fna = ref_dir / f"{ref_prefix}.fna"
+    ref_reheader = ref_dir / f"{ref_prefix}_reheader.fna"
 
     prep_cmds = []
 

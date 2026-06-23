@@ -48,17 +48,15 @@ def find_closest_reference(ctx: CurationContext, number: int = 1) -> None:
     log.info("find-reference | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Find closest reference")
 
-    ref_dir = ctx.workdir / "reference"
     species_query = _clean_species_name(ctx.species)
     log.info("Reference dir: %s", ref_dir)
     log.info("Species (raw): %s", ctx.species)
     log.info("Species (query): %s", species_query)
 
-    run_dir = ctx.tracker.start("find_reference", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
-
+    run_dir = ctx.tracker.start("find_reference", ctx.ticket_id, ctx.tol_id) if ctx.tracker else ctx.workdir / "find_reference" / "untracked"
     cmd = (
-        f"mkdir -p {ref_dir} && "
-        f"cd {ref_dir} && "
+        f"mkdir -p {run_dir} && "
+        f"cd {run_dir} && "
         f'{_GET_NEAREST_COMPARATOR} -s "{species_query}" -d -n {number}'
     )
     try:
@@ -69,7 +67,7 @@ def find_closest_reference(ctx: CurationContext, number: int = 1) -> None:
         if ctx.tracker and run_dir:
             ctx.tracker.finish("find_reference", run_dir, "failed")
         raise
-    print_done(f"Reference downloaded to {ref_dir}")
+    print_done(f"Reference downloaded to {run_dir}")
 
 
 # ---------------------------------------------------------------------------
