@@ -13,9 +13,24 @@ from grit.utils.modules import module_cmd
 from grit.utils.output import (
     print_done,
     print_step_header,
+    print_tip,
 )
 
 log = logging.getLogger(__name__)
+
+
+def _fastga_scp_tip(farm_host: str, run_dir: Path, tol_id: str, print_only: bool = False) -> str | None:
+    """Return a print_tip string with scp commands for FastGA outputs, or None if no files found."""
+    local_dir = f"~/curations/work/{tol_id}"
+    if print_only:
+        files = [str(run_dir / f"{tol_id}.fa.idx"), str(run_dir / f"{tol_id}_FastGA.paf")]
+    else:
+        files = sorted(glob.glob(str(run_dir / "*.idx")) + glob.glob(str(run_dir / "*FastGA.paf")))
+    if not files:
+        return None
+    cmds = " && \\\n".join(f"scp {farm_host}:{f} {local_dir}" for f in files)
+    return f"Download FastGA results:\n[bold cyan]{cmds}[/bold cyan]"
+
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -150,23 +165,10 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
             ctx.tracker.finish("fastga", run_dir, "failed")
         raise
 
-    # --- print scp commands if output already exists ---
-    if ctx.print_only or run_dir.exists():
-        scp_local_dir = f"~/curations/work/{ctx.tol_id}"
-        idx_files = (
-            glob.glob(str(run_dir / "*f*a.idx"))
-            if not ctx.print_only
-            else [str(run_dir / "example.f*a.idx")]
-        )
-        paf_files = (
-            glob.glob(str(run_dir / "*FastGA.paf"))
-            if not ctx.print_only
-            else [str(run_dir / "example.FastGA.paf")]
-        )
-        files_to_scp = idx_files + paf_files
-        if files_to_scp:
-            scp_cmds = [f"scp {ctx.farm_host}:{f} {scp_local_dir}" for f in files_to_scp]
-            log.info("Scp FastGA results to local: %s", " && ".join(scp_cmds))
+    # --- tip: scp commands if output already exists ---
+    tip = _fastga_scp_tip(ctx.farm_host, run_dir, ctx.tol_id, ctx.print_only)
+    if tip:
+        print_tip(tip)
 
     print_done("FastGA submitted.")
 

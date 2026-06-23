@@ -177,6 +177,15 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
 
     farm_host = user_config.get("farm_host", "<farm_host>")
 
+    fastga_entry = step_latest.get("fastga")
+    if fastga_entry and fastga_entry.get("status") == "success":
+        fastga_run_dir = Path(fastga_entry.get("run_dir", ""))
+        if fastga_run_dir.exists():
+            from grit.steps.optional.fastga import _fastga_scp_tip
+            fastga_tip = _fastga_scp_tip(farm_host, fastga_run_dir, tol_id)
+            if fastga_tip:
+                print_tip(fastga_tip)
+
     if hic_success_run_dir:
         remapped_pattern = str(
             hic_success_run_dir / "pretext_maps_processed" / f"{tol_id}*normal.pretext"
