@@ -9,6 +9,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
+from grit.utils.helpers import find_latest_dir
 from grit.utils.output import (
     console,
     print_done,
@@ -61,15 +62,14 @@ def run_rename_and_orient(ctx: CurationContext) -> None:
     log.info("Curated hap1 FASTA: %s", hap1_fa)
 
     # --- find FastGA PAF ---
-    fastga_dir = ctx.workdir / "fastga"
-    paf_pattern = str(fastga_dir / "*FastGA.paf")
     if ctx.print_only:
-        paf_file = fastga_dir / "example.FastGA.paf"
+        paf_file = ctx.workdir / "fastga" / "example.FastGA.paf"
     else:
-        paf_matches = glob.glob(paf_pattern)
+        fastga_dir = find_latest_dir(ctx, "fastga")
+        paf_matches = glob.glob(str(fastga_dir / "*FastGA.paf"))
         if not paf_matches:
             raise FileNotFoundError(
-                f"No FastGA PAF found: {paf_pattern}\nRun 'fastga' command first."
+                f"No FastGA PAF found in {fastga_dir}\nRun 'grit fastga -t {ctx.ticket_id}' first."
             )
         paf_file = Path(sorted(paf_matches)[-1])
     log.info("FastGA PAF: %s", paf_file)
