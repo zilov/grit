@@ -49,11 +49,11 @@ def find_closest_reference(ctx: CurationContext, number: int = 1) -> None:
     print_step_header(ctx.ticket_id, ctx.tol_id, "Find closest reference")
 
     species_query = _clean_species_name(ctx.species)
-    log.info("Reference dir: %s", ref_dir)
     log.info("Species (raw): %s", ctx.species)
     log.info("Species (query): %s", species_query)
 
     run_dir = ctx.tracker.start("find_reference", ctx.ticket_id, ctx.tol_id) if ctx.tracker else ctx.workdir / "find_reference" / "untracked"
+    log.info("Reference dir: %s", run_dir)
     cmd = (
         f"mkdir -p {run_dir} && "
         f"cd {run_dir} && "
