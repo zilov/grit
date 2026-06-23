@@ -18,6 +18,8 @@ from grit.utils.output import (
 
 log = logging.getLogger(__name__)
 
+_RENAME_AND_ORIENT_SCRIPT = "/software/grit/projects/vgp_curation_scripts/rename_and_orient.py"
+
 # ---------------------------------------------------------------------------
 # Public step functions
 # ---------------------------------------------------------------------------
@@ -78,15 +80,8 @@ def run_rename_and_orient(ctx: CurationContext) -> None:
     outdir = ctx.workdir / "rename_and_orient"
     prefix = f"{ctx.tol_id}.{ctx.hap1_prefix}.primary.renamed"
 
-    # Path to the rename_and_orient.py script
-    script_path = (
-        Path(__file__).parent.parent.parent
-        / "rename_and_orient_fasta_to_reference"
-        / "rename_and_orient.py"
-    )
-
     cmd = (
-        f"python3 {script_path} "
+        f"python3 {_RENAME_AND_ORIENT_SCRIPT} "
         f"--fasta {hap1_fa} "
         f"--paf {paf_file} "
         f"--output-dir {outdir} "
