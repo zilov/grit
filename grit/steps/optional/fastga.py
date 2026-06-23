@@ -138,6 +138,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
         memory_mb=24000,
         output="o_fastga",
         error="e_fastga",
+        run_dir=run_dir,
     )
     epilogue = _state_update_epilogue(ctx.workdir, "fastga", run_dir) if run_dir else None
     try:

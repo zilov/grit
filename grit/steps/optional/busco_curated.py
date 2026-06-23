@@ -102,15 +102,16 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     )
 
     # --- build bsub options ---
+    run_dir = ctx.tracker.start("busco_curated", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
     bsub_opts = build_bsub_opts(
         memory_mb=mem_mb,
         cores=32,
         output=f"o_busco_{mem_gb}",
         error=f"e_busco_{mem_gb}",
+        run_dir=run_dir,
     )
 
     # --- submit ---
-    run_dir = ctx.tracker.start("busco_curated", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
     epilogue = _state_update_epilogue(ctx.workdir, "busco_curated", run_dir) if run_dir else None
     job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
     if ctx.tracker and run_dir and job_id:

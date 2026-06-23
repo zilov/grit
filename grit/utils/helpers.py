@@ -84,13 +84,13 @@ def _state_update_epilogue(workdir: Path, step: str, run_dir: Path) -> str:
     """
     Build the bsub -Ep epilogue command that calls `grit _state-update` when a job finishes.
 
-    Uses $LSB_JOB_EXIT_CODE (set by LSF) to determine success vs failed.
+    Uses $LSB_JOBEXIT_STAT (set by LSF in epilogue environment) to determine success vs failed.
     The `grit` command must be on $PATH on compute nodes.
     """
     grit_bin = sys.argv[0]  # full path — ensures grit is found in bsub epilogue environment
     return (
         f"{grit_bin} _state-update --workdir {workdir} --step {step} --run-dir {run_dir} "
-        f"--status $([ $LSB_JOB_EXIT_CODE -eq 0 ] && echo success || echo failed)"
+        f"--status $([ $LSB_JOBEXIT_STAT -eq 0 ] && echo success || echo failed)"
     )
 
 
@@ -132,6 +132,7 @@ def build_bsub_opts(
     error: str | None = None,
     group: str | None = None,
     wait: bool = False,
+    run_dir: Path | None = None,
 ) -> str:
     """
     Build a bsub options string from named parameters.
@@ -147,6 +148,9 @@ def build_bsub_opts(
         error:     Path/name for job stderr log (``-e``). Omitted when ``None``.
         group:     LSF accounting group (``-G``). Omitted when ``None``.
         wait:      If ``True``, add ``-K`` (block caller until job finishes).
+        run_dir:   If provided, relative *output*/*error* names are prefixed with
+                   this directory so LSF writes logs into the step's output folder
+                   rather than wherever ``grit`` was invoked from.
 
     Returns:
         Space-joined options string ready to pass to :func:`_submit_bsub`.
@@ -157,6 +161,11 @@ def build_bsub_opts(
         ...                 output="sex_matcher.out", error="sex_matcher.err")
         "-q normal -K -o sex_matcher.out -e sex_matcher.err -M 50000 -R'select[mem>50000] rusage[mem=50000] span[hosts=1]'"
     """
+    if run_dir is not None:
+        if "/" not in output:
+            output = str(run_dir / output)
+        if error and "/" not in error:
+            error = str(run_dir / error)
     parts = [f"-q {queue}"]
     if cores > 1:
         parts.append(f"-n {cores}")

@@ -134,12 +134,13 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
 
     # --- submit BUSCO synteny job ---
     inner_cmd = f"{_BUSCO_SYNTENY_SCRIPT} -r {ref_reheader} -q {query_fa} -l {lineage}"
+    run_dir = ctx.tracker.start("busco_synteny", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
     bsub_opts = build_bsub_opts(
         cores=32,
         memory_mb=50000,
         output="o_busco_synt",
+        run_dir=run_dir,
     )
-    run_dir = ctx.tracker.start("busco_synteny", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
     epilogue = _state_update_epilogue(ctx.workdir, "busco_synteny", run_dir) if run_dir else None
     job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
     if ctx.tracker and run_dir and job_id:
