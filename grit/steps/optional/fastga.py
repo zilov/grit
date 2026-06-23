@@ -127,7 +127,11 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     # Each run gets its own tracker run_dir so multiple fastga runs don't overwrite each other
     run_dir = ctx.tracker.start("fastga", ctx.ticket_id, ctx.tol_id) if ctx.tracker else ctx.workdir / "fastga" / "untracked"
     fastga_script = "/software/grit/projects/vgp_curation_scripts/FastGA_dot_dgenies.sh"
-    inner_cmd = f"{fastga_script} {ref_reheader} {hap1_fa} {run_prefix} {run_dir}"
+    inner_cmd = (
+        f"cd {run_dir} && "
+        f"{module_cmd('GRIT')} && "
+        f"{fastga_script} {ref_reheader} {hap1_fa} {run_prefix} {run_dir}"
+    )
     bsub_opts = build_bsub_opts(
         group="team135",
         cores=8,
