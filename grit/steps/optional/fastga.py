@@ -110,12 +110,11 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     ref_prefix = raw_stem.removesuffix("_reheader")
     assembly_prefix = hap1_fa.stem.split(".")[0]
     run_prefix = f"{ref_prefix}_vs_{assembly_prefix}"
-    ref_reheader = ctx.workdir / f"{ref_prefix}_reheader.fna"
+    ref_reheader = ref_dir / f"{ref_prefix}_reheader.fna"
 
     if not ctx.print_only and ref_reheader.exists():
         log.info("Reheadered reference already exists — skipping prep: %s", ref_reheader)
     else:
-        # resolve the actual uncompressed source (may already be decompressed)
         if ref_path.suffix == ".gz":
             prep_cmd = f"gunzip {ref_path} && reheader {ref_path.with_suffix('')} > {ref_reheader}"
         else:
