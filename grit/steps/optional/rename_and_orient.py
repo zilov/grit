@@ -20,7 +20,7 @@ from grit.utils.output import (
 
 log = logging.getLogger(__name__)
 
-_RENAME_AND_ORIENT_SCRIPT = "/software/grit/projects/vgp_curation_scripts/rename_and_orient.py"
+_RENAME_AND_ORIENT_SCRIPT = "/nfs/users/nfs_d/dz11/.local/bin/rename-and-orient"
 
 # ---------------------------------------------------------------------------
 # Internal helpers
