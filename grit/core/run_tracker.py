@@ -16,7 +16,6 @@ their output files stay in workdir/ or the parent step's run_dir.
 
 from __future__ import annotations
 
-import glob
 import json
 import logging
 from datetime import datetime, timezone

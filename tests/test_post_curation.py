@@ -142,60 +142,89 @@ def test_run_haplotig_files_print_only(mock_ctx, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@patch("grit.steps.post_curation.hic_remapping._submit_bsub")
-@patch("grit.steps.post_curation.hic_remapping.glob.glob")
-def test_run_hic_remapping_submits_bsub(mock_glob, mock_bsub, mock_ctx, tmp_path):
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_submits_command(mock_find_fa, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
     mock_ctx.hic_dir = Path("/lustre/hic")
     mock_ctx.long_reads_dir = Path("/lustre/pacbio")
     mock_ctx.read_type = "hifi"
     mock_ctx.teloseq = ""
 
-    hap1_fa = str(tmp_path / "sDipInt39.1.hap1.primary.curated.fa")
-    mock_glob.return_value = [hap1_fa]
-    mock_bsub.return_value = "12345"
+    hap1_fa = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
+    mock_find_fa.return_value = hap1_fa
+    mock_run.return_value = ""
 
     run_hic_remapping(mock_ctx)
 
-    assert mock_bsub.called
-    inner_cmd = mock_bsub.call_args[0][0]
-    assert "curationpretext.sh" in inner_cmd
-    assert hap1_fa in inner_cmd
-    assert str(mock_ctx.hic_dir) in inner_cmd
+    assert mock_run.called
+    cmd = mock_run.call_args[0][0]
+    assert "curationpretext.sh" in cmd
+    assert str(hap1_fa) in cmd
+    assert str(mock_ctx.hic_dir) in cmd
 
 
-@patch("grit.steps.post_curation.hic_remapping._submit_bsub")
-@patch("grit.steps.post_curation.hic_remapping.glob.glob")
-def test_run_hic_remapping_includes_teloseq(mock_glob, mock_bsub, mock_ctx, tmp_path):
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_includes_teloseq(mock_find_fa, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
     mock_ctx.hic_dir = Path("/lustre/hic")
     mock_ctx.long_reads_dir = Path("/lustre/pacbio")
     mock_ctx.read_type = "hifi"
     mock_ctx.teloseq = "--teloseq TTAGG"
 
-    hap1_fa = str(tmp_path / "sDipInt39.1.hap1.primary.curated.fa")
-    mock_glob.return_value = [hap1_fa]
-    mock_bsub.return_value = "12345"
+    mock_find_fa.return_value = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
+    mock_run.return_value = ""
 
     run_hic_remapping(mock_ctx)
 
-    inner_cmd = mock_bsub.call_args[0][0]
-    assert "--teloseq TTAGG" in inner_cmd
+    cmd = mock_run.call_args[0][0]
+    assert "--teloseq TTAGG" in cmd
 
 
-@patch("grit.steps.post_curation.hic_remapping._submit_bsub")
-@patch("grit.steps.post_curation.hic_remapping.glob.glob", return_value=[])
-def test_run_hic_remapping_raises_when_no_fasta(mock_glob, mock_bsub, mock_ctx, tmp_path):
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_raises_when_no_fasta(mock_find_fa, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
 
-    with pytest.raises(FileNotFoundError, match="primary curated FASTA"):
+    mock_find_fa.side_effect = FileNotFoundError("No curated FASTA for 'hap1' found")
+
+    with pytest.raises(FileNotFoundError):
         run_hic_remapping(mock_ctx)
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_hap2_submits_two_commands(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.hic_dir = Path("/lustre/hic")
+    mock_ctx.long_reads_dir = Path("/lustre/pacbio")
+    mock_ctx.read_type = "hifi"
+    mock_ctx.teloseq = ""
+
+    hap1_fa = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
+    hap2_fa = tmp_path / "sDipInt39.1.hap2.primary.curated.fa"
+    mock_find_fa.side_effect = [hap1_fa, hap2_fa]
+    mock_run.return_value = ""
+
+    run_hic_remapping(mock_ctx, run_hap2=True)
+
+    assert mock_run.call_count == 2
+    cmds = [call[0][0] for call in mock_run.call_args_list]
+    assert any(str(hap1_fa) in cmd for cmd in cmds)
+    assert any(str(hap2_fa) in cmd for cmd in cmds)
 
 
 # ---------------------------------------------------------------------------

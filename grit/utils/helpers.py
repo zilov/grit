@@ -192,6 +192,52 @@ def agp_newer_than_curated_fa(workdir: Path, tol_id: str, pta_dir: Path | None) 
     return max(f.stat().st_mtime for f in agp_files) > min(f.stat().st_mtime for f in curated_fas)
 
 
+def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
+    """
+    Find the primary curated FASTA for *hap_prefix* in the latest pretext_to_asm run dir.
+
+    Excludes ``all_haplotigs`` files so only the main assembly is returned.
+    Raises FileNotFoundError if nothing matches.
+    """
+    if ctx.print_only:
+        pta_dir = ctx.workdir / "pretext_to_asm" / "<timestamp>"
+        return pta_dir / f"{ctx.tol_id}.{hap_prefix}.primary.curated.fa"
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+    matches = [
+        f for f in glob.glob(str(pta_dir / f"{ctx.tol_id}*{hap_prefix}*.curated.fa"))
+        if "all_haplotigs" not in f
+    ]
+    if not matches:
+        raise FileNotFoundError(
+            f"No curated FASTA for {hap_prefix!r} found in {pta_dir}. "
+            "Run pretext-to-asm first."
+        )
+    return Path(sorted(matches)[-1])
+
+
+def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
+    """
+    Find the canonical assembly FASTA for *hap_prefix*.
+
+    Priority:
+      1. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}*{hap_prefix}*.fa
+      2. ``pretext_to_asm`` output   — via find_curated_fa (excludes all_haplotigs)
+
+    Use this in any step that consumes a curated assembly so that renamed
+    assemblies are automatically preferred over raw pretext_to_asm output.
+    """
+    if not ctx.print_only:
+        rao_dir = ctx.workdir / "rename_and_orient"
+        if rao_dir.exists():
+            matches = [
+                f for f in glob.glob(str(rao_dir / f"{ctx.tol_id}*{hap_prefix}*.fa"))
+                if "all_haplotigs" not in f
+            ]
+            if matches:
+                return Path(sorted(matches)[-1])
+    return find_curated_fa(ctx, hap_prefix)
+
+
 def find_latest_dir(ctx: "CurationContext", step: str) -> Path:
     """
     Return the output directory for *step*, trying locations in priority order:

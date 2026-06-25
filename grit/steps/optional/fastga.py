@@ -8,7 +8,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, _state_update_epilogue, _submit_bsub, build_bsub_opts, find_latest_dir
+from grit.utils.helpers import _run, _state_update_epilogue, _submit_bsub, build_bsub_opts, find_canonical_fa, find_latest_dir
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
     print_done,
@@ -70,17 +70,8 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     log.info("fastga | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run FastGA")
 
-    # --- find curated hap1 fa ---
-    # haplotig-files writes *.curated.fa into the pretext_to_asm run dir, not workdir root
-    if ctx.print_only:
-        hap1_fa = ctx.workdir / f"{ctx.tol_id}.{ctx.hap1_prefix}.primary.curated.fa"
-    else:
-        base_dir = find_latest_dir(ctx, "pretext_to_asm")
-        hap1_pattern = str(base_dir / f"{ctx.tol_id}*{ctx.hap1_prefix}*.curated.fa")
-        hap1_matches = glob.glob(hap1_pattern)
-        if not hap1_matches:
-            raise FileNotFoundError(f"No curated hap1 FASTA found: {hap1_pattern}")
-        hap1_fa = Path(sorted(hap1_matches)[-1])
+    # --- find canonical hap1 FASTA (rename_and_orient output preferred) ---
+    hap1_fa = find_canonical_fa(ctx, ctx.hap1_prefix)
     log.info("Curated hap1 FASTA: %s", hap1_fa)
 
     # --- find reference ---
