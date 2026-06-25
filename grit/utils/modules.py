@@ -25,7 +25,7 @@ MODULE_VERSIONS: dict[str, str] = {
     # pretext-to-asm (convert AGP + FASTA → curated assembly)
     "PRETEXT_TO_ASM": "grit",
     # HiC remapping pipeline
-    "CURATIONPRETEXT": "sanger-tol/curationpretext/1.5.1",
+    "CURATIONPRETEXT": "grit",
     # PretextGraph (gap / telo / bedgraph tracks)
     "PRETEXTGRAPH": "pretextgraph/0.0.7--h4ac6f70_0",
     # FastGA reference comparison
