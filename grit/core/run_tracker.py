@@ -142,10 +142,24 @@ class RunTracker:
         return None
 
     def pending_jobs(self) -> list[dict]:
-        """Return records with status='started' that have a job_id (bsub jobs in flight)."""
+        """Return records with status='started' that have a job_id (bsub jobs in flight).
+
+        Excludes entries where a later terminal entry (success/failed) already
+        exists for the same (step, run_dir) — prevents re-resolving finished jobs
+        on every `grit status` call.
+        """
+        all_records = self.history()
+        terminal = {"success", "failed"}
+        # Latest status seen for each (step, run_dir) key
+        latest: dict[tuple, str] = {}
+        for r in all_records:
+            key = (r.get("step"), r.get("run_dir"))
+            latest[key] = r.get("status", "")
         return [
-            r for r in self.history()
-            if r.get("status") == "started" and r.get("job_id")
+            r for r in all_records
+            if r.get("status") == "started"
+            and r.get("job_id")
+            and latest.get((r.get("step"), r.get("run_dir"))) not in terminal
         ]
 
     # ------------------------------------------------------------------
