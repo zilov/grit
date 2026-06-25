@@ -85,9 +85,9 @@ def run_hic_remapping(ctx: CurationContext) -> None:
         hap1_fa = hap1_fa_pattern
         log.info("Input FASTA (pattern): %s", hap1_fa)
     else:
-        hap1_files = glob.glob(hap1_fa_pattern)
+        hap1_files = [f for f in glob.glob(hap1_fa_pattern) if "all_haplotigs" not in f]
         if not hap1_files:
-            hap1_files = glob.glob(str(pta_dir / f"{ctx.tol_id}*.curated.fa"))
+            hap1_files = [f for f in glob.glob(str(pta_dir / f"{ctx.tol_id}*.curated.fa")) if "all_haplotigs" not in f]
         if not hap1_files:
             if ctx.tracker:
                 ctx.tracker.finish("hic_remapping", run_dir, "failed")
