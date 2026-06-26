@@ -48,11 +48,18 @@ def _submit_rename_and_orient_for_hap(
 
     Returns the bsub job ID (or None in print_only mode).
     """
-    input_fa = find_curated_fa(ctx, hap_prefix)
-    log.info("Curated %s FASTA: %s", hap_prefix, input_fa)
-
     outdir = ctx.workdir / "rename_and_orient"
     prefix = f"{ctx.tol_id}.{hap_prefix}.primary.renamed"
+
+    # Skip if output already exists
+    if not ctx.print_only and (outdir / f"{prefix}.fa").exists():
+        log.info("rename-and-orient output already exists — skipping %s", hap_prefix)
+        from grit.utils.output import print_done
+        print_done(f"Already done → {outdir / f'{prefix}.fa'}")
+        return None
+
+    input_fa = find_curated_fa(ctx, hap_prefix)
+    log.info("Curated %s FASTA: %s", hap_prefix, input_fa)
 
     source_arg = f"--mapping-table {mapping_table}" if mapping_table else f"--paf {paf_file}"
 
