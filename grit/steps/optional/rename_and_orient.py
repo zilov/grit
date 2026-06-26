@@ -5,6 +5,7 @@ from __future__ import annotations
 import glob
 import logging
 import subprocess
+import sys
 from pathlib import Path
 
 import rich_click as click
@@ -20,7 +21,7 @@ from grit.utils.output import (
 
 log = logging.getLogger(__name__)
 
-_RENAME_AND_ORIENT_SCRIPT = "/nfs/users/nfs_d/dz11/.local/bin/rename-and-orient"
+_RENAME_AND_ORIENT_CMD = str(Path(sys.executable).parent / "rename-and-orient")
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -58,7 +59,7 @@ def _run_rename_and_orient_for_hap(
         source_arg = f"--paf {paf_file}"
 
     cmd = (
-        f"python3 {_RENAME_AND_ORIENT_SCRIPT} "
+        f"{_RENAME_AND_ORIENT_CMD} "
         f"--fasta {input_fa} "
         f"{source_arg} "
         f"--output-dir {outdir} "
