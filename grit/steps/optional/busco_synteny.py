@@ -1,18 +1,20 @@
 """Run BUSCO synteny analysis."""
 
 import glob
+import logging
 from pathlib import Path
 
 import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, _submit_bsub
+from grit.utils.helpers import _run, _state_update_epilogue, _submit_bsub, build_bsub_opts, find_latest_dir
 from grit.utils.output import (
     print_done,
-    print_info,
     print_step_header,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -44,10 +46,11 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
     Prints:
         Step header, reference preparation commands, bsub command.
     """
+    log.info("busco-synteny | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO synteny")
 
     # --- ensure reference is available ---
-    ref_dir = ctx.workdir / "reference"
+    ref_dir = find_latest_dir(ctx, "find_reference")
     ref_patterns = [
         str(ref_dir / "*_reheader.fa"),
         str(ref_dir / "*_reheader.fna"),
@@ -67,22 +70,23 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
             break
 
     if ref_path is None or (not ctx.print_only and not ref_path.exists()):
-        print_info("No reference found, downloading closest reference")
-        from grit.steps.find_reference import find_closest_reference
+        log.info("No reference found, running find-reference first")
+        from grit.steps.pre_curation.find_reference import find_closest_reference
 
         find_closest_reference(ctx)
-        # After download, find again
+        ref_dir = find_latest_dir(ctx, "find_reference")
         ref_matches = glob.glob(str(ref_dir / "*.fa.gz")) + glob.glob(str(ref_dir / "*.fa"))
         if not ref_matches:
-            raise FileNotFoundError(f"No reference downloaded to {ref_dir}")
+            raise FileNotFoundError(f"No reference found in {ref_dir}")
         ref_path = Path(sorted(ref_matches)[-1])
 
-    print_info("Reference FASTA", str(ref_path))
+    log.info("Reference FASTA: %s", ref_path)
 
     # --- prepare reference ---
-    ref_prefix = ref_path.stem.split(".")[0]  # e.g., GCA123456
-    ref_fna = ctx.workdir / f"{ref_prefix}.fna"
-    ref_reheader = ctx.workdir / f"{ref_prefix}_reheader.fna"
+    raw_stem = ref_path.stem.split(".")[0]
+    ref_prefix = raw_stem.removesuffix("_reheader")
+    ref_fna = ref_dir / f"{ref_prefix}.fna"
+    ref_reheader = ref_dir / f"{ref_prefix}_reheader.fna"
 
     prep_cmds = []
 
@@ -113,23 +117,34 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
     for cmd in prep_cmds:
         _run(cmd, ctx.print_only)
 
-    print_info("Prepared reference", str(ref_reheader))
+    log.info("Prepared reference: %s", ref_reheader)
 
     # --- find query fasta (curated hap1) ---
-    query_pattern = str(ctx.workdir / f"{ctx.tol_id}*{ctx.hap1_prefix}*.curated.fa")
+    # haplotig-files writes *.curated.fa into the pretext_to_asm run dir, not workdir root
     if ctx.print_only:
         query_fa = ctx.workdir / f"{ctx.tol_id}.{ctx.hap1_prefix}.primary.curated.fa"
     else:
+        base_dir = find_latest_dir(ctx, "pretext_to_asm")
+        query_pattern = str(base_dir / f"{ctx.tol_id}*{ctx.hap1_prefix}*.curated.fa")
         query_matches = glob.glob(query_pattern)
         if not query_matches:
             raise FileNotFoundError(f"No curated hap1 FASTA found: {query_pattern}")
         query_fa = Path(sorted(query_matches)[-1])
-    print_info("Query FASTA", str(query_fa))
+    log.info("Query FASTA: %s", query_fa)
 
     # --- submit BUSCO synteny job ---
     inner_cmd = f"{_BUSCO_SYNTENY_SCRIPT} -r {ref_reheader} -q {query_fa} -l {lineage}"
-    bsub_opts = "-n 32 -o o_busco_synt -M 50G -R'select[mem>50G] rusage[mem=50G] span[hosts=1]'"
-    _submit_bsub(inner_cmd, bsub_opts, ctx.print_only)
+    run_dir = ctx.tracker.start("busco_synteny", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
+    bsub_opts = build_bsub_opts(
+        cores=32,
+        memory_mb=50000,
+        output="o_busco_synt",
+        run_dir=run_dir,
+    )
+    epilogue = _state_update_epilogue(ctx.workdir, "busco_synteny", run_dir) if run_dir else None
+    job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
+    if ctx.tracker and run_dir and job_id:
+        ctx.tracker.record_job("busco_synteny", run_dir, job_id)
 
     print_done("BUSCO synteny submitted.")
 
@@ -147,4 +162,8 @@ def busco_synteny_cmd(ctx, lineage):
     from grit.core.click_cli import build_context
 
     curation_ctx = build_context(ctx.obj)
-    run_busco_synteny(curation_ctx, lineage)
+    try:
+        run_busco_synteny(curation_ctx, lineage)
+    except Exception:
+        log.exception("busco-synteny failed")
+        raise SystemExit(1)

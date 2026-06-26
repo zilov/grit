@@ -2,84 +2,88 @@
 
 from __future__ import annotations
 
-import glob
-from datetime import datetime
+import logging
+import re
 
 import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _submit_bsub
+from grit.utils.helpers import _run, find_canonical_fa, find_latest_dir
 from grit.utils.modules import module_cmd
-from grit.utils.output import console, print_info, print_next_step, print_step_header
+from grit.utils.output import console, print_done, print_step_header
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Public step functions
+# Internal helpers
 # ---------------------------------------------------------------------------
 
 
-def run_hic_remapping(ctx: CurationContext) -> None:
-    """
-    Submits the HiC remapping pipeline (sanger-tol/curationpretext) via bsub.
+def _submit_hic_remapping(ctx: CurationContext, hap_prefix: str, step_name: str) -> None:
+    """Submit one curationpretext run for *hap_prefix*, tracked under *step_name*."""
 
-    Notebook source: ``pre_and_post_curation()`` — ``hic_cmd`` section.
+    # Check for existing successful run; re-run only if curated FASTA is newer
+    if not ctx.print_only and ctx.tracker:
+        prev_dir = ctx.tracker.latest_run_dir(step_name)
+        hr_pretexts = (
+            list(prev_dir.glob(f"pretext_maps_processed/{ctx.tol_id}*hr.pretext"))
+            if prev_dir else []
+        )
+        if hr_pretexts:
+            pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+            curated_fas = list(pta_dir.glob(f"{ctx.tol_id}*.curated.fa"))
+            pretext_mtime = min(f.stat().st_mtime for f in hr_pretexts)
+            fa_newer = curated_fas and max(
+                f.stat().st_mtime for f in curated_fas
+            ) > pretext_mtime
+            if fa_newer:
+                log.info("Curated FASTA is newer than remapped pretext — re-running %s", step_name)
+            else:
+                log.info("HiC remapping already done — skipping: %s", prev_dir)
+                last = ctx.tracker.history(step_name)
+                if last and last[-1].get("status") == "started":
+                    ctx.tracker.finish(step_name, prev_dir, "success")
+                print_done(f"Already done → {prev_dir}")
+                return
 
-    Steps:
-        1. Determine the primary curated FASTA for remapping:
-           ``{ctx.workdir}/{ctx.tol_id}*.{hap1_prefix}*.primary.curated.fa``
-        2. Build the nextflow command via curationpretext.sh and submit via bsub.
-        3. Print scp command to copy the remapped pretext map to local machine.
+    run_dir = (
+        ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id)
+        if ctx.tracker
+        else ctx.workdir / step_name / "untracked"
+    )
 
-    Prints:
-        Step header, bsub command, job ID, scp command for remapped pretext.
-    Next step hint: ``run_qv(ctx)``
-    """
-    print_step_header(ctx.ticket_id, ctx.tol_id, "HiC remapping")
-
-    hap1_fa_pattern = str(ctx.workdir / f"{ctx.tol_id}*.{ctx.hap1_prefix}*.primary.curated.fa")
-
-    if ctx.print_only:
-        hap1_fa = hap1_fa_pattern
-        print_info("Input FASTA (pattern)", hap1_fa)
-    else:
-        hap1_files = glob.glob(hap1_fa_pattern)
-        if not hap1_files:
-            # fallback: any primary curated fa
-            hap1_files = glob.glob(str(ctx.workdir / f"{ctx.tol_id}*.primary.curated.fa"))
-        if not hap1_files:
-            raise FileNotFoundError(
-                f"No primary curated FASTA found at {hap1_fa_pattern}. "
-                "Run run_pretext_to_asm first."
-            )
-        hap1_fa = hap1_files[0]
-        print_info("Input FASTA", hap1_fa)
-
-    outdir = ctx.workdir / f"{ctx.tol_id}_curationpretext"
+    input_fa = find_canonical_fa(ctx, hap_prefix)
+    log.info("Input FASTA: %s", input_fa)
 
     hic_cmd = (
+        f"cd {run_dir} && "
         f"{module_cmd('CURATIONPRETEXT')} && "
         f"curationpretext.sh -profile sanger,singularity"
         f" --map_order unsorted"
-        f" --input {hap1_fa}"
+        f" --input {input_fa}"
         f" --sample {ctx.tol_id}"
         f" --cram {ctx.hic_dir}"
         f" --reads {ctx.long_reads_dir}/fasta"
         f" --read_type {ctx.read_type}"
-        f" --outdir {outdir}"
+        f" --outdir {run_dir}"
     )
     if ctx.teloseq:
         hic_cmd += f" {ctx.teloseq}"
     hic_cmd += " -resume"
 
-    date_str = datetime.now().strftime("%d_%m_%Y")
-    bsub_opts = (
-        f"-n 1 -q oversubscribed"
-        f" -o curationpretext_{date_str}.log"
-        f' -M 1200 -R"select[mem>1200] rusage[mem=1200] span[hosts=1]"'
-    )
-    _submit_bsub(hic_cmd, bsub_opts, ctx.print_only)
+    try:
+        output = _run(hic_cmd, ctx.print_only)
+        if ctx.tracker and run_dir and output and "Job <" in output:
+            m = re.search(r"Job <(\d+)>", output)
+            if m:
+                ctx.tracker.record_job(step_name, run_dir, m.group(1))
+    except Exception:
+        if ctx.tracker:
+            ctx.tracker.finish(step_name, run_dir, "failed")
+        raise
 
-    remapped_pattern = f"{outdir}/pretext_maps_processed/{ctx.tol_id}*normal.pretext"
+    remapped_pattern = str(run_dir / "pretext_maps_processed" / f"{ctx.tol_id}*normal.pretext")
     scp_cmd = (
         f"scp {ctx.farm_host}:{remapped_pattern}"
         f" ~/curations/{ctx.tol_id}/{ctx.tol_id}_remapped.pretext"
@@ -87,20 +91,59 @@ def run_hic_remapping(ctx: CurationContext) -> None:
     console.print("\n[bold]After remapping, copy the map to your local machine:[/bold]")
     console.print(f"  [green]{scp_cmd}[/green]")
 
-    print_next_step("run_qv(ctx)")
+
+# ---------------------------------------------------------------------------
+# Public step function
+# ---------------------------------------------------------------------------
+
+
+def run_hic_remapping(ctx: CurationContext, *, run_hap2: bool = False) -> None:
+    """
+    Runs the HiC remapping pipeline (sanger-tol/curationpretext).
+
+    Submits hap1 by default. Pass ``run_hap2=True`` to also submit hap2
+    (tracked separately as ``hic_remapping_hap2``).
+
+    Output goes into timestamped run directories:
+    ``{workdir}/hic_remapping/<timestamp>/``
+    ``{workdir}/hic_remapping_hap2/<timestamp>/``
+
+    Steps:
+        1. Find canonical FASTA for each haplotype (rename_and_orient output takes
+           priority over pretext_to_asm output).
+        2. Start a new run_dir via tracker.
+        3. cd to run_dir and submit curationpretext.sh with run_dir as outdir.
+        4. Print scp command to copy remapped pretext map to local machine.
+
+    Next step hint: ``run_qv(ctx)``
+    """
+    log.info("hic-remapping | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
+    print_step_header(ctx.ticket_id, ctx.tol_id, "HiC remapping")
+
+    _submit_hic_remapping(ctx, ctx.hap1_prefix, "hic_remapping")
+
+    if run_hap2:
+        print_step_header(ctx.ticket_id, ctx.tol_id, f"HiC remapping ({ctx.hap2_prefix})")
+        _submit_hic_remapping(ctx, ctx.hap2_prefix, "hic_remapping_hap2")
 
 
 # ---------------------------------------------------------------------------
-# Argparse
+# CLI
 # ---------------------------------------------------------------------------
 
 
 @click.command("hic-remapping", cls=GritCommand)
+@click.option("--hap2", "run_hap2", is_flag=True, default=False,
+              help="Also submit HiC remapping for hap2.")
 @click.pass_context
-def hic_remapping_cmd(ctx):
+def hic_remapping_cmd(ctx, run_hap2):
     """Submit HiC remapping pipeline."""
     from grit.core.click_cli import build_context
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    run_hic_remapping(curation_ctx)
+    try:
+        run_hic_remapping(curation_ctx, run_hap2=run_hap2)
+    except Exception:
+        log.exception("hic-remapping failed")
+        raise SystemExit(1)

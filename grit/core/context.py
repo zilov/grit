@@ -7,10 +7,14 @@ all step functions. Holds no global state.
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from grit.core.run_tracker import RunTracker
 
 
 @dataclass
@@ -88,6 +92,9 @@ class CurationContext:
     # --- raw data ---
     yaml_data: dict[str, Any] = field(default_factory=dict)
 
+    # --- run tracking (populated by from_yaml) ---
+    tracker: RunTracker | None = field(default=None, repr=False, compare=False)
+
     @property
     def tol_id_versioned(self) -> str:
         """Example: sDipInt39.1"""
@@ -146,6 +153,8 @@ class CurationContext:
 
         workdir = _derive_workdir(assembly_draft_dir.parent, cfg.username, tol_id)
 
+        from grit.core.run_tracker import RunTracker
+
         return cls(
             ticket_id=ticket_id,
             tol_id=tol_id,
@@ -170,6 +179,7 @@ class CurationContext:
             release_version=release_version,
             print_only=print_only,
             yaml_data=yaml_data,
+            tracker=RunTracker(workdir, print_only=print_only),
         )
 
     @classmethod
@@ -192,7 +202,7 @@ class CurationContext:
             teloseq_raw = ""
         else:
             if gritjiraissue_module is None:
-                sys.path.insert(0, cfg.gritjiraissue_path)
+                sys.path.insert(0, os.path.expanduser(cfg.gritjiraissue_path))
                 import GritJiraIssue as gritjiraissue_module  # noqa: N811
 
             jira_issue = gritjiraissue_module.GritJiraIssue(ticket_id)

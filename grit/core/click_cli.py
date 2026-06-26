@@ -4,13 +4,28 @@ Click-based CLI for the curation pipeline.
 This is the new Click-based interface, allowing modular use of pipeline steps.
 """
 
+import logging
 import sys
 from pathlib import Path
 
 import rich_click as click
 import yaml
+from rich.logging import RichHandler
 
 from grit.core.context import CurationContext
+
+log = logging.getLogger(__name__)
+
+
+def configure_logging(logging_level: str) -> None:
+    level = getattr(logging, logging_level.upper(), logging.INFO)
+    show_path = level == logging.DEBUG
+    logging.basicConfig(
+        level=level,
+        format="%(message)s",
+        datefmt="[%X]",
+        handlers=[RichHandler(show_path=show_path, rich_tracebacks=True)],
+    )
 
 
 class GlobalState:
@@ -23,12 +38,14 @@ class GlobalState:
         ticket: str = None,
         yaml: str = None,
         print_only: bool = False,
+        logging_level: str = "INFO",
     ):
         self.verbose = verbose
         self.config_path = config_path or Path.home() / ".grit_curation_config.yaml"
         self.ticket = ticket
         self.yaml = yaml
         self.print_only = print_only
+        self.logging_level = logging_level
 
 
 @click.group()
@@ -38,12 +55,25 @@ class GlobalState:
 )
 @click.option("--yaml", type=click.Path(exists=True), help="Path to YAML file")
 @click.option("--print-only", is_flag=True, help="Print commands without executing")
+@click.option(
+    "--logging-level",
+    "logging_level",
+    default="INFO",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
+    help="Logging level.",
+    show_default=True,
+)
 @click.pass_context
-def cli(ctx, verbose, config_path, yaml, print_only):
+def cli(ctx, verbose, config_path, yaml, print_only, logging_level):
     """Curation pipeline CLI."""
+    configure_logging(logging_level)
     ctx.ensure_object(dict)
     ctx.obj = GlobalState(
-        verbose=verbose, config_path=config_path, yaml=yaml, print_only=print_only
+        verbose=verbose,
+        config_path=config_path,
+        yaml=yaml,
+        print_only=print_only,
+        logging_level=logging_level,
     )
 
 
@@ -56,8 +86,6 @@ def load_user_config(config_path: Path) -> dict:
 
 
 def build_context(state: GlobalState) -> CurationContext:
-    if not state.ticket:
-        raise click.UsageError("Missing option '--ticket' / '-t'.")
     user_config = load_user_config(Path(state.config_path))
     yaml_override = None
     if state.yaml:
@@ -83,6 +111,7 @@ from grit.steps.optional.fastga import fastga_cmd  # noqa: E402
 from grit.steps.optional.rename_and_orient import rename_and_orient_cmd  # noqa: E402
 from grit.steps.post_curation.finalize_qc import finalize_qc_cmd  # noqa: E402
 from grit.steps.post_curation.haplotig_files import haplotig_files_cmd  # noqa: E402
+from grit.steps.post_curation.post_processing import post_processing_cmd, pp_cmd  # noqa: E402
 from grit.steps.post_curation.hic_remapping import hic_remapping_cmd  # noqa: E402
 from grit.steps.post_curation.post_curation import post_curation_cmd  # noqa: E402
 from grit.steps.post_curation.pretext_to_asm import pretext_to_asm_cmd  # noqa: E402
@@ -101,8 +130,43 @@ from grit.steps.pre_curation.microchromosome import (  # noqa: E402
 from grit.steps.pre_curation.setup import setup_cmd  # noqa: E402
 from grit.steps.pre_curation.sex_matcher import sex_matcher_cmd  # noqa: E402
 
+
+@cli.command("status")
+@click.option("--ticket", "-t", default=None, help="Ticket ID for per-ticket step history.")
+@click.pass_context
+def status_cmd(ctx, ticket):
+    """Show status of active curation tickets, or step history for a specific ticket."""
+    from grit.core.registry import RegistryManager
+    from grit.core.status import show_global_status, show_ticket_history
+
+    registry = RegistryManager()
+    registry.refresh_statuses()
+
+    if ticket:
+        user_config = load_user_config(Path(ctx.obj.config_path))
+        show_ticket_history(registry, ticket, user_config)
+    else:
+        show_global_status(registry)
+
+
+@cli.command("_state-update", hidden=True)
+@click.option("--workdir", required=True, type=click.Path(), help="Ticket workdir path.")
+@click.option("--step", required=True, help="Step name.")
+@click.option("--run-dir", "run_dir", required=True, type=click.Path(), help="Run dir path.")
+@click.option("--status", "status", required=True, type=click.Choice(["success", "failed"]), help="Job outcome.")
+@click.option("--job-id", "job_id", default=None, help="LSF job ID.")
+def state_update_cmd(workdir, step, run_dir, status, job_id):
+    """[Internal] Called by bsub -Ep epilogue to record job completion."""
+    from grit.core.run_tracker import RunTracker
+    tracker = RunTracker(Path(workdir))
+    tracker.finish(step, Path(run_dir), status, job_id=job_id)
+    log.info("_state-update: step=%s status=%s job_id=%s", step, status, job_id)
+
+
 cli.add_command(sex_matcher_cmd)
 cli.add_command(finalize_qc_cmd)
+cli.add_command(post_processing_cmd)
+cli.add_command(pp_cmd)
 cli.add_command(add_bedgraph_track_cmd)
 cli.add_command(add_gap_track_cmd)
 cli.add_command(add_telo_track_cmd)

@@ -1,6 +1,7 @@
 """Microchromosome second-shot curation steps."""
 
 import glob
+import logging
 
 import rich_click as click
 
@@ -9,10 +10,10 @@ from grit.core.context import CurationContext
 from grit.utils.helpers import _run
 from grit.utils.output import (
     print_done,
-    print_info,
-    print_next_step,
     print_step_header,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -49,6 +50,7 @@ def run_microchromosome_curation(ctx: CurationContext) -> None:
     Prints:
         Step header, command, scp instructions.
     """
+    log.info("microchromosome | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Microchromosome second-shot curation (pre)")
 
     micro_dir = ctx.workdir / "second_shot_microchromosomes"
@@ -92,8 +94,7 @@ def run_microchromosome_curation(ctx: CurationContext) -> None:
         f"scp {micro_dir}/hic/pretext_maps_processed/*hr.pretext "
         f"~/curations/work/{ctx.tol_id}/second_shot_microchromosomes"
     )
-    print_info("Scp micro pretext map to local for curation", scp_pretext_micro)
-    print_next_step("microchromosome-post  (after curating the micro pretext map locally)")
+    log.info("Scp micro pretext map to local for curation: %s", scp_pretext_micro)
 
 
 def run_microchromosome_post_curation(ctx: CurationContext) -> None:
@@ -127,6 +128,7 @@ def run_microchromosome_post_curation(ctx: CurationContext) -> None:
     Prints:
         Step header, each command, path to final merged FASTAs.
     """
+    log.info("microchromosome-post | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Microchromosome second-shot curation (post)")
 
     micro_dir = ctx.workdir / "second_shot_microchromosomes"
@@ -151,8 +153,8 @@ def run_microchromosome_post_curation(ctx: CurationContext) -> None:
         f"scp ~/curations/work/{ctx.tol_id}/second_shot_microchromosomes/*agp* "
         f"{ctx.farm_host}:{micro_dir}/"
     )
-    print_info("AGP should have been uploaded with", scp_micro_agp)
-    print_info("AGP file", agp)
+    log.info("AGP should have been uploaded with: %s", scp_micro_agp)
+    log.info("AGP file: %s", agp)
 
     # --- run pretext-to-asm on small chromosomes ---
     small_out_fa = micro_dir / f"{ctx.tol_id}_small.fa"
@@ -244,7 +246,11 @@ def microchromosome_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    run_microchromosome_curation(curation_ctx)
+    try:
+        run_microchromosome_curation(curation_ctx)
+    except Exception:
+        log.exception("microchromosome failed")
+        raise SystemExit(1)
 
 
 @click.command("microchromosome-post", cls=GritCommand)
@@ -255,4 +261,8 @@ def microchromosome_post_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    run_microchromosome_post_curation(curation_ctx)
+    try:
+        run_microchromosome_post_curation(curation_ctx)
+    except Exception:
+        log.exception("microchromosome-post failed")
+        raise SystemExit(1)

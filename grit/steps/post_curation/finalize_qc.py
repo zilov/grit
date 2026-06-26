@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import glob
+import logging
+from pathlib import Path
 
 import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run
-from grit.utils.output import console, print_done, print_info, print_step_header, print_warning
+from grit.utils.helpers import _run, find_latest_dir
+from grit.utils.output import console, print_done, print_step_header
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -26,78 +30,77 @@ def finalize_for_qc(ctx: CurationContext) -> None:
     Steps:
         1. Create curated assembly directory: ``mkdir {ctx.assembly_curated_dir}``
         2. Copy curated FASTA files, chromosome lists, and haplotig files
-           to ``{ctx.assembly_curated_dir}/``.
-        3. Copy the remapped pretext map to the NFS curated pretext maps directory.
+           from the pretext_to_asm run_dir to ``{ctx.assembly_curated_dir}/``.
+        3. Copy the remapped pretext map from the hic_remapping run_dir to NFS.
            Destination path uses a two-level prefix structure:
            ``{curated_pretext_maps_nfs}/{tol_id[0]}_*/{tol_id[1]}_*/``
         4. Run kmer_completeness.bash if no merquryk folder exists in
            ``{ctx.assembly_curated_dir}``.
+        5. Mark ticket as done in the global registry.
 
     Prints:
         Step header, each copy command executed, reminder to update Jira.
     """
+    log.info("finalize-qc | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Finalize for QC")
+
+    run_dir = ctx.tracker.start("finalize_qc", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
+
+    # Resolve run dirs for curated files
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+    hic_dir = find_latest_dir(ctx, "hic_remapping") if not ctx.print_only else ctx.workdir / f"{ctx.tol_id}_curationpretext"
 
     curated_dir = ctx.assembly_curated_dir
 
     # 1. mkdir
     mkdir_cmd = f"mkdir -p {curated_dir}"
     _run(mkdir_cmd, ctx.print_only)
-    print_info("Curated dir", str(curated_dir))
+    log.info("Curated dir: %s", curated_dir)
 
-    # 2. gather curated files
-    curated_fa_pattern = str(ctx.workdir / f"{ctx.tol_id}*.curated.fa")
-    chr_list_pattern = str(ctx.workdir / f"{ctx.tol_id}*.chromosome.list.csv")
-    haplotig_pattern = str(ctx.workdir / f"{ctx.tol_id}*haplotigs*.fa")
+    # 2. gather curated files from pretext_to_asm run_dir
+    # curated_fa_pattern matches both primary and haplotig FAs — no separate haplotig copy needed
+    curated_fa_pattern = str(pta_dir / f"{ctx.tol_id}*.curated.fa")
+    chr_list_pattern = str(pta_dir / f"{ctx.tol_id}*.chromosome.list.csv")
 
     if ctx.print_only:
-        for pattern in (curated_fa_pattern, chr_list_pattern, haplotig_pattern):
+        for pattern in (curated_fa_pattern, chr_list_pattern):
             _run(f"cp {pattern} {curated_dir}/", ctx.print_only)
     else:
-        for pattern in (curated_fa_pattern, chr_list_pattern, haplotig_pattern):
+        for pattern in (curated_fa_pattern, chr_list_pattern):
             files = glob.glob(pattern)
             if files:
                 cp_cmd = f"cp {' '.join(files)} {curated_dir}/"
                 _run(cp_cmd, ctx.print_only)
             else:
-                print_warning(f"No files matched: {pattern}")
+                log.warning("No files matched: %s", pattern)
 
-    # 3. copy remapped pretext map to NFS
-    remapped_pattern = str(
-        ctx.workdir
-        / f"{ctx.tol_id}_curationpretext"
-        / "pretext_maps_processed"
-        / f"{ctx.tol_id}*normal.pretext"
-    )
+    # 3. copy remapped pretext map from hic_remapping run_dir to NFS
+    remapped_pattern = str(hic_dir / "pretext_maps_processed" / f"{ctx.tol_id}*normal.pretext")
 
     tol_id = ctx.tol_id
     nfs_base = ctx.curated_pretext_maps_nfs
 
+    pretext_dest_name = f"{tol_id}.{ctx.release_version}.{ctx.hap1_prefix}.curated.pretext"
+
     if ctx.print_only:
-        nfs_dest = f"{nfs_base}/{tol_id[0]}_*/{tol_id[1]}_*/"
-        pretext_dest_name = f"{tol_id}.{ctx.release_version}.{ctx.hap1_prefix}.curated.pretext"
+        nfs_dest = nfs_base / f"{tol_id[0]}_*" / f"{tol_id[1]}_*"
+        _run(f"cp {remapped_pattern} {nfs_dest / pretext_dest_name}", ctx.print_only)
     else:
         first_level = glob.glob(str(nfs_base / f"{tol_id[0]}_*/"))
         if first_level:
-            second_level = glob.glob(f"{first_level[0]}/{tol_id[1]}_*/")
-            nfs_dest = second_level[0] if second_level else first_level[0]
+            second_level = glob.glob(str(Path(first_level[0]) / f"{tol_id[1]}_*/"))
+            nfs_dest = Path(second_level[0] if second_level else first_level[0])
         else:
-            nfs_dest = str(nfs_base) + "/"
-            print_warning(f"No NFS subdirectory found for {tol_id[0]}* under {nfs_base}")
+            nfs_dest = Path(nfs_base)
+            log.warning("No NFS subdirectory found for %s* under %s", tol_id[0], nfs_base)
 
-        pretext_dest_name = f"{tol_id}.{ctx.release_version}.{ctx.hap1_prefix}.curated.pretext"
-
-    if ctx.print_only:
-        _run(f"cp {remapped_pattern} {nfs_dest}{pretext_dest_name}", ctx.print_only)
-    else:
         remapped_files = glob.glob(remapped_pattern)
         if remapped_files:
-            cp_map_cmd = f"cp {remapped_files[0]} {nfs_dest}{pretext_dest_name}"
-            _run(cp_map_cmd, ctx.print_only)
+            _run(f"cp {remapped_files[0]} {nfs_dest / pretext_dest_name}", ctx.print_only)
         else:
-            print_warning(
-                f"Remapped pretext map not found at {remapped_pattern}. "
-                "Copy manually after HiC remapping completes."
+            log.warning(
+                "Remapped pretext map not found at %s. Copy manually after HiC remapping completes.",
+                remapped_pattern,
             )
 
     # 4. QV if merquryk not yet present
@@ -109,8 +112,15 @@ def finalize_for_qc(ctx: CurationContext) -> None:
 
     print_done("All files copied to curated directory")
     console.print(
-        "\n[bold yellow]⚠  Remember to move the ticket to 'Curation QC' in Jira![/bold yellow]"
+        "\n[bold yellow]⚠  Please don't forget about Submission Text and attaching latest savestate to the ticket, curation summary:[/bold yellow]"
     )
+
+    if ctx.tracker and run_dir:
+        ctx.tracker.finish("finalize_qc", run_dir, "success")
+
+    from grit.utils.output import print_curation_results, print_tip
+    print_curation_results(ctx.tracker, ctx.workdir, ctx.tol_id, curated_dir=ctx.assembly_curated_dir)
+    print_tip("Submission notes: https://gist.github.com/zilov/93b1e6c68a6e2553b7c12770d6a0a3ef")
 
 
 # ---------------------------------------------------------------------------
@@ -126,4 +136,8 @@ def finalize_qc_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    finalize_for_qc(curation_ctx)
+    try:
+        finalize_for_qc(curation_ctx)
+    except Exception:
+        log.exception("finalize-qc failed")
+        raise SystemExit(1)

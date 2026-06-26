@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import glob
+import logging
 
 import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
+from grit.utils.helpers import find_latest_dir
 from grit.utils.output import (
     console,
     print_done,
-    print_info,
-    print_next_step,
     print_step_header,
-    print_warning,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -41,6 +42,7 @@ def run_validate_files(ctx: CurationContext) -> None:
         Breaks / joins counts, QV table, completeness table, missing-file warnings.
     Next step hint: ``finalize_for_qc(ctx)``
     """
+    log.info("validate-files | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Validate curated files")
 
     # --- curation log ---
@@ -51,7 +53,7 @@ def run_validate_files(ctx: CurationContext) -> None:
 
     console.print("\n[bold]Curation log:[/bold]")
     if ctx.print_only:
-        print_info("Log path (expected)", str(log_path))
+        log.info("Log path (expected): %s", log_path)
     elif log_path.exists():
         with open(log_path) as fh:
             for line in fh:
@@ -66,19 +68,19 @@ def run_validate_files(ctx: CurationContext) -> None:
                     except (ValueError, IndexError):
                         console.print(f"  {line.strip()}")
     else:
-        print_warning(f"Curation log not found: {log_path}")
+        log.warning("Curation log not found: %s", log_path)
 
     # --- QV / completeness ---
     qv_dir = ctx.assembly_curated_dir / "merquryk"
     console.print("\n[bold]QV and completeness:[/bold]")
     if ctx.print_only:
-        print_info("QV dir (expected)", str(qv_dir))
+        log.info("QV dir (expected): %s", qv_dir)
     else:
         stats_files = glob.glob(str(qv_dir / "*.stats"))
         qv_files = glob.glob(str(qv_dir / f"{ctx.tol_id}.qv"))
 
         if not stats_files and not qv_files:
-            print_warning(f"No QV results found in {qv_dir}. Run run_qv first.")
+            log.warning("No QV results found in %s. Run run_qv first.", qv_dir)
         for f in stats_files:
             console.print(f"\n  [dim]{f}[/dim]")
             with open(f) as fh:
@@ -92,20 +94,23 @@ def run_validate_files(ctx: CurationContext) -> None:
                     console.print(f"  {line.rstrip()}")
 
     # --- check expected files ---
-    console.print("\n[bold]Expected files in workdir:[/bold]")
-    expected_patterns = [
-        f"{ctx.tol_id}*.primary.curated.fa",
-        f"{ctx.tol_id}*.chromosome.list.csv",
-        f"{ctx.tol_id}*haplotigs*.fa",
-        f"{ctx.tol_id}*.agp*",
-        f"{ctx.tol_id}*.log",
+    # Curated files live in the pretext_to_asm run_dir; AGP/log remain in workdir.
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+
+    console.print("\n[bold]Expected files:[/bold]")
+    curated_patterns = [
+        (pta_dir, f"{ctx.tol_id}*.curated.fa"),
+        (pta_dir, f"{ctx.tol_id}*.chromosome.list.csv"),
+        (pta_dir, f"{ctx.tol_id}*haplotigs*.fa"),
+        (ctx.workdir, f"{ctx.tol_id}*.agp*"),
+        (ctx.workdir, f"{ctx.tol_id}*.log"),
     ]
     all_ok = True
-    for pattern in expected_patterns:
+    for base, pattern in curated_patterns:
         if ctx.print_only:
-            console.print(f"  [dim]{ctx.workdir / pattern}[/dim]")
+            console.print(f"  [dim]{base / pattern}[/dim]")
         else:
-            found = glob.glob(str(ctx.workdir / pattern))
+            found = glob.glob(str(base / pattern))
             status = "[green]✓[/green]" if found else "[red]✗ MISSING[/red]"
             console.print(f"  {status}  {pattern}")
             if not found:
@@ -115,9 +120,8 @@ def run_validate_files(ctx: CurationContext) -> None:
         if all_ok:
             print_done("All expected files present")
         else:
-            print_warning("Some expected files are missing — see above")
+            log.warning("Some expected files are missing — see above")
 
-    print_next_step("finalize_for_qc(ctx)")
 
 
 # ---------------------------------------------------------------------------
@@ -132,4 +136,8 @@ def validate_files_cmd(ctx):
     from grit.core.click_cli import build_context
 
     curation_ctx = build_context(ctx.obj)
-    run_validate_files(curation_ctx)
+    try:
+        run_validate_files(curation_ctx)
+    except Exception:
+        log.exception("validate-files failed")
+        raise SystemExit(1)

@@ -1,5 +1,7 @@
 """Find and download closest reference genome."""
 
+import logging
+
 import rich_click as click
 
 from grit.core.base_command import GritCommand
@@ -7,9 +9,10 @@ from grit.core.context import CurationContext
 from grit.utils.helpers import _clean_species_name, _run
 from grit.utils.output import (
     print_done,
-    print_info,
     print_step_header,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -42,21 +45,29 @@ def find_closest_reference(ctx: CurationContext, number: int = 1) -> None:
     Prints:
         Step header, command executed, path to reference directory.
     """
+    log.info("find-reference | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Find closest reference")
 
-    ref_dir = ctx.workdir / "reference"
     species_query = _clean_species_name(ctx.species)
-    print_info("Reference dir", str(ref_dir))
-    print_info("Species (raw)", ctx.species)
-    print_info("Species (query)", species_query)
+    log.info("Species (raw): %s", ctx.species)
+    log.info("Species (query): %s", species_query)
 
+    run_dir = ctx.tracker.start("find_reference", ctx.ticket_id, ctx.tol_id) if ctx.tracker else ctx.workdir / "find_reference" / "untracked"
+    log.info("Reference dir: %s", run_dir)
     cmd = (
-        f"mkdir -p {ref_dir} && "
-        f"cd {ref_dir} && "
+        f"mkdir -p {run_dir} && "
+        f"cd {run_dir} && "
         f'{_GET_NEAREST_COMPARATOR} -s "{species_query}" -d -n {number}'
     )
-    _run(cmd, ctx.print_only)
-    print_done(f"Reference downloaded to {ref_dir}")
+    try:
+        _run(cmd, ctx.print_only)
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("find_reference", run_dir, "success")
+    except Exception:
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("find_reference", run_dir, "failed")
+        raise
+    print_done(f"Reference downloaded to {run_dir}")
 
 
 # ---------------------------------------------------------------------------
@@ -72,4 +83,8 @@ def find_reference_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    find_closest_reference(curation_ctx)
+    try:
+        find_closest_reference(curation_ctx)
+    except Exception:
+        log.exception("find-reference failed")
+        raise SystemExit(1)
