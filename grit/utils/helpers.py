@@ -226,15 +226,14 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     Use this in any step that consumes a curated assembly so that renamed
     assemblies are automatically preferred over raw pretext_to_asm output.
     """
-    if not ctx.print_only:
-        rao_dir = ctx.workdir / "rename_and_orient"
-        if rao_dir.exists():
-            matches = [
-                f for f in glob.glob(str(rao_dir / f"{ctx.tol_id}*{hap_prefix}*.fa"))
-                if "all_haplotigs" not in f
-            ]
-            if matches:
-                return Path(sorted(matches)[-1])
+    rao_dir = ctx.workdir / "rename_and_orient"
+    if rao_dir.exists():
+        matches = [
+            f for f in glob.glob(str(rao_dir / f"{ctx.tol_id}*{hap_prefix}*.fa"))
+            if "all_haplotigs" not in f
+        ]
+        if matches:
+            return Path(sorted(matches)[-1])
     return find_curated_fa(ctx, hap_prefix)
 
 
