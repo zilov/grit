@@ -37,17 +37,20 @@ class RunTracker:
     # Core API
     # ------------------------------------------------------------------
 
-    def start(self, step: str, ticket_id: str, tol_id: str, *, create_dir: bool = True) -> Path:
+    def start(self, step: str, ticket_id: str, tol_id: str, *, create_dir: bool = True, suffix: str = "") -> Path:
         """
         Record step start; create and return the timestamped run_dir.
 
         Pass ``create_dir=False`` for steps that place output directly in workdir
         and don't need a dedicated run subdirectory.
+        Pass ``suffix`` to append a string to the timestamp (e.g. hap prefix) so
+        that two steps started within the same second get unique run_dirs.
 
         In print_only mode: returns a virtual path without touching the filesystem.
         """
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H_%M_%S")
-        run_dir = self.workdir / step / ts
+        dir_name = f"{ts}_{suffix}" if suffix else ts
+        run_dir = self.workdir / step / dir_name
 
         if not self.print_only:
             if create_dir:

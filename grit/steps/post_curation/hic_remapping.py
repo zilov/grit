@@ -48,7 +48,7 @@ def _submit_hic_remapping(ctx: CurationContext, hap_prefix: str, step_name: str)
                 return
 
     run_dir = (
-        ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id)
+        ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, suffix=hap_prefix)
         if ctx.tracker
         else ctx.workdir / step_name / "untracked"
     )
@@ -56,13 +56,15 @@ def _submit_hic_remapping(ctx: CurationContext, hap_prefix: str, step_name: str)
     input_fa = find_canonical_fa(ctx, hap_prefix)
     log.info("Input FASTA: %s", input_fa)
 
+    sample = f"{ctx.tol_id}.{hap_prefix}"
+
     hic_cmd = (
         f"cd {run_dir} && "
         f"{module_cmd('CURATIONPRETEXT')} && "
         f"curationpretext.sh -profile sanger,singularity"
         f" --map_order unsorted"
         f" --input {input_fa}"
-        f" --sample {ctx.tol_id}"
+        f" --sample {sample}"
         f" --cram {ctx.hic_dir}"
         f" --reads {ctx.long_reads_dir}/fasta"
         f" --read_type {ctx.read_type}"
@@ -83,10 +85,10 @@ def _submit_hic_remapping(ctx: CurationContext, hap_prefix: str, step_name: str)
             ctx.tracker.finish(step_name, run_dir, "failed")
         raise
 
-    remapped_pattern = str(run_dir / "pretext_maps_processed" / f"{ctx.tol_id}*normal.pretext")
+    remapped_pattern = str(run_dir / "pretext_maps_processed" / f"{sample}*normal.pretext")
     scp_cmd = (
         f"scp {ctx.farm_host}:{remapped_pattern}"
-        f" ~/curations/{ctx.tol_id}/{ctx.tol_id}_remapped.pretext"
+        f" ~/curations/{ctx.tol_id}/{sample}_remapped.pretext"
     )
     console.print("\n[bold]After remapping, copy the map to your local machine:[/bold]")
     console.print(f"  [green]{scp_cmd}[/green]")
