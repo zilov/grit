@@ -113,16 +113,18 @@ def finalize_for_qc(
     log.info("Curated dir: %s", dest_dir)
 
     # 2a. primary assembly FAs per hap — override or find_canonical_fa
+    # Always copy to canonical curated name: {tol_id}.{hap_prefix}.{version}.primary.curated.fa
     assembly_overrides = {ctx.hap1_prefix: hap1_assembly, ctx.hap2_prefix: hap2_assembly}
     for hap_prefix, override in assembly_overrides.items():
-        if override:
-            _run(f"cp {override} {dest_dir}/", ctx.print_only)
-        else:
+        dest_name = f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.primary.curated.fa"
+        src = override
+        if src is None:
             try:
-                fa = find_canonical_fa(ctx, hap_prefix)
-                _run(f"cp {fa} {dest_dir}/", ctx.print_only)
+                src = find_canonical_fa(ctx, hap_prefix)
             except FileNotFoundError as e:
                 log.warning(str(e))
+                continue
+        _run(f"cp {src} {dest_dir / dest_name}", ctx.print_only)
 
     # 2b. haplotig FAs per hap — override, glob from pretext_to_asm, or create empty placeholder
     haplotig_overrides = {ctx.hap1_prefix: hap1_haplotigs, ctx.hap2_prefix: hap2_haplotigs}
@@ -138,16 +140,18 @@ def finalize_for_qc(
                 _run(f"touch {dest_dir / empty_name}", ctx.print_only)
 
     # 2c. chromosome lists per hap — override or find_canonical_chr_list
+    # Always copy to canonical curated name: {tol_id}.{hap_prefix}.{version}.chromosome.list.csv
     chr_list_overrides = {ctx.hap1_prefix: hap1_chr_list, ctx.hap2_prefix: hap2_chr_list}
     for hap_prefix, override in chr_list_overrides.items():
-        if override:
-            _run(f"cp {override} {dest_dir}/", ctx.print_only)
-        else:
+        dest_name = f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.chromosome.list.csv"
+        src = override
+        if src is None:
             try:
-                csv = find_canonical_chr_list(ctx, hap_prefix)
-                _run(f"cp {csv} {dest_dir}/", ctx.print_only)
+                src = find_canonical_chr_list(ctx, hap_prefix)
             except FileNotFoundError as e:
                 log.warning(str(e))
+                continue
+        _run(f"cp {src} {dest_dir / dest_name}", ctx.print_only)
 
     # 3. copy remapped pretext maps to NFS
     tol_id = ctx.tol_id
