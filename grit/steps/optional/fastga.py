@@ -90,9 +90,6 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
         ]
         ref_path = None
         for pattern in ref_patterns:
-            if ctx.print_only:
-                ref_path = Path(pattern.replace("*", "example"))
-                break
             matches = glob.glob(pattern)
             if matches:
                 ref_path = Path(sorted(matches)[-1])
@@ -119,7 +116,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     run_prefix = f"{ref_prefix}_vs_{assembly_prefix}"
     ref_reheader = ref_path.parent / f"{ref_prefix}_reheader.fna"
 
-    if not ctx.print_only and ref_reheader.exists():
+    if ref_reheader.exists():
         log.info("Reheadered reference already exists — skipping prep: %s", ref_reheader)
     else:
         if ref_path.suffix == ".gz":
