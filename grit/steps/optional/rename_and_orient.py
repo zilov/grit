@@ -123,17 +123,14 @@ def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> No
     print_step_header(ctx.ticket_id, ctx.tol_id, "Rename and orient to reference")
 
     # --- find FastGA PAF ---
-    if ctx.print_only:
-        paf_file = ctx.workdir / "fastga" / "example.FastGA.paf"
-    else:
-        fastga_dir = find_latest_dir(ctx, "fastga")
-        paf_matches = glob.glob(str(fastga_dir / "*FastGA.paf"))
-        if not paf_matches:
-            raise FileNotFoundError(
-                f"No FastGA PAF found in {fastga_dir}\n"
-                f"Run 'grit fastga -t {ctx.ticket_id}' first."
-            )
-        paf_file = Path(sorted(paf_matches)[-1])
+    fastga_dir = find_latest_dir(ctx, "fastga")
+    paf_matches = glob.glob(str(fastga_dir / "*FastGA.paf"))
+    if not paf_matches:
+        raise FileNotFoundError(
+            f"No FastGA PAF found in {fastga_dir}\n"
+            f"Run 'grit fastga -t {ctx.ticket_id}' first."
+        )
+    paf_file = Path(sorted(paf_matches)[-1])
     log.info("FastGA PAF: %s", paf_file)
 
     _submit_rename_and_orient_for_hap(ctx, ctx.hap1_prefix, paf_file, "rename_and_orient")

@@ -37,14 +37,18 @@ def test_run_rename_and_orient_submits_bsub(mock_find_fa, mock_glob, mock_bsub, 
 
 @patch("grit.steps.optional.rename_and_orient._submit_bsub")
 @patch("grit.steps.optional.rename_and_orient.glob.glob")
-def test_run_rename_and_orient_print_only_mode(mock_glob, mock_bsub, mock_ctx, tmp_path):
+@patch("grit.steps.optional.rename_and_orient.find_curated_fa")
+def test_run_rename_and_orient_print_only_mode(mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path):
+    """print_only resolves real PAF and FA paths, just doesn't execute the job."""
     mock_ctx.workdir = tmp_path / "workdir"
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.hap1_prefix = "hap1"
     mock_ctx.hap2_prefix = "hap2"
     mock_ctx.print_only = True
 
-    mock_glob.return_value = []
+    paf_file = tmp_path / "workdir" / "fastga" / "sDipInt39_vs_ref.FastGA.paf"
+    mock_glob.return_value = [str(paf_file)]
+    mock_find_fa.return_value = tmp_path / "workdir" / "sDipInt39.hap1.primary.curated.fa"
 
     run_rename_and_orient(mock_ctx)
 

@@ -199,9 +199,6 @@ def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     Excludes ``all_haplotigs`` files so only the main assembly is returned.
     Raises FileNotFoundError if nothing matches.
     """
-    if ctx.print_only:
-        pta_dir = ctx.workdir / "pretext_to_asm" / "<timestamp>"
-        return pta_dir / f"{ctx.tol_id}.{hap_prefix}.primary.curated.fa"
     pta_dir = find_latest_dir(ctx, "pretext_to_asm")
     matches = [
         f for f in glob.glob(str(pta_dir / f"{ctx.tol_id}*{hap_prefix}*.curated.fa"))
@@ -248,7 +245,7 @@ def find_latest_dir(ctx: "CurationContext", step: str) -> Path:
     ``workdir/<step>/untracked``.  Steps that don't create that dir (bsub-only)
     safely skip to workdir.
     """
-    if ctx.tracker and not ctx.print_only:
+    if ctx.tracker:
         tracked = ctx.tracker.latest_run_dir(step)
         if tracked and tracked.exists():
             return tracked
@@ -262,11 +259,9 @@ def _find_pretext_map_in_workdir(ctx: "CurationContext") -> Path:
     """
     Returns the HR pretext map that was copied to workdir.
 
-    Raises FileNotFoundError if not found (unless print_only).
+    Raises FileNotFoundError if not found.
     """
     pattern = str(ctx.workdir / f"{ctx.tol_id}*hr.pretext")
-    if ctx.print_only:
-        return ctx.workdir / f"{ctx.tol_id}_hr.pretext"
     matches = glob.glob(pattern)
     if not matches:
         raise FileNotFoundError(

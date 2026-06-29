@@ -48,7 +48,7 @@ def finalize_for_qc(ctx: CurationContext) -> None:
 
     # Resolve run dirs for curated files
     pta_dir = find_latest_dir(ctx, "pretext_to_asm")
-    hic_dir = find_latest_dir(ctx, "hic_remapping") if not ctx.print_only else ctx.workdir / f"{ctx.tol_id}_curationpretext"
+    hic_dir = find_latest_dir(ctx, "hic_remapping")
 
     curated_dir = ctx.assembly_curated_dir
 
@@ -59,20 +59,17 @@ def finalize_for_qc(ctx: CurationContext) -> None:
 
     # 2. gather curated files from pretext_to_asm run_dir
     # curated_fa_pattern matches both primary and haplotig FAs — no separate haplotig copy needed
-    curated_fa_pattern = str(pta_dir / f"{ctx.tol_id}*.curated.fa")
-    chr_list_pattern = str(pta_dir / f"{ctx.tol_id}*.chromosome.list.csv")
-
-    if ctx.print_only:
-        for pattern in (curated_fa_pattern, chr_list_pattern):
+    for pattern in (
+        str(pta_dir / f"{ctx.tol_id}*.curated.fa"),
+        str(pta_dir / f"{ctx.tol_id}*.chromosome.list.csv"),
+    ):
+        files = glob.glob(pattern)
+        if files:
+            _run(f"cp {' '.join(files)} {curated_dir}/", ctx.print_only)
+        elif not ctx.print_only:
+            log.warning("No files matched: %s", pattern)
+        else:
             _run(f"cp {pattern} {curated_dir}/", ctx.print_only)
-    else:
-        for pattern in (curated_fa_pattern, chr_list_pattern):
-            files = glob.glob(pattern)
-            if files:
-                cp_cmd = f"cp {' '.join(files)} {curated_dir}/"
-                _run(cp_cmd, ctx.print_only)
-            else:
-                log.warning("No files matched: %s", pattern)
 
     # 3. copy remapped pretext map from hic_remapping run_dir to NFS
     remapped_pattern = str(hic_dir / "pretext_maps_processed" / f"{ctx.tol_id}*normal.pretext")
@@ -82,26 +79,26 @@ def finalize_for_qc(ctx: CurationContext) -> None:
 
     pretext_dest_name = f"{tol_id}.{ctx.release_version}.{ctx.hap1_prefix}.curated.pretext"
 
-    if ctx.print_only:
-        nfs_dest = nfs_base / f"{tol_id[0]}_*" / f"{tol_id[1]}_*"
-        _run(f"cp {remapped_pattern} {nfs_dest / pretext_dest_name}", ctx.print_only)
+    first_level = glob.glob(str(nfs_base / f"{tol_id[0]}_*/"))
+    if first_level:
+        second_level = glob.glob(str(Path(first_level[0]) / f"{tol_id[1]}_*/"))
+        nfs_dest = Path(second_level[0] if second_level else first_level[0])
     else:
-        first_level = glob.glob(str(nfs_base / f"{tol_id[0]}_*/"))
-        if first_level:
-            second_level = glob.glob(str(Path(first_level[0]) / f"{tol_id[1]}_*/"))
-            nfs_dest = Path(second_level[0] if second_level else first_level[0])
-        else:
-            nfs_dest = Path(nfs_base)
+        nfs_dest = nfs_base / f"{tol_id[0]}_?" / f"{tol_id[1]}_?"
+        if not ctx.print_only:
             log.warning("No NFS subdirectory found for %s* under %s", tol_id[0], nfs_base)
 
-        remapped_files = glob.glob(remapped_pattern)
-        if remapped_files:
-            _run(f"cp {remapped_files[0]} {nfs_dest / pretext_dest_name}", ctx.print_only)
-        else:
+    remapped_files = glob.glob(remapped_pattern)
+    if remapped_files:
+        _run(f"cp {remapped_files[0]} {nfs_dest / pretext_dest_name}", ctx.print_only)
+    else:
+        if not ctx.print_only:
             log.warning(
                 "Remapped pretext map not found at %s. Copy manually after HiC remapping completes.",
                 remapped_pattern,
             )
+        else:
+            _run(f"cp {remapped_pattern} {nfs_dest / pretext_dest_name}", ctx.print_only)
 
     # 4. QV if merquryk not yet present
     qv_dir = curated_dir / "merquryk"
