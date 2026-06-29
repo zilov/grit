@@ -227,6 +227,98 @@ def test_run_hic_remapping_hap2_submits_two_commands(mock_find_fa, mock_run, moc
     assert any(str(hap2_fa) in cmd for cmd in cmds)
 
 
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_assembly_override_bypasses_find_canonical(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    """--assembly is used directly for hap1; find_canonical_fa must NOT be called."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.hic_dir = Path("/lustre/hic")
+    mock_ctx.long_reads_dir = Path("/lustre/pacbio")
+    mock_ctx.read_type = "hifi"
+    mock_ctx.teloseq = ""
+    mock_run.return_value = ""
+
+    custom_fa = Path("/custom/my_assembly.fa")
+    run_hic_remapping(mock_ctx, assembly=custom_fa)
+
+    mock_find_fa.assert_not_called()
+    cmd = mock_run.call_args[0][0]
+    assert str(custom_fa) in cmd
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_hic_dir_override(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    """--hic-dir replaces ctx.hic_dir in the submitted command."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.hic_dir = Path("/lustre/hic_original")
+    mock_ctx.long_reads_dir = Path("/lustre/pacbio")
+    mock_ctx.read_type = "hifi"
+    mock_ctx.teloseq = ""
+    mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
+    mock_run.return_value = ""
+
+    override_hic = Path("/custom/hic_dir")
+    run_hic_remapping(mock_ctx, hic_dir=override_hic)
+
+    cmd = mock_run.call_args[0][0]
+    assert str(override_hic) in cmd
+    assert "/lustre/hic_original" not in cmd
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_ont_dir_sets_read_type(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    """--ont-dir overrides long_reads_dir and forces read_type=ont."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.hic_dir = Path("/lustre/hic")
+    mock_ctx.long_reads_dir = Path("/lustre/pacbio")
+    mock_ctx.read_type = "hifi"
+    mock_ctx.teloseq = ""
+    mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
+    mock_run.return_value = ""
+
+    ont_path = Path("/custom/ont_dir")
+    run_hic_remapping(mock_ctx, ont_dir=ont_path)
+
+    cmd = mock_run.call_args[0][0]
+    assert str(ont_path) in cmd
+    assert "--read_type ont" in cmd
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_hifi_dir_override(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    """--hifi-dir replaces long_reads_dir; read_type stays hifi."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.hic_dir = Path("/lustre/hic")
+    mock_ctx.long_reads_dir = Path("/lustre/pacbio_original")
+    mock_ctx.read_type = "hifi"
+    mock_ctx.teloseq = ""
+    mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
+    mock_run.return_value = ""
+
+    hifi_path = Path("/custom/hifi_dir")
+    run_hic_remapping(mock_ctx, hifi_dir=hifi_path)
+
+    cmd = mock_run.call_args[0][0]
+    assert str(hifi_path) in cmd
+    assert "/lustre/pacbio_original" not in cmd
+    assert "--read_type hifi" in cmd
+
+
 # ---------------------------------------------------------------------------
 # run_qv
 # ---------------------------------------------------------------------------
