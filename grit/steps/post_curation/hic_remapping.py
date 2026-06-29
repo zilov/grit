@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
+from pathlib import Path
 
 import rich_click as click
 
@@ -20,7 +22,13 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _submit_hic_remapping(ctx: CurationContext, hap_prefix: str, step_name: str) -> None:
+def _submit_hic_remapping(
+    ctx: CurationContext,
+    hap_prefix: str,
+    step_name: str,
+    *,
+    assembly: Path | None = None,
+) -> None:
     """Submit one curationpretext run for *hap_prefix*, tracked under *step_name*."""
 
     # Check for existing successful run; re-run only if curated FASTA is newer
@@ -53,7 +61,7 @@ def _submit_hic_remapping(ctx: CurationContext, hap_prefix: str, step_name: str)
         else ctx.workdir / step_name / "untracked"
     )
 
-    input_fa = find_canonical_fa(ctx, hap_prefix)
+    input_fa = assembly if assembly else find_canonical_fa(ctx, hap_prefix)
     log.info("Input FASTA: %s", input_fa)
 
     sample = f"{ctx.tol_id}.{hap_prefix}"
@@ -99,30 +107,43 @@ def _submit_hic_remapping(ctx: CurationContext, hap_prefix: str, step_name: str)
 # ---------------------------------------------------------------------------
 
 
-def run_hic_remapping(ctx: CurationContext, *, run_hap2: bool = False) -> None:
+def run_hic_remapping(
+    ctx: CurationContext,
+    *,
+    run_hap2: bool = False,
+    hic_dir: Path | None = None,
+    hifi_dir: Path | None = None,
+    ont_dir: Path | None = None,
+    assembly: Path | None = None,
+) -> None:
     """
     Runs the HiC remapping pipeline (sanger-tol/curationpretext).
 
     Submits hap1 by default. Pass ``run_hap2=True`` to also submit hap2
     (tracked separately as ``hic_remapping_hap2``).
 
-    Output goes into timestamped run directories:
-    ``{workdir}/hic_remapping/<timestamp>/``
-    ``{workdir}/hic_remapping_hap2/<timestamp>/``
-
-    Steps:
-        1. Find canonical FASTA for each haplotype (rename_and_orient output takes
-           priority over pretext_to_asm output).
-        2. Start a new run_dir via tracker.
-        3. cd to run_dir and submit curationpretext.sh with run_dir as outdir.
-        4. Print scp command to copy remapped pretext map to local machine.
-
-    Next step hint: ``run_qv(ctx)``
+    ``hic_dir``, ``hifi_dir``, ``ont_dir`` override the values from the ticket
+    YAML. If ``ont_dir`` is supplied, ``--read_type ont`` is used automatically.
     """
+    # Apply CLI overrides to a fresh context copy (frozen dataclass)
+    overrides: dict = {}
+    if hic_dir:
+        overrides["hic_dir"] = hic_dir
+    if ont_dir:
+        overrides["long_reads_dir"] = ont_dir
+        overrides["read_type"] = "ont"
+    elif hifi_dir:
+        overrides["long_reads_dir"] = hifi_dir
+        overrides["read_type"] = "hifi"
+    if overrides:
+        ctx = dataclasses.replace(ctx, **overrides)
+
     log.info("hic-remapping | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
+    if overrides:
+        log.info("Path overrides: %s", {k: str(v) for k, v in overrides.items()})
     print_step_header(ctx.ticket_id, ctx.tol_id, "HiC remapping")
 
-    _submit_hic_remapping(ctx, ctx.hap1_prefix, "hic_remapping")
+    _submit_hic_remapping(ctx, ctx.hap1_prefix, "hic_remapping", assembly=assembly)
 
     if run_hap2:
         print_step_header(ctx.ticket_id, ctx.tol_id, f"HiC remapping ({ctx.hap2_prefix})")
@@ -137,15 +158,30 @@ def run_hic_remapping(ctx: CurationContext, *, run_hap2: bool = False) -> None:
 @click.command("hic-remapping", cls=GritCommand)
 @click.option("--hap2", "run_hap2", is_flag=True, default=False,
               help="Also submit HiC remapping for hap2.")
+@click.option("--hic-dir", "hic_dir", type=click.Path(), default=None,
+              help="Override HiC reads directory from ticket YAML.")
+@click.option("--hifi-dir", "hifi_dir", type=click.Path(), default=None,
+              help="Override HiFi reads directory from ticket YAML.")
+@click.option("--ont-dir", "ont_dir", type=click.Path(), default=None,
+              help="Override ONT reads directory from ticket YAML (sets --read_type ont).")
+@click.option("--assembly", "assembly", type=click.Path(), default=None,
+              help="Use this FASTA instead of the canonical assembly resolved from workdir.")
 @click.pass_context
-def hic_remapping_cmd(ctx, run_hap2):
+def hic_remapping_cmd(ctx, run_hap2, hic_dir, hifi_dir, ont_dir, assembly):
     """Submit HiC remapping pipeline."""
     from grit.core.click_cli import build_context
 
     state = ctx.obj
     curation_ctx = build_context(state)
     try:
-        run_hic_remapping(curation_ctx, run_hap2=run_hap2)
+        run_hic_remapping(
+            curation_ctx,
+            run_hap2=run_hap2,
+            hic_dir=Path(hic_dir) if hic_dir else None,
+            hifi_dir=Path(hifi_dir) if hifi_dir else None,
+            ont_dir=Path(ont_dir) if ont_dir else None,
+            assembly=Path(assembly) if assembly else None,
+        )
     except Exception:
         log.exception("hic-remapping failed")
         raise SystemExit(1)
