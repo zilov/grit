@@ -423,8 +423,8 @@ def test_finalize_for_qc_creates_curated_dir(
     mock_find_csv.return_value = chr_list
     # glob calls: hap1 haplotigs, hap2 haplotigs, nfs_first_level, hap1 remapped pretext
     mock_glob.side_effect = [
-        [haplotig],  # hap1 all_haplotigs
-        [],          # hap2 all_haplotigs (none)
+        [haplotig],  # hap1 all_haplotigs found
+        [],          # hap2 all_haplotigs not found → expect touch
         [],          # nfs first level → fallback to base path
         [remapped],  # hap1 remapped pretext
     ]
@@ -436,6 +436,8 @@ def test_finalize_for_qc_creates_curated_dir(
     assert any("mkdir" in c for c in calls)
     assert any(str(curated_fa) in c for c in calls)
     assert any(str(chr_list) in c for c in calls)
+    # hap2 haplotigs not found — empty file created
+    assert any("touch" in c and "hap2" in c and "all_haplotigs" in c for c in calls)
 
 
 @patch("grit.steps.post_curation.finalize_qc._run")

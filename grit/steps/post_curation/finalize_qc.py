@@ -124,7 +124,7 @@ def finalize_for_qc(
             except FileNotFoundError as e:
                 log.warning(str(e))
 
-    # 2b. haplotig FAs per hap — override or glob from pretext_to_asm
+    # 2b. haplotig FAs per hap — override, glob from pretext_to_asm, or create empty placeholder
     haplotig_overrides = {ctx.hap1_prefix: hap1_haplotigs, ctx.hap2_prefix: hap2_haplotigs}
     for hap_prefix, override in haplotig_overrides.items():
         if override:
@@ -133,6 +133,9 @@ def finalize_for_qc(
             files = glob.glob(str(pta_dir / f"{ctx.tol_id}*{hap_prefix}*all_haplotigs*.curated.fa"))
             if files:
                 _run(f"cp {' '.join(files)} {dest_dir}/", ctx.print_only)
+            else:
+                empty_name = f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.all_haplotigs.curated.fa"
+                _run(f"touch {dest_dir / empty_name}", ctx.print_only)
 
     # 2c. chromosome lists per hap — override or find_canonical_chr_list
     chr_list_overrides = {ctx.hap1_prefix: hap1_chr_list, ctx.hap2_prefix: hap2_chr_list}
@@ -169,7 +172,10 @@ def finalize_for_qc(
         console.print("\n[bold]Running QV analysis (merquryk not found):[/bold]")
         _run(qv_cmd, ctx.print_only)
 
-    print_done("All files copied to curated directory")
+    if ctx.print_only:
+        console.print("\n[yellow]print-only: files not copied — commands above show what would run[/yellow]")
+    else:
+        print_done("All files copied to curated directory")
     console.print(
         "\n[bold yellow]⚠  Please don't forget about Submission Text and attaching latest savestate to the ticket, curation summary:[/bold yellow]"
     )
