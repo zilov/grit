@@ -421,11 +421,12 @@ def test_finalize_for_qc_creates_curated_dir(
 
     mock_find_fa.return_value = curated_fa
     mock_find_csv.return_value = chr_list
-    # glob calls: haplotigs, nfs_first_level, remapped
+    # glob calls: hap1 haplotigs, hap2 haplotigs, nfs_first_level, hap1 remapped pretext
     mock_glob.side_effect = [
-        [haplotig],  # all_haplotigs glob
+        [haplotig],  # hap1 all_haplotigs
+        [],          # hap2 all_haplotigs (none)
         [],          # nfs first level → fallback to base path
-        [remapped],  # remapped pretext
+        [remapped],  # hap1 remapped pretext
     ]
     mock_run.return_value = ""
 
@@ -453,3 +454,64 @@ def test_finalize_for_qc_print_only(mock_run, mock_ctx, tmp_path):
 
     calls = [str(c) for c in mock_run.call_args_list]
     assert any("mkdir" in c for c in calls)
+
+
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_assembly_override(
+    mock_find_fa, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
+):
+    """--hap1-assembly bypasses find_canonical_fa for hap1."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.assembly_curated_dir = tmp_path / "curated"
+    mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+
+    custom_fa = Path("/custom/sDipInt39.hap1.renamed.fa")
+    mock_find_csv.return_value = tmp_path / "chr.list.csv"
+    mock_glob.side_effect = [[], [], [], []]  # haplotigs x2, nfs, remapped
+    mock_run.return_value = ""
+
+    finalize_for_qc(mock_ctx, hap1_assembly=custom_fa)
+
+    mock_find_fa.assert_called_once_with(mock_ctx, "hap2")  # hap1 skipped
+    calls = [str(c) for c in mock_run.call_args_list]
+    assert any(str(custom_fa) in c for c in calls)
+
+
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_hap2_map_copied_when_provided(
+    mock_find_fa, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
+):
+    """--hap2-map triggers a second pretext map copy to NFS."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.assembly_curated_dir = tmp_path / "curated"
+    mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+
+    hap1_pretext = Path("/hic/hap1_normal.pretext")
+    hap2_pretext = Path("/hic/hap2_normal.pretext")
+
+    mock_find_fa.side_effect = FileNotFoundError("no fa")
+    mock_find_csv.side_effect = FileNotFoundError("no csv")
+    mock_glob.side_effect = [[], [], [], [str(hap1_pretext)]]  # haplotigs x2, nfs, hap1 remapped
+    mock_run.return_value = ""
+
+    finalize_for_qc(mock_ctx, hap1_map=hap1_pretext, hap2_map=hap2_pretext)
+
+    calls = [str(c) for c in mock_run.call_args_list]
+    hap1_dest = "sDipInt39.1.hap1.curated.pretext"
+    hap2_dest = "sDipInt39.1.hap2.curated.pretext"
+    assert any(hap1_dest in c for c in calls)
+    assert any(hap2_dest in c for c in calls)
