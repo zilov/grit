@@ -399,36 +399,42 @@ def test_validate_curated_files_warns_on_missing_log(mock_ctx, tmp_path, capsys)
 
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
-def test_finalize_for_qc_creates_curated_dir(mock_glob, mock_run, mock_ctx, tmp_path):
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_creates_curated_dir(
+    mock_find_fa, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
+):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.release_version = 1
     mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
     mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
     mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
 
-    curated_fa = str(tmp_path / "sDipInt39.1.hap1.primary.curated.fa")
-    chr_list = str(tmp_path / "sDipInt39.1.hap1.chromosome.list.csv")
+    curated_fa = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
+    chr_list = tmp_path / "sDipInt39.1.hap1.chromosome.list.csv"
     haplotig = str(tmp_path / "sDipInt39.1.hap1.all_haplotigs.curated.fa")
     remapped = str(
         tmp_path / "sDipInt39_curationpretext/pretext_maps_processed/sDipInt39_normal.pretext"
     )
 
-    # glob side_effect: fa, chr_list, haplotigs, nfs_first_level, nfs_second_level, remapped
+    mock_find_fa.return_value = curated_fa
+    mock_find_csv.return_value = chr_list
+    # glob calls: haplotigs, nfs_first_level, remapped
     mock_glob.side_effect = [
-        [curated_fa],  # curated fa
-        [chr_list],  # chr list
-        [haplotig],  # haplotigs
-        [],  # nfs first level (not found → use base)
+        [haplotig],  # all_haplotigs glob
+        [],          # nfs first level → fallback to base path
         [remapped],  # remapped pretext
     ]
     mock_run.return_value = ""
 
     finalize_for_qc(mock_ctx)
 
-    # mkdir should have been called
     calls = [str(c) for c in mock_run.call_args_list]
     assert any("mkdir" in c for c in calls)
+    assert any(str(curated_fa) in c for c in calls)
+    assert any(str(chr_list) in c for c in calls)
 
 
 @patch("grit.steps.post_curation.finalize_qc._run")

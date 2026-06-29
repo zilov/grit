@@ -234,6 +234,33 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     return find_curated_fa(ctx, hap_prefix)
 
 
+def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
+    """
+    Find the canonical chromosome list CSV for *hap_prefix*.
+
+    Priority:
+      1. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}*{hap_prefix}*.chromosome.list.csv
+      2. ``pretext_to_asm`` output
+
+    Use this alongside ``find_canonical_fa`` so that both FA and chromosome list
+    come from the same processing stage.
+    Raises FileNotFoundError if nothing is found in either location.
+    """
+    rao_dir = ctx.workdir / "rename_and_orient"
+    if rao_dir.exists():
+        matches = glob.glob(str(rao_dir / f"{ctx.tol_id}*{hap_prefix}*.chromosome.list.csv"))
+        if matches:
+            return Path(sorted(matches)[-1])
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+    matches = glob.glob(str(pta_dir / f"{ctx.tol_id}*{hap_prefix}*.chromosome.list.csv"))
+    if not matches:
+        raise FileNotFoundError(
+            f"No chromosome list for {hap_prefix!r} found in rename_and_orient or {pta_dir}. "
+            "Run pretext-to-asm first."
+        )
+    return Path(sorted(matches)[-1])
+
+
 def find_latest_dir(ctx: "CurationContext", step: str) -> Path:
     """
     Return the output directory for *step*, trying locations in priority order:

@@ -10,7 +10,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, find_latest_dir
+from grit.utils.helpers import _run, find_canonical_chr_list, find_canonical_fa, find_latest_dir
 from grit.utils.output import console, print_done, print_step_header
 
 log = logging.getLogger(__name__)
@@ -29,8 +29,9 @@ def finalize_for_qc(ctx: CurationContext) -> None:
 
     Steps:
         1. Create curated assembly directory: ``mkdir {ctx.assembly_curated_dir}``
-        2. Copy curated FASTA files, chromosome lists, and haplotig files
-           from the pretext_to_asm run_dir to ``{ctx.assembly_curated_dir}/``.
+        2. Copy canonical assembly FAs and chromosome lists per haplotype
+           (rename_and_orient output if available, otherwise pretext_to_asm),
+           plus haplotig FAs from pretext_to_asm, to ``{ctx.assembly_curated_dir}/``.
         3. Copy the remapped pretext map from the hic_remapping run_dir to NFS.
            Destination path uses a two-level prefix structure:
            ``{curated_pretext_maps_nfs}/{tol_id[0]}_*/{tol_id[1]}_*/``
@@ -57,19 +58,26 @@ def finalize_for_qc(ctx: CurationContext) -> None:
     _run(mkdir_cmd, ctx.print_only)
     log.info("Curated dir: %s", curated_dir)
 
-    # 2. gather curated files from pretext_to_asm run_dir
-    # curated_fa_pattern matches both primary and haplotig FAs — no separate haplotig copy needed
-    for pattern in (
-        str(pta_dir / f"{ctx.tol_id}*.curated.fa"),
-        str(pta_dir / f"{ctx.tol_id}*.chromosome.list.csv"),
-    ):
-        files = glob.glob(pattern)
-        if files:
-            _run(f"cp {' '.join(files)} {curated_dir}/", ctx.print_only)
-        elif not ctx.print_only:
-            log.warning("No files matched: %s", pattern)
-        else:
-            _run(f"cp {pattern} {curated_dir}/", ctx.print_only)
+    # 2. primary assembly FAs — prefer rename_and_orient output (canonical), fallback to pretext_to_asm
+    for hap_prefix in (ctx.hap1_prefix, ctx.hap2_prefix):
+        try:
+            fa = find_canonical_fa(ctx, hap_prefix)
+            _run(f"cp {fa} {curated_dir}/", ctx.print_only)
+        except FileNotFoundError as e:
+            log.warning(str(e))
+
+    # haplotig FAs — always from pretext_to_asm (rename_and_orient doesn't process these)
+    haplotig_files = glob.glob(str(pta_dir / f"{ctx.tol_id}*all_haplotigs*.curated.fa"))
+    if haplotig_files:
+        _run(f"cp {' '.join(haplotig_files)} {curated_dir}/", ctx.print_only)
+
+    # chromosome lists — prefer rename_and_orient, fallback to pretext_to_asm per hap
+    for hap_prefix in (ctx.hap1_prefix, ctx.hap2_prefix):
+        try:
+            csv = find_canonical_chr_list(ctx, hap_prefix)
+            _run(f"cp {csv} {curated_dir}/", ctx.print_only)
+        except FileNotFoundError as e:
+            log.warning(str(e))
 
     # 3. copy remapped pretext map from hic_remapping run_dir to NFS
     remapped_pattern = str(hic_dir / "pretext_maps_processed" / f"{ctx.tol_id}*normal.pretext")
