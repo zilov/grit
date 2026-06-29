@@ -167,7 +167,7 @@ def finalize_for_qc(
 
     # 4. QV if merquryk not yet present
     qv_dir = dest_dir / "merquryk"
-    if ctx.print_only or not qv_dir.exists():
+    if not qv_dir.exists():
         qv_cmd = f"cd {ctx.workdir} && kmer_completeness.bash {ctx.tol_id} {ctx.release_version}"
         console.print("\n[bold]Running QV analysis (merquryk not found):[/bold]")
         _run(qv_cmd, ctx.print_only)
