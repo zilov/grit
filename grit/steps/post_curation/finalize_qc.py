@@ -143,7 +143,7 @@ def finalize_for_qc(
     # Always copy to canonical curated name: {tol_id}.{hap_prefix}.{version}.chromosome.list.csv
     chr_list_overrides = {ctx.hap1_prefix: hap1_chr_list, ctx.hap2_prefix: hap2_chr_list}
     for hap_prefix, override in chr_list_overrides.items():
-        dest_name = f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.chromosome.list.csv"
+        dest_name = f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.primary.chromosome.list.csv"
         src = override
         if src is None:
             try:
