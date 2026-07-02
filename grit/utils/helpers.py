@@ -234,6 +234,54 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     return find_curated_fa(ctx, hap_prefix)
 
 
+def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
+    """
+    Find the haplotig FASTA for *hap_prefix* in the latest pretext_to_asm run dir.
+
+    pretext-to-asm naming by curation type:
+      - dual hap:   ``{tol_id}.1.haplotigs.fa``                      (no hap prefix, combined)
+      - single hap: ``{tol_id}.1.additional_haplotigs.curated.fa``
+      - merged:     ``{tol_id}.1.all_haplotigs.curated.fa``
+      - after haplotig-files step: ``{tol_id}.{hap_prefix}.1.all_haplotigs.curated.fa``
+
+    Hap-specific patterns are tried first; no-prefix patterns are only tried for
+    ``hap1_prefix`` to avoid double-copying the same file for both haps.
+
+    Raises FileNotFoundError if nothing is found.
+    """
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+
+    # Hap-specific patterns (haplotig-files step output or hypothetical per-hap files)
+    for pattern in (
+        str(pta_dir / f"{ctx.tol_id}*{hap_prefix}*all_haplotigs*.curated.fa"),
+        str(pta_dir / f"{ctx.tol_id}*{hap_prefix}*haplotigs*.fa"),
+    ):
+        matches = glob.glob(pattern)
+        if matches:
+            return Path(sorted(matches)[-1])
+
+    # No-hap-prefix patterns — assign to hap1 only to avoid double-copying
+    if hap_prefix == ctx.hap1_prefix:
+        for pattern in (
+            str(pta_dir / f"{ctx.tol_id}*.haplotigs.fa"),                     # dual hap combined
+            str(pta_dir / f"{ctx.tol_id}*.all_haplotigs.curated.fa"),          # merged
+            str(pta_dir / f"{ctx.tol_id}*.additional_haplotigs.curated.fa"),   # single hap
+        ):
+            matches = glob.glob(pattern)
+            # Exclude any file that is already hap-specific
+            combined = [
+                m for m in matches
+                if ctx.hap1_prefix not in Path(m).name
+                and ctx.hap2_prefix not in Path(m).name
+            ]
+            if combined:
+                return Path(sorted(combined)[-1])
+
+    raise FileNotFoundError(
+        f"No haplotig FASTA for {hap_prefix!r} found in {pta_dir}."
+    )
+
+
 def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
     Find the canonical chromosome list CSV for *hap_prefix*.

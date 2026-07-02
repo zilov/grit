@@ -400,9 +400,10 @@ def test_validate_curated_files_warns_on_missing_log(mock_ctx, tmp_path, capsys)
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_creates_curated_dir(
-    mock_find_fa, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
+    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
 ):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -414,20 +415,17 @@ def test_finalize_for_qc_creates_curated_dir(
 
     curated_fa = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
     chr_list = tmp_path / "sDipInt39.1.hap1.chromosome.list.csv"
-    haplotig = str(tmp_path / "sDipInt39.1.hap1.all_haplotigs.curated.fa")
+    haplotig = tmp_path / "sDipInt39.1.haplotigs.fa"
     remapped = str(
         tmp_path / "sDipInt39_curationpretext/pretext_maps_processed/sDipInt39_normal.pretext"
     )
 
     mock_find_fa.return_value = curated_fa
     mock_find_csv.return_value = chr_list
-    # glob calls: hap1 haplotigs, hap2 haplotigs, nfs_first_level, hap1 remapped pretext
-    mock_glob.side_effect = [
-        [haplotig],  # hap1 all_haplotigs found
-        [],          # hap2 all_haplotigs not found → expect touch
-        [],          # nfs first level → fallback to base path
-        [remapped],  # hap1 remapped pretext
-    ]
+    # hap1 haplotig found; hap2 raises → touch
+    mock_find_haplotigs.side_effect = [haplotig, FileNotFoundError("no haplotigs for hap2")]
+    # glob calls: nfs_first_level, hap1 remapped pretext
+    mock_glob.side_effect = [[], [remapped]]
     mock_run.return_value = ""
 
     finalize_for_qc(mock_ctx)
@@ -436,6 +434,7 @@ def test_finalize_for_qc_creates_curated_dir(
     assert any("mkdir" in c for c in calls)
     assert any(str(curated_fa) in c for c in calls)
     assert any(str(chr_list) in c for c in calls)
+    assert any(str(haplotig) in c for c in calls)
     # hap2 haplotigs not found — empty file created
     assert any("touch" in c and "hap2" in c and "all_haplotigs" in c for c in calls)
 
@@ -461,9 +460,10 @@ def test_finalize_for_qc_print_only(mock_run, mock_ctx, tmp_path):
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_assembly_override(
-    mock_find_fa, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
+    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
 ):
     """--hap1-assembly bypasses find_canonical_fa for hap1."""
     mock_ctx.workdir = tmp_path
@@ -476,7 +476,8 @@ def test_finalize_for_qc_assembly_override(
 
     custom_fa = Path("/custom/sDipInt39.hap1.renamed.fa")
     mock_find_csv.return_value = tmp_path / "chr.list.csv"
-    mock_glob.side_effect = [[], [], [], []]  # haplotigs x2, nfs, remapped
+    mock_find_haplotigs.side_effect = FileNotFoundError("no haplotigs")
+    mock_glob.side_effect = [[], []]  # nfs, remapped
     mock_run.return_value = ""
 
     finalize_for_qc(mock_ctx, hap1_assembly=custom_fa)
@@ -489,9 +490,10 @@ def test_finalize_for_qc_assembly_override(
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_hap2_map_copied_when_provided(
-    mock_find_fa, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
+    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
 ):
     """--hap2-map triggers a second pretext map copy to NFS."""
     mock_ctx.workdir = tmp_path
@@ -507,7 +509,8 @@ def test_finalize_for_qc_hap2_map_copied_when_provided(
 
     mock_find_fa.side_effect = FileNotFoundError("no fa")
     mock_find_csv.side_effect = FileNotFoundError("no csv")
-    mock_glob.side_effect = [[], [], [], [str(hap1_pretext)]]  # haplotigs x2, nfs, hap1 remapped
+    mock_find_haplotigs.side_effect = FileNotFoundError("no haplotigs")
+    mock_glob.side_effect = [[], [str(hap1_pretext)]]  # nfs, hap1 remapped
     mock_run.return_value = ""
 
     finalize_for_qc(mock_ctx, hap1_map=hap1_pretext, hap2_map=hap2_pretext)

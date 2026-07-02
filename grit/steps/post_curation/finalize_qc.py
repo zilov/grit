@@ -10,7 +10,13 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, find_canonical_chr_list, find_canonical_fa, find_latest_dir
+from grit.utils.helpers import (
+    _run,
+    find_canonical_chr_list,
+    find_canonical_fa,
+    find_canonical_haplotigs,
+    find_latest_dir,
+)
 from grit.utils.output import console, print_done, print_step_header
 
 log = logging.getLogger(__name__)
@@ -105,7 +111,6 @@ def finalize_for_qc(
 
     run_dir = ctx.tracker.start("finalize_qc", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
 
-    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
     dest_dir = curated_dir or ctx.assembly_curated_dir
 
     # 1. mkdir
@@ -126,18 +131,21 @@ def finalize_for_qc(
                 continue
         _run(f"cp {src} {dest_dir / dest_name}", ctx.print_only)
 
-    # 2b. haplotig FAs per hap — override, glob from pretext_to_asm, or create empty placeholder
+    # 2b. haplotig FAs per hap — override, find_canonical_haplotigs, or create empty placeholder
+    # Destination always uses the curated convention: {tol_id}.{hap_prefix}.{version}.all_haplotigs.curated.fa
     haplotig_overrides = {ctx.hap1_prefix: hap1_haplotigs, ctx.hap2_prefix: hap2_haplotigs}
     for hap_prefix, override in haplotig_overrides.items():
-        if override:
-            _run(f"cp {override} {dest_dir}/", ctx.print_only)
+        dest_name = f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.all_haplotigs.curated.fa"
+        src = override
+        if src is None:
+            try:
+                src = find_canonical_haplotigs(ctx, hap_prefix)
+            except FileNotFoundError:
+                src = None
+        if src:
+            _run(f"cp {src} {dest_dir / dest_name}", ctx.print_only)
         else:
-            files = glob.glob(str(pta_dir / f"{ctx.tol_id}*{hap_prefix}*all_haplotigs*.curated.fa"))
-            if files:
-                _run(f"cp {' '.join(files)} {dest_dir}/", ctx.print_only)
-            else:
-                empty_name = f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.all_haplotigs.curated.fa"
-                _run(f"touch {dest_dir / empty_name}", ctx.print_only)
+            _run(f"touch {dest_dir / dest_name}", ctx.print_only)
 
     # 2c. chromosome lists per hap — override or find_canonical_chr_list
     # Always copy to canonical curated name: {tol_id}.{hap_prefix}.{version}.chromosome.list.csv
