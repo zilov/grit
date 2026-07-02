@@ -196,14 +196,44 @@ def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
     Find the primary curated FASTA for *hap_prefix* in the latest pretext_to_asm run dir.
 
-    Excludes ``all_haplotigs`` files so only the main assembly is returned.
+    Excludes haplotig files so only the main assembly is returned.
     Raises FileNotFoundError if nothing matches.
+
+    pretext-to-asm always names dual-hap files with literal "hap1"/"hap2" regardless of
+    the YAML key.  When the YAML uses "primary"/"alternate" or "paternal"/"maternal", we
+    map those to the expected pretext-to-asm token as a fallback:
+        primary / paternal  → hap1
+        alternate / maternal → hap2
+    The pattern uses a dot-delimited token (``{tol_id}.{token}.``) so "primary" in the
+    YAML-prefix cannot accidentally match the ".primary.curated.fa" filename suffix.
     """
+    _HAPLOTIG_KEYWORDS = ("all_haplotigs", "additional_haplotigs", "haplotigs")
+    _PTA_ALIASES: dict[str, str] = {
+        "primary": "hap1", "paternal": "hap1",
+        "alternate": "hap2", "maternal": "hap2",
+    }
+
     pta_dir = find_latest_dir(ctx, "pretext_to_asm")
-    matches = [
-        f for f in glob.glob(str(pta_dir / f"{ctx.tol_id}*{hap_prefix}*.curated.fa"))
-        if "all_haplotigs" not in f
-    ]
+
+    def _search(token: str) -> list[str]:
+        return [
+            f for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.{token}.*.curated.fa"))
+            if not any(kw in f for kw in _HAPLOTIG_KEYWORDS)
+        ]
+
+    # 1. Exact YAML-prefix token
+    matches = _search(hap_prefix)
+    # 2. pretext-to-asm alias (hap1/hap2 for primary/alternate assemblies)
+    if not matches and hap_prefix in _PTA_ALIASES:
+        matches = _search(_PTA_ALIASES[hap_prefix])
+    # 3. No-hap-prefix format: {tol_id}.{version}.primary.curated.fa (single hap / merged)
+    if not matches:
+        matches = [
+            f for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.*.primary.curated.fa"))
+            if not any(kw in f for kw in _HAPLOTIG_KEYWORDS)
+            and "hap1" not in Path(f).name and "hap2" not in Path(f).name
+        ]
+
     if not matches:
         raise FileNotFoundError(
             f"No curated FASTA for {hap_prefix!r} found in {pta_dir}. "
@@ -217,18 +247,28 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     Find the canonical assembly FASTA for *hap_prefix*.
 
     Priority:
-      1. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}*{hap_prefix}*.fa
-      2. ``pretext_to_asm`` output   — via find_curated_fa (excludes all_haplotigs)
+      1. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.fa
+      2. ``pretext_to_asm`` output   — via find_curated_fa (excludes haplotig files)
 
-    Use this in any step that consumes a curated assembly so that renamed
-    assemblies are automatically preferred over raw pretext_to_asm output.
+    Dot-delimited token matching avoids "primary" prefix colliding with the
+    ".primary.curated.fa" filename suffix shared by all curated FAs.
     """
+    _HAPLOTIG_KEYWORDS = ("all_haplotigs", "additional_haplotigs", "haplotigs")
+    _PTA_ALIASES: dict[str, str] = {
+        "primary": "hap1", "paternal": "hap1",
+        "alternate": "hap2", "maternal": "hap2",
+    }
     rao_dir = ctx.workdir / "rename_and_orient"
     if rao_dir.exists():
-        matches = [
-            f for f in glob.glob(str(rao_dir / f"{ctx.tol_id}*{hap_prefix}*.fa"))
-            if "all_haplotigs" not in f
-        ]
+        def _rao_search(token: str) -> list[str]:
+            return [
+                f for f in glob.glob(str(rao_dir / f"{ctx.tol_id}.{token}.*.fa"))
+                if not any(kw in f for kw in _HAPLOTIG_KEYWORDS)
+            ]
+
+        matches = _rao_search(hap_prefix)
+        if not matches and hap_prefix in _PTA_ALIASES:
+            matches = _rao_search(_PTA_ALIASES[hap_prefix])
         if matches:
             return Path(sorted(matches)[-1])
     return find_curated_fa(ctx, hap_prefix)
@@ -244,23 +284,38 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
       - merged:     ``{tol_id}.1.all_haplotigs.curated.fa``
       - after haplotig-files step: ``{tol_id}.{hap_prefix}.1.all_haplotigs.curated.fa``
 
-    Hap-specific patterns are tried first; no-prefix patterns are only tried for
-    ``hap1_prefix`` to avoid double-copying the same file for both haps.
+    Hap-specific patterns are tried first (dot-delimited token + alias); no-prefix
+    patterns are only tried for ``hap1_prefix`` to avoid double-copying the same file.
 
     Raises FileNotFoundError if nothing is found.
     """
+    _PTA_ALIASES: dict[str, str] = {
+        "primary": "hap1", "paternal": "hap1",
+        "alternate": "hap2", "maternal": "hap2",
+    }
     pta_dir = find_latest_dir(ctx, "pretext_to_asm")
 
-    # Hap-specific patterns (haplotig-files step output or hypothetical per-hap files)
-    for pattern in (
-        str(pta_dir / f"{ctx.tol_id}*{hap_prefix}*all_haplotigs*.curated.fa"),
-        str(pta_dir / f"{ctx.tol_id}*{hap_prefix}*haplotigs*.fa"),
-    ):
-        matches = glob.glob(pattern)
-        if matches:
-            return Path(sorted(matches)[-1])
+    def _hap_specific(token: str) -> Path | None:
+        for pattern in (
+            str(pta_dir / f"{ctx.tol_id}.{token}.*.all_haplotigs*.curated.fa"),
+            str(pta_dir / f"{ctx.tol_id}.{token}.*.haplotigs*.fa"),
+        ):
+            matches = glob.glob(pattern)
+            if matches:
+                return Path(sorted(matches)[-1])
+        return None
 
-    # No-hap-prefix patterns — assign to hap1 only to avoid double-copying
+    # 1. Exact token
+    result = _hap_specific(hap_prefix)
+    if result:
+        return result
+    # 2. Alias (primary→hap1, alternate→hap2)
+    if hap_prefix in _PTA_ALIASES:
+        result = _hap_specific(_PTA_ALIASES[hap_prefix])
+        if result:
+            return result
+
+    # 3. No-hap-prefix patterns — assign to hap1 only to avoid double-copying
     if hap_prefix == ctx.hap1_prefix:
         for pattern in (
             str(pta_dir / f"{ctx.tol_id}*.haplotigs.fa"),                     # dual hap combined
@@ -268,10 +323,11 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
             str(pta_dir / f"{ctx.tol_id}*.additional_haplotigs.curated.fa"),   # single hap
         ):
             matches = glob.glob(pattern)
-            # Exclude any file that is already hap-specific
+            # Exclude any file that is already hap-specific (contains hap1 or hap2 token)
             combined = [
                 m for m in matches
-                if ctx.hap1_prefix not in Path(m).name
+                if "hap1" not in Path(m).name and "hap2" not in Path(m).name
+                and ctx.hap1_prefix not in Path(m).name
                 and ctx.hap2_prefix not in Path(m).name
             ]
             if combined:
@@ -287,20 +343,36 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     Find the canonical chromosome list CSV for *hap_prefix*.
 
     Priority:
-      1. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}*{hap_prefix}*.chromosome.list.csv
+      1. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.chromosome.list.csv
       2. ``pretext_to_asm`` output
 
-    Use this alongside ``find_canonical_fa`` so that both FA and chromosome list
-    come from the same processing stage.
+    Dot-delimited token matching avoids "primary" prefix colliding with the
+    ".primary." suffix that appears in all chromosome list filenames.
+    Falls back to pretext-to-asm alias (primary→hap1, alternate→hap2) when the
+    YAML key differs from the pretext-to-asm naming convention.
+
     Raises FileNotFoundError if nothing is found in either location.
     """
+    _PTA_ALIASES: dict[str, str] = {
+        "primary": "hap1", "paternal": "hap1",
+        "alternate": "hap2", "maternal": "hap2",
+    }
+
+    def _search_dir(directory: Path, token: str) -> list[str]:
+        return glob.glob(str(directory / f"{ctx.tol_id}.{token}.*.chromosome.list.csv"))
+
     rao_dir = ctx.workdir / "rename_and_orient"
     if rao_dir.exists():
-        matches = glob.glob(str(rao_dir / f"{ctx.tol_id}*{hap_prefix}*.chromosome.list.csv"))
+        matches = _search_dir(rao_dir, hap_prefix)
+        if not matches and hap_prefix in _PTA_ALIASES:
+            matches = _search_dir(rao_dir, _PTA_ALIASES[hap_prefix])
         if matches:
             return Path(sorted(matches)[-1])
+
     pta_dir = find_latest_dir(ctx, "pretext_to_asm")
-    matches = glob.glob(str(pta_dir / f"{ctx.tol_id}*{hap_prefix}*.chromosome.list.csv"))
+    matches = _search_dir(pta_dir, hap_prefix)
+    if not matches and hap_prefix in _PTA_ALIASES:
+        matches = _search_dir(pta_dir, _PTA_ALIASES[hap_prefix])
     if not matches:
         raise FileNotFoundError(
             f"No chromosome list for {hap_prefix!r} found in rename_and_orient or {pta_dir}. "
@@ -314,19 +386,26 @@ def find_latest_dir(ctx: "CurationContext", step: str) -> Path:
     Return the output directory for *step*, trying locations in priority order:
       1. tracker.latest_run_dir(step)     — tracked run (success or started)
       2. workdir / step / "untracked"    — run before tracking, convention from tracker.start()
-      3. workdir                          — last resort
+      3. workdir / step / <latest subdir> — filesystem scan for timestamped run dirs
+      4. workdir                          — last resort
 
-    All steps follow the convention: if tracker is absent, run_dir falls back to
-    ``workdir/<step>/untracked``.  Steps that don't create that dir (bsub-only)
-    safely skip to workdir.
+    In print-only mode the tracker path is accepted even if it does not exist yet
+    (so printed commands show the expected real path rather than a fallback).
     """
     if ctx.tracker:
         tracked = ctx.tracker.latest_run_dir(step)
-        if tracked and tracked.exists():
-            return tracked
+        if tracked:
+            if tracked.exists() or ctx.print_only:
+                return tracked
     untracked = ctx.workdir / step / "untracked"
     if untracked.exists():
         return untracked
+    # Filesystem scan: pick the alphabetically-last (newest timestamp) subdir
+    step_dir = ctx.workdir / step
+    if step_dir.is_dir():
+        subdirs = sorted(d for d in step_dir.iterdir() if d.is_dir())
+        if subdirs:
+            return subdirs[-1]
     return ctx.workdir
 
 
