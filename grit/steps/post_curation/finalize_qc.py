@@ -113,15 +113,24 @@ def finalize_for_qc(
 
     dest_dir = curated_dir or ctx.assembly_curated_dir
 
+    # pretext-to-asm always uses hap1/hap2 in filenames regardless of YAML key;
+    # normalise YAML aliases so destination names never contain "primary", "alternate", etc.
+    _HAP_CANONICAL = {
+        "primary": "hap1", "paternal": "hap1",
+        "alternate": "hap2", "maternal": "hap2",
+    }
+
+    def _dest_hap(hap_prefix: str) -> str:
+        return _HAP_CANONICAL.get(hap_prefix, hap_prefix)
+
     # 1. mkdir
     _run(f"mkdir -p {dest_dir}", ctx.print_only)
     log.info("Curated dir: %s", dest_dir)
 
     # 2a. primary assembly FAs per hap — override or find_canonical_fa
-    # Always copy to canonical curated name: {tol_id}.{hap_prefix}.{version}.primary.curated.fa
     assembly_overrides = {ctx.hap1_prefix: hap1_assembly, ctx.hap2_prefix: hap2_assembly}
     for hap_prefix, override in assembly_overrides.items():
-        dest_name = f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.primary.curated.fa"
+        dest_name = f"{ctx.tol_id}.{_dest_hap(hap_prefix)}.{ctx.release_version}.primary.curated.fa"
         src = override
         if src is None:
             try:
@@ -132,10 +141,9 @@ def finalize_for_qc(
         _run(f"cp {src} {dest_dir / dest_name}", ctx.print_only)
 
     # 2b. haplotig FAs per hap — override, find_canonical_haplotigs, or create empty placeholder
-    # Destination always uses the curated convention: {tol_id}.{hap_prefix}.{version}.all_haplotigs.curated.fa
     haplotig_overrides = {ctx.hap1_prefix: hap1_haplotigs, ctx.hap2_prefix: hap2_haplotigs}
     for hap_prefix, override in haplotig_overrides.items():
-        dest_name = f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.all_haplotigs.curated.fa"
+        dest_name = f"{ctx.tol_id}.{_dest_hap(hap_prefix)}.{ctx.release_version}.all_haplotigs.curated.fa"
         src = override
         if src is None:
             try:
@@ -148,10 +156,9 @@ def finalize_for_qc(
             _run(f"touch {dest_dir / dest_name}", ctx.print_only)
 
     # 2c. chromosome lists per hap — override or find_canonical_chr_list
-    # Always copy to canonical curated name: {tol_id}.{hap_prefix}.{version}.chromosome.list.csv
     chr_list_overrides = {ctx.hap1_prefix: hap1_chr_list, ctx.hap2_prefix: hap2_chr_list}
     for hap_prefix, override in chr_list_overrides.items():
-        dest_name = f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.primary.chromosome.list.csv"
+        dest_name = f"{ctx.tol_id}.{_dest_hap(hap_prefix)}.{ctx.release_version}.primary.chromosome.list.csv"
         src = override
         if src is None:
             try:
