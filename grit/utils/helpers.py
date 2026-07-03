@@ -375,8 +375,7 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
         matches = _search_dir(pta_dir, _PTA_ALIASES[hap_prefix])
     if not matches:
         raise FileNotFoundError(
-            f"No chromosome list for {hap_prefix!r} found in rename_and_orient or {pta_dir}. "
-            "Run pretext-to-asm first."
+            f"No chromosome list for {hap_prefix!r} found in rename_and_orient or {pta_dir}."
         )
     return Path(sorted(matches)[-1])
 
