@@ -527,10 +527,10 @@ def test_finalize_for_qc_hap2_map_copied_when_provided(
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
-def test_finalize_for_qc_canonical_names_for_primary_alternate_assembly(
+def test_finalize_for_qc_primary_alternate_assembly_single_hap_output(
     mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
 ):
-    """YAML primary/alternate prefixes must be normalised to hap1/hap2 in dest filenames."""
+    """primary/alternate assemblies: only hap1 files copied, no hap prefix in dest names."""
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "ilScoBasi3"
     mock_ctx.release_version = 1
@@ -540,24 +540,27 @@ def test_finalize_for_qc_canonical_names_for_primary_alternate_assembly(
     mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
 
     hap1_fa = tmp_path / "ilScoBasi3.hap1.1.primary.curated.fa"
-    hap2_fa = tmp_path / "ilScoBasi3.hap2.1.primary.curated.fa"
     chr_list = tmp_path / "ilScoBasi3.hap1.1.primary.chromosome.list.csv"
     haplotig = tmp_path / "ilScoBasi3.1.haplotigs.fa"
 
-    mock_find_fa.side_effect = [hap1_fa, hap2_fa]
-    mock_find_csv.side_effect = [chr_list, FileNotFoundError("no hap2 chr list")]
-    mock_find_haplotigs.side_effect = [haplotig, FileNotFoundError("no hap2 haplotigs")]
+    mock_find_fa.return_value = hap1_fa
+    mock_find_csv.return_value = chr_list
+    mock_find_haplotigs.return_value = haplotig
     mock_glob.side_effect = [[], []]  # nfs, no remapped pretext
     mock_run.return_value = ""
 
     finalize_for_qc(mock_ctx)
 
     calls = [str(c) for c in mock_run.call_args_list]
-    # Dest filenames must use hap1/hap2, never "primary.1.primary" or "alternate"
-    assert any("ilScoBasi3.hap1.1.primary.curated.fa" in c for c in calls)
-    assert any("ilScoBasi3.hap2.1.primary.curated.fa" in c for c in calls)
-    assert any("ilScoBasi3.hap1.1.all_haplotigs.curated.fa" in c for c in calls)
-    assert any("ilScoBasi3.hap2.1.all_haplotigs.curated.fa" in c and "touch" in c for c in calls)
-    assert any("ilScoBasi3.hap1.1.primary.chromosome.list.csv" in c for c in calls)
+    # Dest filenames: no hap prefix — {tol_id}.{version}.{type}
+    assert any("ilScoBasi3.1.primary.curated.fa" in c for c in calls)
+    assert any("ilScoBasi3.1.all_haplotigs.curated.fa" in c for c in calls)
+    assert any("ilScoBasi3.1.primary.chromosome.list.csv" in c for c in calls)
+    # hap2/alternate files must NOT be copied
+    assert not any("hap2" in c for c in calls), "hap2 file copied for primary/alternate assembly"
+    assert not any("alternate" in c for c in calls), "'alternate' must not appear anywhere"
     assert not any("primary.1.primary" in c for c in calls), "double-primary in dest name"
-    assert not any("alternate" in c for c in calls), "'alternate' must not appear in dest names"
+    # find_canonical helpers called once (only for hap1), not twice
+    assert mock_find_fa.call_count == 1
+    assert mock_find_haplotigs.call_count == 1
+    assert mock_find_csv.call_count == 1
