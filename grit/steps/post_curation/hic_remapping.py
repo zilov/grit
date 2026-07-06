@@ -31,7 +31,7 @@ def _submit_hic_remapping(
 ) -> None:
     """Submit one curationpretext run for *hap_prefix*, tracked under *step_name*."""
 
-    # Check for existing successful run; re-run only if curated FASTA is newer
+    # Check for existing successful run; re-run only if the hap-specific canonical FA is newer
     if not ctx.print_only and ctx.tracker:
         prev_dir = ctx.tracker.latest_run_dir(step_name)
         hr_pretexts = (
@@ -39,12 +39,13 @@ def _submit_hic_remapping(
             if prev_dir else []
         )
         if hr_pretexts:
-            pta_dir = find_latest_dir(ctx, "pretext_to_asm")
-            curated_fas = list(pta_dir.glob(f"{ctx.tol_id}*.curated.fa"))
             pretext_mtime = min(f.stat().st_mtime for f in hr_pretexts)
-            fa_newer = curated_fas and max(
-                f.stat().st_mtime for f in curated_fas
-            ) > pretext_mtime
+            fa_newer = False
+            try:
+                canonical_fa = find_canonical_fa(ctx, hap_prefix)
+                fa_newer = canonical_fa.stat().st_mtime > pretext_mtime
+            except FileNotFoundError:
+                pass
             if fa_newer:
                 log.info("Curated FASTA is newer than remapped pretext — re-running %s", step_name)
             else:
