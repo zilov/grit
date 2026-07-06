@@ -13,7 +13,7 @@ from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.helpers import _run, find_canonical_fa, find_latest_dir
 from grit.utils.modules import module_cmd
-from grit.utils.output import console, print_done, print_step_header
+from grit.utils.output import console, print_done, print_step_header, print_tip
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def _submit_hic_remapping(
     """Submit one curationpretext run for *hap_prefix*, tracked under *step_name*."""
 
     # Check for existing successful run; re-run only if the hap-specific canonical FA is newer
-    if not ctx.print_only and ctx.tracker:
+    if ctx.tracker:
         prev_dir = ctx.tracker.latest_run_dir(step_name)
         hr_pretexts = (
             list(prev_dir.glob(f"pretext_maps_processed/{ctx.tol_id}*hr.pretext"))
@@ -48,6 +48,13 @@ def _submit_hic_remapping(
                 pass
             if fa_newer:
                 log.info("Curated FASTA is newer than remapped pretext — re-running %s", step_name)
+            elif ctx.print_only:
+                print_tip(
+                    f"Remapped pretext map already exists for [bold]{hap_prefix}[/bold] "
+                    f"and is up to date — will be skipped on actual run:\n"
+                    f"  {hr_pretexts[0]}"
+                )
+                return
             else:
                 log.info("HiC remapping already done — skipping: %s", prev_dir)
                 last = ctx.tracker.history(step_name)
