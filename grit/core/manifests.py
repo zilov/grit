@@ -38,6 +38,10 @@ STEP_MANIFESTS: dict[str, dict] = {
         "dir": "run_dir",
         "files": ["pretext_maps_processed/{tol_id}*hr.pretext"],
     },
+    "hic_remapping_hap2": {
+        "dir": "run_dir",
+        "files": ["pretext_maps_processed/{tol_id}*hr.pretext"],
+    },
     "qv": {
         "dir": "run_dir",
         "files": [],  # output goes to assembly_curated_dir; just track exit code

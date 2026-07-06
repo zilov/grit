@@ -132,7 +132,12 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             elif bjobs_status in ("RUN", "PEND"):
                 status = f"running ({bjobs_status})"
             elif bjobs_status == "gone":
-                status = "unknown (gone)"
+                run_dir = Path(entry["run_dir"]) if entry.get("run_dir") else None
+                if tracker.verify_outputs(step, tol_id, run_dir) in ("ok", "no_files"):
+                    tracker.finish(step, run_dir, "success")
+                    status = "success"
+                else:
+                    status = "unknown (gone)"
 
         if status == "started":
             status = "running"
