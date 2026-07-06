@@ -116,6 +116,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     table.add_column("Job ID")
 
     hic_success_run_dir: Path | None = None
+    hic_hap2_success_run_dir: Path | None = None
 
     for step, entry in step_latest.items():
         status = entry.get("status", "")
@@ -144,6 +145,8 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
 
         if step == "hic_remapping" and status == "success":
             hic_success_run_dir = Path(entry.get("run_dir", ""))
+        if step == "hic_remapping_hap2" and status == "success":
+            hic_hap2_success_run_dir = Path(entry.get("run_dir", ""))
 
         style = ""
         if "success" in status:
@@ -199,6 +202,15 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             f"To copy remapped pretext map to your local machine:\n"
             f"[bold cyan]scp {farm_host}:'{remapped_pattern}' "
             f"~/curations/work/{tol_id}/{tol_id}_remapped.pretext[/bold cyan]"
+        )
+    if hic_hap2_success_run_dir:
+        remapped_pattern_hap2 = str(
+            hic_hap2_success_run_dir / "pretext_maps_processed" / f"{tol_id}*normal.pretext"
+        )
+        print_tip(
+            f"To copy remapped hap2 pretext map to your local machine:\n"
+            f"[bold cyan]scp {farm_host}:'{remapped_pattern_hap2}' "
+            f"~/curations/work/{tol_id}/{tol_id}_hap2_remapped.pretext[/bold cyan]"
         )
 
     print_tip(
