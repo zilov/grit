@@ -187,5 +187,25 @@ cli.add_command(fastga_cmd)
 cli.add_command(rename_and_orient_cmd)
 
 
+@cli.command("done")
+@click.option("--ticket", "-t", required=True, help="Ticket ID to mark as done.")
+@click.pass_context
+def done_cmd(ctx, ticket):
+    """Mark a curation ticket as done and remove it from the active list."""
+    from grit.core.registry import RegistryManager
+    from grit.utils.output import print_done
+
+    reg = RegistryManager()
+    entry = reg.find_ticket(ticket)
+    if entry is None:
+        click.echo(f"Ticket {ticket} not found in registry.", err=True)
+        raise SystemExit(1)
+    if entry.get("status") == "done":
+        click.echo(f"{ticket} is already marked as done.")
+        return
+    reg.mark_done(ticket)
+    print_done(f"{ticket} ({entry.get('tol_id', '')}) marked as done — removed from active list.")
+
+
 if __name__ == "__main__":
     cli()
