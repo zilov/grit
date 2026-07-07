@@ -31,19 +31,17 @@ _WORKDIR_FILES_TO_DELETE = ["original.fa"]
 
 
 def _fmt_size(path: Path) -> str:
-    """Return human-readable size of a directory or file."""
+    """Return human-readable size via du -sh (fast, no rglob)."""
+    import subprocess
     try:
-        if path.is_file():
-            size = path.stat().st_size
-        else:
-            size = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
-        for unit in ("B", "KB", "MB", "GB"):
-            if size < 1024:
-                return f"{size:.1f} {unit}"
-            size /= 1024
-        return f"{size:.1f} TB"
-    except OSError:
-        return "?"
+        result = subprocess.run(
+            ["du", "-sh", str(path)], capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            return result.stdout.split()[0]
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return "?"
 
 
 def _latest_run_dir(tracker: RunTracker, step: str, step_dir: Path) -> Path | None:
