@@ -31,11 +31,12 @@ _WORKDIR_FILES_TO_DELETE = ["original.fa"]
 
 
 def _fmt_size(path: Path) -> str:
-    """Return human-readable size via du -sh (fast, no rglob)."""
+    """Return human-readable size via du --apparent-size (accurate on Lustre)."""
     import subprocess
     try:
         result = subprocess.run(
-            ["du", "-sh", str(path)], capture_output=True, text=True, timeout=5
+            ["du", "-sh", "--apparent-size", str(path)],
+            capture_output=True, text=True, timeout=10,
         )
         if result.returncode == 0:
             return result.stdout.split()[0]
