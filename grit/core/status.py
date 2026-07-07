@@ -224,12 +224,14 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     if agp_newer_than_curated_fa(workdir, tol_id, pta_dir):
         print_tip(
             f"AGP is newer than curated FASTA — re-run all post-curation steps:\n"
-            f"[bold cyan]grit post-curation -t {ticket_id}[/bold cyan]"
+            f"[bold cyan]grit post-curation -t {ticket_id}[/bold cyan] "
+            f"[dim](add --hap2 if you need to build both hap maps)[/dim]"
         )
     elif agp_files and not pta_dir:
         print_tip(
             f"AGP copied — run post-curation steps:\n"
-            f"[bold cyan]grit post-curation -t {ticket_id}[/bold cyan]"
+            f"[bold cyan]grit post-curation -t {ticket_id}[/bold cyan] "
+            f"[dim](add --hap2 if you need to build both hap maps)[/dim]"
         )
     elif hic_success_run_dir:
         print_tip(

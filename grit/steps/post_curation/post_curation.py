@@ -33,12 +33,12 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
-def run_post_curation(ctx):
+def run_post_curation(ctx, *, run_hap2: bool = False):
     """Run all post-curation steps in sequence."""
     log.info("post-curation | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     run_pretext_to_asm(ctx)
     run_haplotig_files(ctx)
-    run_hic_remapping(ctx)
+    run_hic_remapping(ctx, run_hap2=run_hap2)
 
 
 # ---------------------------------------------------------------------------
@@ -47,15 +47,17 @@ def run_post_curation(ctx):
 
 
 @click.command("post-curation", cls=GritCommand)
+@click.option("--hap2", "run_hap2", is_flag=True, default=False,
+              help="Also submit HiC remapping for hap2.")
 @click.pass_context
-def post_curation_cmd(ctx):
+def post_curation_cmd(ctx, run_hap2):
     """Run all post-curation steps."""
     from grit.core.click_cli import build_context
 
     state = ctx.obj
     curation_ctx = build_context(state)
     try:
-        run_post_curation(curation_ctx)
+        run_post_curation(curation_ctx, run_hap2=run_hap2)
     except Exception:
         log.exception("post-curation failed")
         raise SystemExit(1)
