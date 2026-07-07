@@ -102,19 +102,25 @@ def _find_pretext_maps(ctx: CurationContext) -> tuple[Path, Path]:
     Resolves pretext maps for *hr* and *normal* (required) and *ultra* (optional)
     in ``ctx.pretext_maps_nfs``.
 
+    Prefers maps whose filename contains the current ticket ID (e.g. RC-4645).
+    Falls back to all tol_id matches if none contain the ticket ID.
+
     Returns:
         List of resolved Path objects: [hr_src, normal_src] plus ultra_src if found.
 
     Raises:
         FileNotFoundError: if no match is found for hr or normal.
     """
-    hr_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*hr.pretext")
-    normal_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*normal.pretext")
-    ultra_pattern = str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*ultra.pretext")
+    ticket_id = ctx.ticket_id
 
-    hr_files = glob.glob(hr_pattern)
-    normal_files = glob.glob(normal_pattern)
-    ultra_files = glob.glob(ultra_pattern)
+    def _ticket_filter(files: list[str]) -> list[str]:
+        """Return only files containing the ticket ID; fall back to all if none match."""
+        filtered = [f for f in files if ticket_id in Path(f).name]
+        return filtered if filtered else files
+
+    hr_files = _ticket_filter(glob.glob(str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*hr.pretext")))
+    normal_files = _ticket_filter(glob.glob(str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*normal.pretext")))
+    ultra_files = _ticket_filter(glob.glob(str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*ultra.pretext")))
 
     if not hr_files:
         raise FileNotFoundError(
