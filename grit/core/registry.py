@@ -103,10 +103,10 @@ class RegistryManager:
         """Return active tickets (status != 'done')."""
         return [t for t in self._load() if t.get("status") != "done"]
 
-    def done_tickets(self, limit: int = 5) -> list[dict]:
-        """Return the most recently completed tickets."""
+    def done_tickets(self, limit: int | None = 5) -> list[dict]:
+        """Return the most recently completed tickets. Pass limit=None for all."""
         done = [t for t in self._load() if t.get("status") == "done"]
-        return done[-limit:]
+        return done[-limit:] if limit is not None else done
 
     def refresh_statuses(self) -> None:
         """

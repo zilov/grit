@@ -187,6 +187,11 @@ cli.add_command(fastga_cmd)
 cli.add_command(rename_and_orient_cmd)
 
 
+from grit.core.cleanup import cleanup_cmd  # noqa: E402
+
+cli.add_command(cleanup_cmd)
+
+
 @cli.command("done")
 @click.option("--ticket", "-t", required=True, help="Ticket ID to mark as done.")
 @click.pass_context
