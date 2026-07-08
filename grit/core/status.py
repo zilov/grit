@@ -115,9 +115,22 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     table.add_column("Status")
     table.add_column("Job ID")
 
-    # Use canonical (latest successful) run dirs for scp tips.
-    hic_success_run_dir = tracker.latest_run_dir("hic_remapping")
-    hic_hap2_success_run_dir = tracker.latest_run_dir("hic_remapping_hap2")
+    # Use canonical (latest) run dirs for scp tips — prefer newest on filesystem
+    # in case a manual run exists that wasn't recorded in the tracker.
+    def _latest_hic_dir(step: str) -> Path | None:
+        step_dir = workdir / step
+        fs_last: Path | None = None
+        if step_dir.is_dir():
+            subdirs = sorted(d for d in step_dir.iterdir() if d.is_dir())
+            if subdirs:
+                fs_last = subdirs[-1]
+        tracked = tracker.latest_run_dir(step)
+        if fs_last and tracked and tracked.exists():
+            return fs_last if fs_last.name >= tracked.name else tracked
+        return fs_last or (tracked if tracked and tracked.exists() else None)
+
+    hic_success_run_dir = _latest_hic_dir("hic_remapping")
+    hic_hap2_success_run_dir = _latest_hic_dir("hic_remapping_hap2")
 
     for step, entry in step_latest.items():
         status = entry.get("status", "")
