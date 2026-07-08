@@ -383,28 +383,43 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
 def find_latest_dir(ctx: "CurationContext", step: str) -> Path:
     """
     Return the output directory for *step*, trying locations in priority order:
-      1. tracker.latest_run_dir(step)     — tracked run (success or started)
-      2. workdir / step / "untracked"    — run before tracking, convention from tracker.start()
-      3. workdir / step / <latest subdir> — filesystem scan for timestamped run dirs
-      4. workdir                          — last resort
+      1. Alphabetically-last subdir of workdir/step/ that exists on filesystem,
+         compared with tracker.latest_run_dir(step) — whichever is newer wins.
+         (Nextflow submits bsub internally so the epilogue may not fire; a newer
+          run dir on disk may not yet be recorded as 'success' in the tracker.)
+      2. tracker.latest_run_dir(step) alone if no filesystem subdirs exist.
+      3. workdir / step / "untracked"    — run before tracking was introduced.
+      4. workdir                          — last resort.
 
     In print-only mode the tracker path is accepted even if it does not exist yet
     (so printed commands show the expected real path rather than a fallback).
     """
-    if ctx.tracker:
-        tracked = ctx.tracker.latest_run_dir(step)
-        if tracked:
-            if tracked.exists() or ctx.print_only:
-                return tracked
-    untracked = ctx.workdir / step / "untracked"
-    if untracked.exists():
-        return untracked
     # Filesystem scan: pick the alphabetically-last (newest timestamp) subdir
     step_dir = ctx.workdir / step
+    fs_latest: Path | None = None
     if step_dir.is_dir():
         subdirs = sorted(d for d in step_dir.iterdir() if d.is_dir())
         if subdirs:
-            return subdirs[-1]
+            fs_latest = subdirs[-1]
+
+    tracked: Path | None = None
+    if ctx.tracker:
+        tracked = ctx.tracker.latest_run_dir(step)
+        if tracked and not tracked.exists() and not ctx.print_only:
+            tracked = None  # stale tracker entry
+
+    # Return whichever is newer (later alphabetically = later timestamp)
+    if fs_latest and tracked and tracked.exists():
+        return fs_latest if str(fs_latest.name) >= str(tracked.name) else tracked
+    if fs_latest:
+        return fs_latest
+    if tracked:
+        if tracked.exists() or ctx.print_only:
+            return tracked
+
+    untracked = ctx.workdir / step / "untracked"
+    if untracked.exists():
+        return untracked
     return ctx.workdir
 
 
