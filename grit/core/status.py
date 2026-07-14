@@ -100,13 +100,14 @@ def _print_canonical_files(ctx) -> None:
             try:
                 p = finder(ctx, hap)
                 found = "[green]✓[/green]"
-                name = p.name if p.exists() else f"[yellow]{p.name}[/yellow]"
+                path_str = str(p) if p.exists() else f"[yellow]{p}[/yellow]"
             except FileNotFoundError:
                 found = "[red]✗[/red]"
-                name = "[dim]not found[/dim]"
-            table.add_row(hap, label, name, found)
+                path_str = "[dim]not found[/dim]"
+            table.add_row(hap, label, path_str, found)
 
     console.print(table)
+    console.print()
 
 
 def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
@@ -135,6 +136,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     if ctx:
         from grit.steps.pre_curation.setup import print_curation_summary
         print_curation_summary(ctx)
+        console.print()
         _print_canonical_files(ctx)
 
     tracker = RunTracker(workdir)
@@ -236,6 +238,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
         table.add_row("agp_copied", "-", "", "[yellow]missing[/yellow]", "")
 
     console.print(table)
+    console.print()
 
     # Derive assembly_curated_dir: workdir = .../working/<user>_curation/<tol_id>/
     # assembly_curated_dir = .../assembly/curated/<tol_id>.<release>/
@@ -244,6 +247,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     curated_dir = curated_dirs[0] if curated_dirs else None
 
     print_curation_results(tracker, workdir, tol_id, curated_dir=curated_dir)
+    console.print()
 
     farm_host = user_config.get("farm_host", "<farm_host>")
 
