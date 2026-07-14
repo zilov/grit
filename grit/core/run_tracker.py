@@ -24,6 +24,20 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 
+def _invalidated_dirs(records: list[dict]) -> set[str]:
+    """Return the set of run_dirs whose most recent record status is 'invalidated'.
+
+    Iterating forward means the last status seen for each run_dir wins, which
+    correctly handles undo (a later 'success' re-enables a previously invalidated dir).
+    """
+    latest_status: dict[str, str] = {}
+    for r in records:
+        rd = r.get("run_dir")
+        if rd:
+            latest_status[rd] = r.get("status", "")
+    return {rd for rd, st in latest_status.items() if st == "invalidated"}
+
+
 class RunTracker:
     """Tracks step executions for a single ticket workdir."""
 
@@ -37,7 +51,16 @@ class RunTracker:
     # Core API
     # ------------------------------------------------------------------
 
-    def start(self, step: str, ticket_id: str, tol_id: str, *, create_dir: bool = True, suffix: str = "") -> Path:
+    def start(
+        self,
+        step: str,
+        ticket_id: str,
+        tol_id: str,
+        *,
+        create_dir: bool = True,
+        suffix: str = "",
+        invalidated: bool = False,
+    ) -> Path:
         """
         Record step start; create and return the timestamped run_dir.
 
@@ -45,6 +68,8 @@ class RunTracker:
         and don't need a dedicated run subdirectory.
         Pass ``suffix`` to append a string to the timestamp (e.g. hap prefix) so
         that two steps started within the same second get unique run_dirs.
+        Pass ``invalidated=True`` to mark the run as non-canonical from the start
+        so that ``latest_run_dir`` never returns it.
 
         In print_only mode: returns a virtual path without touching the filesystem.
         """
@@ -56,18 +81,19 @@ class RunTracker:
             if create_dir:
                 run_dir.mkdir(parents=True, exist_ok=True)
             self.grit_dir.mkdir(parents=True, exist_ok=True)
+            status = "invalidated" if invalidated else "started"
             self._append(
                 {
                     "step": step,
                     "timestamp": ts,
-                    "status": "started",
+                    "status": status,
                     "ticket_id": ticket_id,
                     "tol_id": tol_id,
                     "run_dir": str(run_dir),
                     "job_id": None,
                 }
             )
-            log.debug("Run started: step=%s run_dir=%s", step, run_dir)
+            log.debug("Run started: step=%s run_dir=%s invalidated=%s", step, run_dir, invalidated)
 
         return run_dir
 
@@ -144,14 +170,22 @@ class RunTracker:
 
         If the step only has a 'started' entry (bsub job still running or finished
         but _state-update hasn't fired yet), returns that run_dir as a fallback.
+        Run dirs whose most recent record has status 'invalidated' are excluded.
         """
         runs = self.history(step)
-        # Prefer 'success' entries
-        success_runs = [r for r in runs if r.get("status") == "success" and r.get("run_dir")]
+        invalidated_dirs = _invalidated_dirs(runs)
+        success_runs = [
+            r for r in runs
+            if r.get("status") == "success" and r.get("run_dir")
+            and r["run_dir"] not in invalidated_dirs
+        ]
         if success_runs:
             return Path(success_runs[-1]["run_dir"])
-        # Fall back to last 'started' entry (job may still be running)
-        started_runs = [r for r in runs if r.get("status") == "started" and r.get("run_dir")]
+        started_runs = [
+            r for r in runs
+            if r.get("status") == "started" and r.get("run_dir")
+            and r["run_dir"] not in invalidated_dirs
+        ]
         if started_runs:
             return Path(started_runs[-1]["run_dir"])
         return None
@@ -161,12 +195,28 @@ class RunTracker:
         Return the path string for *key* from the latest successful run of *step*.
 
         Returns None if no successful run exists or the key is absent.
+        Runs whose most recent record has status 'invalidated' are excluded.
         """
         runs = self.history(step)
-        success_runs = [r for r in runs if r.get("status") == "success" and r.get("outputs")]
+        inv_dirs = _invalidated_dirs(runs)
+        success_runs = [
+            r for r in runs
+            if r.get("status") == "success" and r.get("outputs")
+            and r.get("run_dir") not in inv_dirs
+        ]
         if not success_runs:
             return None
         return success_runs[-1]["outputs"].get(key)
+
+    def invalidate(self, step: str, run_dir: Path | None = None) -> bool:
+        """Mark the latest success run of *step* as invalidated. Returns True if found."""
+        if run_dir is None:
+            run_dir = self.latest_run_dir(step)
+        if run_dir is None:
+            return False
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H_%M_%S")
+        self._append({"step": step, "timestamp": ts, "status": "invalidated", "run_dir": str(run_dir)})
+        return True
 
     def pending_jobs(self) -> list[dict]:
         """Return records with status='started' that have a job_id (bsub jobs in flight).

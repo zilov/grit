@@ -39,6 +39,7 @@ class GlobalState:
         yaml: str = None,
         print_only: bool = False,
         logging_level: str = "INFO",
+        invalidated: bool = False,
     ):
         self.verbose = verbose
         self.config_path = config_path or Path.home() / ".grit_curation_config.yaml"
@@ -46,6 +47,7 @@ class GlobalState:
         self.yaml = yaml
         self.print_only = print_only
         self.logging_level = logging_level
+        self.invalidated = invalidated
 
 
 @click.group()
@@ -100,6 +102,7 @@ def build_context(state: GlobalState) -> CurationContext:
         user_config,
         yaml_override=yaml_override,
         print_only=state.print_only,
+        invalidated=getattr(state, "invalidated", False),
     )
 
 
@@ -190,6 +193,48 @@ cli.add_command(rename_and_orient_cmd)
 from grit.core.cleanup import cleanup_cmd  # noqa: E402
 
 cli.add_command(cleanup_cmd)
+
+
+@cli.command("invalidate")
+@click.option("--ticket", "-t", required=True, help="Ticket ID.")
+@click.option("--step", "-s", required=True, help="Step name to invalidate (e.g. rename_and_orient).")
+@click.option("--undo", is_flag=True, default=False, help="Re-enable latest invalidated run.")
+@click.pass_context
+def invalidate_cmd(ctx, ticket, step, undo):
+    """Mark the latest run of a step as non-canonical (or undo that)."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.utils.output import print_done
+
+    reg = RegistryManager()
+    entry = reg.find_ticket(ticket)
+    if entry is None:
+        click.echo(f"Ticket {ticket} not found in registry.", err=True)
+        raise SystemExit(1)
+    workdir = Path(entry["workdir"])
+    tracker = RunTracker(workdir)
+    if undo:
+        runs = tracker.history(step)
+        inv = [r for r in runs if r.get("status") == "invalidated" and r.get("run_dir")]
+        if not inv:
+            click.echo(f"No invalidated runs found for step {step!r}.", err=True)
+            raise SystemExit(1)
+        run_dir = Path(inv[-1]["run_dir"])
+        success_before = [r for r in runs if r.get("status") == "success"
+                         and r.get("run_dir") == str(run_dir)]
+        outputs = success_before[-1].get("outputs") if success_before else None
+        tracker.finish(step, run_dir, "success", outputs=outputs)
+        print_done(f"Re-enabled {step!r} run: {run_dir.name}")
+    else:
+        if not tracker.invalidate(step):
+            click.echo(f"No successful run found for step {step!r} in {ticket}.", err=True)
+            raise SystemExit(1)
+        run_dir = tracker.latest_run_dir(step)
+        console_hint = f" → canonical is now: {run_dir.name}" if run_dir else ""
+        print_done(f"Invalidated latest {step!r} run{console_hint}")
+
+
+cli.add_command(invalidate_cmd)
 
 
 @cli.command("done")

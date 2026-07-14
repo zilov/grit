@@ -88,6 +88,7 @@ class CurationContext:
     teloseq: str = ""  # "--teloseq TTAGG" or ""
     release_version: int = 1  # release version from the ticket
     print_only: bool = False  # if True, print commands instead of running them
+    invalidated: bool = False  # if True, tracker.start() marks runs as non-canonical
 
     # --- raw data ---
     yaml_data: dict[str, Any] = field(default_factory=dict)
@@ -113,6 +114,7 @@ class CurationContext:
         *,
         teloseq: str = "",
         print_only: bool = False,
+        invalidated: bool = False,
     ) -> "CurationContext":
         """
         Build a CurationContext directly from a parsed YAML dict and user config.
@@ -178,6 +180,7 @@ class CurationContext:
             teloseq=teloseq,
             release_version=release_version,
             print_only=print_only,
+            invalidated=invalidated,
             yaml_data=yaml_data,
             tracker=RunTracker(workdir, print_only=print_only),
         )
@@ -191,6 +194,7 @@ class CurationContext:
         gritjiraissue_module=None,
         yaml_override: dict[str, Any] | None = None,
         print_only: bool = False,
+        invalidated: bool = False,
     ) -> "CurationContext":
         """
         Fetch YAML from Jira (or use yaml_override for tests) and build context.
@@ -217,6 +221,7 @@ class CurationContext:
             user_config,
             teloseq=teloseq,
             print_only=print_only,
+            invalidated=invalidated,
         )
 
 

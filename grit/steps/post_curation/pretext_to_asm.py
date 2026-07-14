@@ -59,7 +59,7 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
                 return
 
     # Start tracking
-    run_dir = ctx.tracker.start("pretext_to_asm", ctx.ticket_id, ctx.tol_id) if ctx.tracker else ctx.workdir / "pretext_to_asm" / "untracked"
+    run_dir = ctx.tracker.start("pretext_to_asm", ctx.ticket_id, ctx.tol_id, invalidated=ctx.invalidated) if ctx.tracker else ctx.workdir / "pretext_to_asm" / "untracked"
     out_fa = run_dir / f"{ctx.tol_id}.fa"
     original_fa = ctx.workdir / "original.fa"
 
