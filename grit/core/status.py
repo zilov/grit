@@ -69,6 +69,46 @@ def show_global_status(registry) -> None:
             console.print(f"  [dim]{t['ticket_id']} ({t.get('tol_id', '')}) — {t.get('status', '')}[/dim]")
 
 
+def _print_canonical_files(ctx) -> None:
+    """Print a table of canonical output files found for this ticket."""
+    from grit.utils.helpers import (
+        find_canonical_chr_list,
+        find_canonical_fa,
+        find_canonical_haplotigs,
+    )
+
+    tol_id = ctx.tol_id
+    haps = (
+        [ctx.hap1_prefix]
+        if ctx.hap1_prefix in ("primary", "paternal")
+        else [ctx.hap1_prefix, ctx.hap2_prefix]
+    )
+
+    table = Table(title="Canonical files", show_header=True, header_style="bold cyan")
+    table.add_column("Hap")
+    table.add_column("Type")
+    table.add_column("File")
+    table.add_column("Found", justify="center")
+
+    checks = [
+        ("assembly FA", find_canonical_fa),
+        ("haplotigs FA", find_canonical_haplotigs),
+        ("chr list", find_canonical_chr_list),
+    ]
+    for hap in haps:
+        for label, finder in checks:
+            try:
+                p = finder(ctx, hap)
+                found = "[green]✓[/green]"
+                name = p.name if p.exists() else f"[yellow]{p.name}[/yellow]"
+            except FileNotFoundError:
+                found = "[red]✗[/red]"
+                name = "[dim]not found[/dim]"
+            table.add_row(hap, label, name, found)
+
+    console.print(table)
+
+
 def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     """Print per-step run history and curation results for a single ticket."""
     from grit.core.run_tracker import RunTracker
@@ -83,6 +123,19 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     if not workdir.exists():
         console.print(f"[yellow]Workdir not found: {workdir}[/yellow]")
         return
+
+    # Build CurationContext for summary + canonical files (requires Jira access)
+    ctx = None
+    try:
+        from grit.core.context import CurationContext
+        ctx = CurationContext.from_ticket(ticket_id, user_config, print_only=True)
+    except Exception as exc:
+        console.print(f"[dim]Could not build curation context: {exc}[/dim]")
+
+    if ctx:
+        from grit.steps.pre_curation.setup import print_curation_summary
+        print_curation_summary(ctx)
+        _print_canonical_files(ctx)
 
     tracker = RunTracker(workdir)
     history = tracker.history()
