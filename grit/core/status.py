@@ -110,6 +110,22 @@ def _print_canonical_files(ctx) -> None:
     console.print()
 
 
+def _auto_step_outputs(step: str, run_dir: Path | None, tol_id: str) -> dict[str, str]:
+    """
+    Scan for known output files after a bsub job completes and return a populated
+    outputs dict for storage in the tracker. Returns an empty dict when nothing
+    can be determined (caller should pass None rather than {}).
+    """
+    if not run_dir or not run_dir.exists():
+        return {}
+    if step in ("hic_remapping", "hic_remapping_hap2"):
+        matches = list((run_dir / "pretext_maps_processed").glob(f"{tol_id}*hr.pretext"))
+        if matches:
+            key = "hap1_pretext" if step == "hic_remapping" else "hap2_pretext"
+            return {key: str(sorted(matches)[-1])}
+    return {}
+
+
 def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     """Print per-step run history and curation results for a single ticket."""
     from grit.core.run_tracker import RunTracker
@@ -204,7 +220,8 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             elif bjobs_status == "gone":
                 run_dir = Path(entry["run_dir"]) if entry.get("run_dir") else None
                 if tracker.verify_outputs(step, tol_id, run_dir) in ("ok", "no_files"):
-                    tracker.finish(step, run_dir, "success")
+                    outputs = _auto_step_outputs(step, run_dir, tol_id)
+                    tracker.finish(step, run_dir, "success", outputs=outputs or None)
                     status = "success"
                 else:
                     status = "unknown (gone)"

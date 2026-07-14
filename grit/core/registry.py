@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -193,11 +194,14 @@ class RegistryManager:
     @staticmethod
     def _resolve_gone_job(tracker, step: str, run_dir: Path, tol_id: str) -> None:
         """Resolve a gone bsub job via output file presence."""
-        if step == "hic_remapping":
-            found = run_dir.exists() and any(
-                run_dir.glob(f"pretext_maps_processed/{tol_id}*hr.pretext")
-            )
-            tracker.finish(step, run_dir, "success" if found else "failed")
+        if step in ("hic_remapping", "hic_remapping_hap2"):
+            matches = list(run_dir.glob(f"pretext_maps_processed/{tol_id}*hr.pretext")) if run_dir.exists() else []
+            if matches:
+                key = "hap1_pretext" if step == "hic_remapping" else "hap2_pretext"
+                outputs = {key: str(sorted(matches)[-1])}
+                tracker.finish(step, run_dir, "success", outputs=outputs)
+            else:
+                tracker.finish(step, run_dir, "failed")
         elif step == "sex_matcher":
             found = run_dir.exists() and any(run_dir.glob("Best_match*"))
             tracker.finish(step, run_dir, "success" if found else "failed")
@@ -214,4 +218,6 @@ class RegistryManager:
 
     def _save(self, data: list[dict]) -> None:
         self.dir.mkdir(exist_ok=True)
-        self.registry_path.write_text(json.dumps(data, indent=2))
+        tmp = self.registry_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2))
+        os.replace(tmp, self.registry_path)

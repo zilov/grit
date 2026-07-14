@@ -71,7 +71,15 @@ class RunTracker:
 
         return run_dir
 
-    def finish(self, step: str, run_dir: Path, status: str, job_id: str | None = None) -> None:
+    def finish(
+        self,
+        step: str,
+        run_dir: Path,
+        status: str,
+        job_id: str | None = None,
+        *,
+        outputs: dict[str, str] | None = None,
+    ) -> None:
         """
         Record step completion (status: 'success' | 'failed').
 
@@ -79,6 +87,9 @@ class RunTracker:
         For bsub-submitted jobs, call with status='started' and job_id set; the
         _state-update CLI command will write the final 'success'/'failed' entry
         when the job's -Ep epilogue fires.
+
+        *outputs* maps semantic keys (e.g. 'hap1_fa', 'hap1_pretext') to absolute
+        file path strings for the outputs produced by this step.
         """
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H_%M_%S")
         record: dict = {
@@ -89,6 +100,8 @@ class RunTracker:
         }
         if job_id is not None:
             record["job_id"] = job_id
+        if outputs is not None:
+            record["outputs"] = outputs
         if not self.print_only:
             self._append(record)
             log.debug("Run finished: step=%s status=%s", step, status)
@@ -142,6 +155,18 @@ class RunTracker:
         if started_runs:
             return Path(started_runs[-1]["run_dir"])
         return None
+
+    def get_output(self, step: str, key: str) -> str | None:
+        """
+        Return the path string for *key* from the latest successful run of *step*.
+
+        Returns None if no successful run exists or the key is absent.
+        """
+        runs = self.history(step)
+        success_runs = [r for r in runs if r.get("status") == "success" and r.get("outputs")]
+        if not success_runs:
+            return None
+        return success_runs[-1]["outputs"].get(key)
 
     def pending_jobs(self) -> list[dict]:
         """Return records with status='started' that have a job_id (bsub jobs in flight).

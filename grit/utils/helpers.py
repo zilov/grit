@@ -247,8 +247,9 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     Find the canonical assembly FASTA for *hap_prefix*.
 
     Priority:
-      1. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.fa
-      2. ``pretext_to_asm`` output   — via find_curated_fa (excludes haplotig files)
+      1. Tracker outputs — rename_and_orient → rename_and_orient_hap2 → pretext_to_asm
+      2. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.fa
+      3. ``pretext_to_asm`` output   — via find_curated_fa (excludes haplotig files)
 
     Dot-delimited token matching avoids "primary" prefix colliding with the
     ".primary.curated.fa" filename suffix shared by all curated FAs.
@@ -258,6 +259,14 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
         "primary": "hap1", "paternal": "hap1",
         "alternate": "hap2", "maternal": "hap2",
     }
+
+    if ctx.tracker:
+        for step in ("rename_and_orient", "rename_and_orient_hap2", "pretext_to_asm"):
+            for k in (f"{hap_prefix}_fa", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_fa"):
+                val = ctx.tracker.get_output(step, k)
+                if val and Path(val).exists():
+                    return Path(val)
+
     rao_dir = ctx.workdir / "rename_and_orient"
     if rao_dir.exists():
         def _rao_search(token: str) -> list[str]:
@@ -278,6 +287,10 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
     Find the haplotig FASTA for *hap_prefix* in the latest pretext_to_asm run dir.
 
+    Priority:
+      1. Tracker outputs — pretext_to_asm step
+      2. Filesystem glob in the latest pretext_to_asm run dir
+
     pretext-to-asm naming by curation type:
       - dual hap:   ``{tol_id}.1.haplotigs.fa``                      (no hap prefix, combined)
       - single hap: ``{tol_id}.1.additional_haplotigs.curated.fa``
@@ -293,6 +306,14 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
         "primary": "hap1", "paternal": "hap1",
         "alternate": "hap2", "maternal": "hap2",
     }
+
+    if ctx.tracker:
+        for step in ("pretext_to_asm",):
+            for k in (f"{hap_prefix}_haplotigs", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_haplotigs"):
+                val = ctx.tracker.get_output(step, k)
+                if val and Path(val).exists():
+                    return Path(val)
+
     pta_dir = find_latest_dir(ctx, "pretext_to_asm")
 
     def _hap_specific(token: str) -> Path | None:
@@ -343,8 +364,9 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     Find the canonical chromosome list CSV for *hap_prefix*.
 
     Priority:
-      1. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.chromosome.list.csv
-      2. ``pretext_to_asm`` output
+      1. Tracker outputs — rename_and_orient → rename_and_orient_hap2 → pretext_to_asm
+      2. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.chromosome.list.csv
+      3. ``pretext_to_asm`` output
 
     Dot-delimited token matching avoids "primary" prefix colliding with the
     ".primary." suffix that appears in all chromosome list filenames.
@@ -357,6 +379,13 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
         "primary": "hap1", "paternal": "hap1",
         "alternate": "hap2", "maternal": "hap2",
     }
+
+    if ctx.tracker:
+        for step in ("rename_and_orient", "rename_and_orient_hap2", "pretext_to_asm"):
+            for k in (f"{hap_prefix}_chr_list", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_chr_list"):
+                val = ctx.tracker.get_output(step, k)
+                if val and Path(val).exists():
+                    return Path(val)
 
     def _search_dir(directory: Path, token: str) -> list[str]:
         return glob.glob(str(directory / f"{ctx.tol_id}.{token}.*.chromosome.list.csv"))
