@@ -103,3 +103,87 @@ def test_refresh_statuses(reg, tmp_path):
 
     t = reg.all_tickets()[0]
     assert t["status"] == "post_curation"
+
+
+def test_append_step_and_get_steps(reg, tmp_path):
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    reg.add_ticket("RC-1234", "xbTest1", "species", workdir)
+
+    record = {
+        "step": "pretext_to_asm",
+        "timestamp": "2026-07-01T10_00_00",
+        "status": "success",
+        "run_dir": str(workdir / "pretext_to_asm" / "2026-07-01T10_00_00"),
+        "job_id": None,
+        "outputs": {"hap1_fa": "/path/to/hap1.fa"},
+    }
+    reg.append_step(workdir, record)
+
+    steps = reg.get_steps(workdir)
+    assert len(steps) == 1
+    assert steps[0]["step"] == "pretext_to_asm"
+    assert steps[0]["outputs"]["hap1_fa"] == "/path/to/hap1.fa"
+
+
+def test_get_steps_filtered_by_name(reg, tmp_path):
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    reg.add_ticket("RC-1234", "xbTest1", "species", workdir)
+
+    reg.append_step(workdir, {"step": "setup_curation", "status": "success"})
+    reg.append_step(workdir, {"step": "pretext_to_asm", "status": "success"})
+
+    assert len(reg.get_steps(workdir, "setup_curation")) == 1
+    assert len(reg.get_steps(workdir, "pretext_to_asm")) == 1
+    assert len(reg.get_steps(workdir)) == 2
+
+
+def test_get_steps_unknown_workdir(reg, tmp_path):
+    assert reg.get_steps(tmp_path / "nonexistent") == []
+
+
+def test_append_step_unknown_workdir_warns(reg, tmp_path, caplog):
+    import logging
+    with caplog.at_level(logging.WARNING):
+        reg.append_step(tmp_path / "nonexistent", {"step": "qv", "status": "started"})
+    assert "no ticket found" in caplog.text
+
+
+def test_patch_step_job_id(reg, tmp_path):
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    reg.add_ticket("RC-1234", "xbTest1", "species", workdir)
+
+    run_dir = workdir / "qv" / "2026-07-01T10_00_00"
+    reg.append_step(workdir, {
+        "step": "qv",
+        "timestamp": "2026-07-01T10_00_00",
+        "status": "started",
+        "run_dir": str(run_dir),
+        "job_id": None,
+    })
+
+    reg.patch_step_job_id(workdir, "qv", run_dir, "99999")
+
+    steps = reg.get_steps(workdir, "qv")
+    assert steps[0]["job_id"] == "99999"
+
+
+def test_refresh_statuses_reads_from_steps_array(reg, tmp_path):
+    """refresh_statuses uses registry steps if present, skipping runs.jsonl."""
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    reg.add_ticket("RC-1234", "xbTest1", "species", workdir)
+
+    reg.append_step(workdir, {
+        "step": "pretext_to_asm",
+        "timestamp": "2026-07-01T10_00_00",
+        "status": "success",
+        "run_dir": str(workdir / "pretext_to_asm" / "2026-07-01T10_00_00"),
+    })
+
+    reg.refresh_statuses()
+
+    t = reg.all_tickets()[0]
+    assert t["status"] == "post_curation"

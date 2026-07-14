@@ -138,27 +138,33 @@ class RunTracker:
 
         Called immediately after bsub returns the job ID, before the job finishes.
         """
-        if self.print_only or not self.runs_log.exists():
+        if self.print_only:
             return
-        lines = self.runs_log.read_text().splitlines()
-        # Find the last 'started' entry for this step + run_dir and add job_id
-        updated = []
-        patched = False
-        for line in reversed(lines):
-            if not patched:
-                try:
-                    r = json.loads(line)
-                    if r.get("step") == step and r.get("run_dir") == str(run_dir) and r.get("status") == "started":
-                        r["job_id"] = job_id
-                        line = json.dumps(r)
-                        patched = True
-                except json.JSONDecodeError:
-                    pass
-            updated.append(line)
-        self.runs_log.write_text("\n".join(reversed(updated)) + "\n")
+        if self.runs_log.exists():
+            lines = self.runs_log.read_text().splitlines()
+            updated = []
+            patched = False
+            for line in reversed(lines):
+                if not patched:
+                    try:
+                        r = json.loads(line)
+                        if r.get("step") == step and r.get("run_dir") == str(run_dir) and r.get("status") == "started":
+                            r["job_id"] = job_id
+                            line = json.dumps(r)
+                            patched = True
+                    except json.JSONDecodeError:
+                        pass
+                updated.append(line)
+            self.runs_log.write_text("\n".join(reversed(updated)) + "\n")
+        reg = self._registry
+        if reg is not None:
+            reg.patch_step_job_id(self.workdir, step, run_dir, job_id)
 
     def history(self, step: str | None = None) -> list[dict]:
         """Return all log entries, optionally filtered by step name."""
+        reg = self._registry
+        if reg is not None:
+            return reg.get_steps(self.workdir, step)
         if not self.runs_log.exists():
             return []
         records = [json.loads(line) for line in self.runs_log.read_text().splitlines() if line.strip()]
@@ -292,6 +298,19 @@ class RunTracker:
     # Internal
     # ------------------------------------------------------------------
 
+    @property
+    def _registry(self) -> "RegistryManager | None":
+        """Lazy RegistryManager — None if workdir not in registry (e.g. test fixtures)."""
+        if not hasattr(self, "_registry_cache"):
+            from grit.core.registry import RegistryManager
+            reg = RegistryManager()
+            tickets = reg._load()
+            self._registry_cache = reg if any(Path(t["workdir"]) == self.workdir for t in tickets) else None
+        return self._registry_cache
+
     def _append(self, record: dict) -> None:
         with self.runs_log.open("a") as fh:
             fh.write(json.dumps(record) + "\n")
+        reg = self._registry
+        if reg is not None:
+            reg.append_step(self.workdir, record)

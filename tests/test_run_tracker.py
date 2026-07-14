@@ -181,3 +181,56 @@ def test_invalidate_undo(tracker):
     tracker.finish("pretext_to_asm", r1, "success", outputs={"fa": "/path/to/r1.fa"})
     assert tracker.latest_run_dir("pretext_to_asm") == r1
     assert tracker.get_output("pretext_to_asm", "fa") == "/path/to/r1.fa"
+
+
+def test_history_reads_from_registry_when_available(tmp_path):
+    """RunTracker.history() delegates to registry when workdir is registered."""
+    from grit.core.registry import RegistryManager
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket("RC-9999", "xbTest1", "species", workdir)
+    reg.append_step(workdir, {
+        "step": "pretext_to_asm",
+        "timestamp": "2026-07-01T10_00_00",
+        "status": "success",
+        "run_dir": str(workdir / "pretext_to_asm" / "2026-07-01T10_00_00"),
+        "job_id": None,
+    })
+
+    tracker = RunTracker(workdir)
+    # Inject the test registry so the tracker doesn't hit ~/.grit/registry.json
+    tracker._registry_cache = reg
+
+    steps = tracker.history("pretext_to_asm")
+    assert len(steps) == 1
+    assert steps[0]["status"] == "success"
+
+    all_steps = tracker.history()
+    assert len(all_steps) == 1
+
+
+def test_tracker_dual_writes_to_registry(tmp_path):
+    """start/finish calls should also appear in registry steps when workdir is registered."""
+    from grit.core.registry import RegistryManager
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket("RC-9999", "xbTest1", "species", workdir)
+
+    tracker = RunTracker(workdir)
+    tracker._registry_cache = reg
+
+    run_dir = tracker.start("qv", "RC-9999", "xbTest1")
+    tracker.finish("qv", run_dir, "success")
+
+    # Verify JSONL still written
+    assert tracker.runs_log.exists()
+
+    # Verify registry also has the records
+    steps = reg.get_steps(workdir)
+    assert len(steps) == 2
+    assert steps[0]["status"] == "started"
+    assert steps[1]["status"] == "success"

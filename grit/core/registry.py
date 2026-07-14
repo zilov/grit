@@ -109,18 +109,53 @@ class RegistryManager:
         done = [t for t in self._load() if t.get("status") == "done"]
         return done[-limit:] if limit is not None else done
 
+    def append_step(self, workdir: Path, record: dict) -> None:
+        """Append a step record to the ticket matching workdir."""
+        tickets = self._load()
+        for t in tickets:
+            if Path(t["workdir"]) == workdir:
+                t.setdefault("steps", []).append(record)
+                self._save(tickets)
+                return
+        log.warning("Registry: no ticket found for workdir %s", workdir)
+
+    def get_steps(self, workdir: Path, step: str | None = None) -> list[dict]:
+        """Return step records for ticket at workdir, optionally filtered by step name."""
+        tickets = self._load()
+        for t in tickets:
+            if Path(t["workdir"]) == workdir:
+                steps = t.get("steps", [])
+                return [r for r in steps if step is None or r.get("step") == step]
+        return []
+
+    def patch_step_job_id(self, workdir: Path, step: str, run_dir: Path, job_id: str) -> None:
+        """Set job_id on the latest started entry for (step, run_dir)."""
+        tickets = self._load()
+        for t in tickets:
+            if Path(t["workdir"]) == workdir:
+                steps = t.get("steps", [])
+                for r in reversed(steps):
+                    if (
+                        r.get("step") == step
+                        and r.get("run_dir") == str(run_dir)
+                        and r.get("status") == "started"
+                    ):
+                        r["job_id"] = job_id
+                        self._save(tickets)
+                        return
+        log.debug("Registry: job_id patch target not found for %s/%s", step, run_dir)
+
     def refresh_statuses(self) -> None:
         """
-        Re-derive each active ticket's status from its runs.jsonl.
+        Re-derive each active ticket's status from its step history.
 
-        Called by `grit status` to show up-to-date info without requiring
-        every step to call update_status() perfectly. Skips done tickets.
+        Reads from the registry steps array first; falls back to runs.jsonl
+        via RunTracker for tickets not yet migrated. Skips done tickets.
         """
         from grit.core.manifests import STEP_TO_STATUS
         from grit.core.run_tracker import RunTracker
 
         self._refresh_pending_jobs()
-
 
         tickets = self._load()
         changed = False
@@ -130,8 +165,10 @@ class RegistryManager:
             workdir = Path(ticket["workdir"])
             if not workdir.exists():
                 continue
-            tracker = RunTracker(workdir)
-            history = tracker.history()
+            history = ticket.get("steps", [])
+            if not history:
+                tracker = RunTracker(workdir)
+                history = tracker.history()
             success_steps = [r["step"] for r in history if r.get("status") == "success"]
             if not success_steps:
                 continue

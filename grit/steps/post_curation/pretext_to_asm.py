@@ -98,7 +98,40 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
     try:
         _run(cmd, ctx.print_only, capture=False)
         if ctx.tracker:
-            ctx.tracker.finish("pretext_to_asm", run_dir, "success")
+            outputs: dict[str, str] = {}
+            hap1_fa_matches = [
+                f for f in run_dir.glob(f"{ctx.tol_id}.hap1.*.curated.fa")
+                if not any(k in f.name for k in ("all_haplotigs", "additional_haplotigs"))
+            ]
+            if hap1_fa_matches:
+                outputs["hap1_fa"] = str(sorted(hap1_fa_matches)[-1])
+            hap2_fa_matches = [
+                f for f in run_dir.glob(f"{ctx.tol_id}.hap2.*.curated.fa")
+                if not any(k in f.name for k in ("all_haplotigs", "additional_haplotigs"))
+            ]
+            if hap2_fa_matches:
+                outputs["hap2_fa"] = str(sorted(hap2_fa_matches)[-1])
+            hap1_haplo = sorted(run_dir.glob(f"{ctx.tol_id}.hap1.*.all_haplotigs.curated.fa"))
+            if hap1_haplo:
+                outputs["hap1_haplotigs"] = str(hap1_haplo[-1])
+            hap2_haplo = sorted(run_dir.glob(f"{ctx.tol_id}.hap2.*.all_haplotigs.curated.fa"))
+            if hap2_haplo:
+                outputs["hap2_haplotigs"] = str(hap2_haplo[-1])
+            hap1_csv = sorted(run_dir.glob(f"{ctx.tol_id}.hap1.*.chromosome.list.csv"))
+            if hap1_csv:
+                outputs["hap1_chr_list"] = str(hap1_csv[-1])
+            hap2_csv = sorted(run_dir.glob(f"{ctx.tol_id}.hap2.*.chromosome.list.csv"))
+            if hap2_csv:
+                outputs["hap2_chr_list"] = str(hap2_csv[-1])
+            if not outputs.get("hap1_fa"):
+                primary_fa = [
+                    f for f in run_dir.glob(f"{ctx.tol_id}.*.primary.curated.fa")
+                    if "hap1" not in f.name and "hap2" not in f.name
+                    and not any(k in f.name for k in ("all_haplotigs", "additional_haplotigs"))
+                ]
+                if primary_fa:
+                    outputs["hap1_fa"] = str(sorted(primary_fa)[-1])
+            ctx.tracker.finish("pretext_to_asm", run_dir, "success", outputs=outputs or None)
     except Exception:
         if ctx.tracker:
             ctx.tracker.finish("pretext_to_asm", run_dir, "failed")

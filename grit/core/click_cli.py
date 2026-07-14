@@ -4,6 +4,7 @@ Click-based CLI for the curation pipeline.
 This is the new Click-based interface, allowing modular use of pipeline steps.
 """
 
+import json
 import logging
 import sys
 from pathlib import Path
@@ -255,6 +256,52 @@ def done_cmd(ctx, ticket):
         return
     reg.mark_done(ticket)
     print_done(f"{ticket} ({entry.get('tol_id', '')}) marked as done — removed from active list.")
+
+
+@cli.command("migrate-tracker")
+@click.option("--dry-run", is_flag=True, default=False, help="Show what would be migrated without writing.")
+@click.option("--yes", is_flag=True, default=False, help="Actually migrate (required unless --dry-run).")
+def migrate_tracker_cmd(dry_run, yes):
+    """Migrate per-ticket runs.jsonl files into registry.json steps array."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    if not dry_run and not yes:
+        click.echo("Pass --yes to actually migrate, or --dry-run to preview.", err=True)
+        raise SystemExit(1)
+
+    reg = RegistryManager()
+    all_tickets = reg._load()
+    migrated = 0
+    skipped = 0
+
+    for ticket in all_tickets:
+        ticket_id = ticket.get("ticket_id", "?")
+        workdir = Path(ticket["workdir"])
+        if ticket.get("steps"):
+            log.debug("migrate-tracker: %s already has steps, skipping", ticket_id)
+            skipped += 1
+            continue
+        runs_log = workdir / ".grit" / "runs.jsonl"
+        if not runs_log.exists():
+            log.debug("migrate-tracker: %s has no runs.jsonl", ticket_id)
+            skipped += 1
+            continue
+        records = [
+            json.loads(line)
+            for line in runs_log.read_text().splitlines()
+            if line.strip()
+        ]
+        if dry_run:
+            click.echo(f"Would migrate {len(records)} record(s) for {ticket_id} ({workdir})")
+        else:
+            for record in records:
+                reg.append_step(workdir, record)
+            log.info("migrate-tracker: migrated %d records for %s", len(records), ticket_id)
+        migrated += 1
+
+    summary = f"{'[dry-run] ' if dry_run else ''}Migrated {migrated} ticket(s), skipped {skipped}."
+    click.echo(summary)
 
 
 if __name__ == "__main__":
