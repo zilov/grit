@@ -28,6 +28,7 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 _DEFAULT_DIR = Path.home() / ".grit"
+_REGISTRY_FILENAME = "registry_v2.json"
 
 
 class RegistryManager:
@@ -35,7 +36,7 @@ class RegistryManager:
 
     def __init__(self, registry_dir: Path | None = None) -> None:
         self.dir = registry_dir or _DEFAULT_DIR
-        self.registry_path = self.dir / "registry.json"
+        self.registry_path = self.dir / _REGISTRY_FILENAME
 
     # ------------------------------------------------------------------
     # Public API
