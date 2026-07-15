@@ -324,34 +324,33 @@ def test_run_hic_remapping_hifi_dir_override(mock_find_fa, mock_run, mock_ctx, t
 # ---------------------------------------------------------------------------
 
 
-@patch("grit.steps.post_curation.qv._submit_bsub")
-def test_run_qv_submits_bsub(mock_bsub, mock_ctx, tmp_path):
+@patch("grit.steps.post_curation.qv._run")
+def test_run_qv_runs_inline(mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.release_version = 1
-    mock_bsub.return_value = "99999"
 
     run_qv(mock_ctx)
 
-    assert mock_bsub.called
-    inner_cmd = mock_bsub.call_args[0][0]
-    assert "kmer_completeness.bash" in inner_cmd
-    assert "sDipInt39" in inner_cmd
-    assert "1" in inner_cmd
+    assert mock_run.called
+    cmd = mock_run.call_args[0][0]
+    assert "kmer_completeness.bash" in cmd
+    assert "sDipInt39" in cmd
+    assert "1" in cmd
+    assert "module load grit" in cmd
 
 
-@patch("grit.steps.post_curation.qv._submit_bsub")
-def test_run_qv_print_only(mock_bsub, mock_ctx, tmp_path):
+@patch("grit.steps.post_curation.qv._run")
+def test_run_qv_print_only(mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.release_version = 1
     mock_ctx.print_only = True
-    mock_bsub.return_value = ""
 
     run_qv(mock_ctx)
 
-    # bsub should still be called (it respects print_only internally)
-    assert mock_bsub.called
+    assert mock_run.called
+    assert mock_run.call_args[0][1] is True  # print_only passed through
 
 
 # ---------------------------------------------------------------------------
@@ -397,7 +396,7 @@ def test_validate_curated_files_warns_on_missing_log(mock_ctx, tmp_path, capsys)
 # ---------------------------------------------------------------------------
 
 
-@patch("grit.steps.post_curation.qv._submit_bsub")
+@patch("grit.steps.post_curation.qv._run")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
@@ -458,7 +457,7 @@ def test_finalize_for_qc_print_only(mock_run, mock_ctx, tmp_path):
     assert any("mkdir" in c for c in calls)
 
 
-@patch("grit.steps.post_curation.qv._submit_bsub")
+@patch("grit.steps.post_curation.qv._run")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
@@ -489,7 +488,7 @@ def test_finalize_for_qc_assembly_override(
     assert any(str(custom_fa) in c for c in calls)
 
 
-@patch("grit.steps.post_curation.qv._submit_bsub")
+@patch("grit.steps.post_curation.qv._run")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
@@ -525,7 +524,7 @@ def test_finalize_for_qc_hap2_map_copied_when_provided(
     assert any(hap2_dest in c for c in calls)
 
 
-@patch("grit.steps.post_curation.qv._submit_bsub")
+@patch("grit.steps.post_curation.qv._run")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
