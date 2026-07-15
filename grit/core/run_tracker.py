@@ -164,7 +164,9 @@ class RunTracker:
         """Return all log entries, optionally filtered by step name."""
         reg = self._registry
         if reg is not None:
-            return reg.get_steps(self.workdir, step)
+            steps = reg.get_steps(self.workdir, step)
+            if steps:
+                return steps
         if not self.runs_log.exists():
             return []
         records = [json.loads(line) for line in self.runs_log.read_text().splitlines() if line.strip()]
