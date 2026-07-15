@@ -10,11 +10,22 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, agp_newer_than_curated_fa
+from grit.utils.helpers import _run, agp_newer_than_curated_fa, collect_outputs
 from grit.utils.modules import module_cmd
 from grit.utils.output import print_done, print_step_header
 
 log = logging.getLogger(__name__)
+
+_OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
+    ("hap1_fa",        "{tol_id}.{hap1}.*.curated.fa",               ["all_haplotigs", "additional_haplotigs"]),
+    ("hap2_fa",        "{tol_id}.{hap2}.*.curated.fa",               ["all_haplotigs", "additional_haplotigs"]),
+    ("hap1_haplotigs", "{tol_id}.{hap1}.*.all_haplotigs.curated.fa", []),
+    ("hap2_haplotigs", "{tol_id}.{hap2}.*.all_haplotigs.curated.fa", []),
+    ("hap1_chr_list",  "{tol_id}.{hap1}.*.chromosome.list.csv",      []),
+    ("hap2_chr_list",  "{tol_id}.{hap2}.*.chromosome.list.csv",      []),
+    # fallback: primary assembly naming (tried only if hap1_fa not found above)
+    ("hap1_fa",        "{tol_id}.*.primary.curated.fa",              ["hap1", "hap2", "all_haplotigs", "additional_haplotigs"]),
+]
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -98,39 +109,9 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
     try:
         _run(cmd, ctx.print_only, capture=False)
         if ctx.tracker:
-            outputs: dict[str, str] = {}
-            hap1_fa_matches = [
-                f for f in run_dir.glob(f"{ctx.tol_id}.hap1.*.curated.fa")
-                if not any(k in f.name for k in ("all_haplotigs", "additional_haplotigs"))
-            ]
-            if hap1_fa_matches:
-                outputs["hap1_fa"] = str(sorted(hap1_fa_matches)[-1])
-            hap2_fa_matches = [
-                f for f in run_dir.glob(f"{ctx.tol_id}.hap2.*.curated.fa")
-                if not any(k in f.name for k in ("all_haplotigs", "additional_haplotigs"))
-            ]
-            if hap2_fa_matches:
-                outputs["hap2_fa"] = str(sorted(hap2_fa_matches)[-1])
-            hap1_haplo = sorted(run_dir.glob(f"{ctx.tol_id}.hap1.*.all_haplotigs.curated.fa"))
-            if hap1_haplo:
-                outputs["hap1_haplotigs"] = str(hap1_haplo[-1])
-            hap2_haplo = sorted(run_dir.glob(f"{ctx.tol_id}.hap2.*.all_haplotigs.curated.fa"))
-            if hap2_haplo:
-                outputs["hap2_haplotigs"] = str(hap2_haplo[-1])
-            hap1_csv = sorted(run_dir.glob(f"{ctx.tol_id}.hap1.*.chromosome.list.csv"))
-            if hap1_csv:
-                outputs["hap1_chr_list"] = str(hap1_csv[-1])
-            hap2_csv = sorted(run_dir.glob(f"{ctx.tol_id}.hap2.*.chromosome.list.csv"))
-            if hap2_csv:
-                outputs["hap2_chr_list"] = str(hap2_csv[-1])
-            if not outputs.get("hap1_fa"):
-                primary_fa = [
-                    f for f in run_dir.glob(f"{ctx.tol_id}.*.primary.curated.fa")
-                    if "hap1" not in f.name and "hap2" not in f.name
-                    and not any(k in f.name for k in ("all_haplotigs", "additional_haplotigs"))
-                ]
-                if primary_fa:
-                    outputs["hap1_fa"] = str(sorted(primary_fa)[-1])
+            outputs = collect_outputs(
+                _OUTPUT_SPECS, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
+            )
             ctx.tracker.finish("pretext_to_asm", run_dir, "success", outputs=outputs or None)
     except Exception:
         if ctx.tracker:

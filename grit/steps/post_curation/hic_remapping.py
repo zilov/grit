@@ -17,6 +17,13 @@ from grit.utils.output import console, print_done, print_step_header, print_tip
 
 log = logging.getLogger(__name__)
 
+_OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
+    ("hap1_pretext", "pretext_maps_processed/{tol_id}*hr.pretext", []),
+]
+_OUTPUT_SPECS_HAP2: list[tuple[str, str, list[str]]] = [
+    ("hap2_pretext", "pretext_maps_processed/{tol_id}*hr.pretext", []),
+]
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------

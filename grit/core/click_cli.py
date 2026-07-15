@@ -161,10 +161,27 @@ def status_cmd(ctx, ticket):
 @click.option("--job-id", "job_id", default=None, help="LSF job ID.")
 def state_update_cmd(workdir, step, run_dir, status, job_id):
     """[Internal] Called by bsub -Ep epilogue to record job completion."""
+    from grit.core.registry import RegistryManager
     from grit.core.run_tracker import RunTracker
-    tracker = RunTracker(Path(workdir))
-    tracker.finish(step, Path(run_dir), status, job_id=job_id)
-    log.info("_state-update: step=%s status=%s job_id=%s", step, status, job_id)
+    from grit.utils.helpers import _get_step_specs, collect_outputs
+
+    workdir_path = Path(workdir)
+    tracker = RunTracker(workdir_path)
+    outputs = None
+    if status == "success":
+        ticket = RegistryManager().find_ticket_by_workdir(workdir_path)
+        if ticket:
+            tol_id = ticket.get("tol_id", "")
+            hap1 = ticket.get("hap1_prefix", "hap1")
+            hap2 = ticket.get("hap2_prefix", "hap2")
+            specs = _get_step_specs(step)
+            if specs and tol_id:
+                outputs = collect_outputs(specs, Path(run_dir), tol_id, hap1=hap1, hap2=hap2) or None
+    tracker.finish(step, Path(run_dir), status, job_id=job_id, outputs=outputs)
+    log.info(
+        "_state-update: step=%s status=%s job_id=%s outputs=%s",
+        step, status, job_id, list(outputs) if outputs else None,
+    )
 
 
 cli.add_command(sex_matcher_cmd)

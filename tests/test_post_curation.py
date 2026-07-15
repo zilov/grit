@@ -15,6 +15,75 @@ from grit.steps.post_curation import (
 )
 
 # ---------------------------------------------------------------------------
+# collect_outputs
+# ---------------------------------------------------------------------------
+
+
+def test_collect_outputs_basic(tmp_path):
+    """collect_outputs globs for files and returns {key: path_str} dict."""
+    from grit.utils.helpers import collect_outputs
+
+    tol_id = "xbTest1"
+    fa = tmp_path / f"{tol_id}.hap1.1.curated.fa"
+    fa.write_text("")
+
+    specs = [
+        ("hap1_fa", "{tol_id}.{hap1}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
+    ]
+    result = collect_outputs(specs, tmp_path, tol_id, hap1="hap1", hap2="hap2")
+    assert result == {"hap1_fa": str(fa)}
+
+
+def test_collect_outputs_excludes(tmp_path):
+    """collect_outputs skips files that contain an exclude keyword."""
+    from grit.utils.helpers import collect_outputs
+
+    tol_id = "xbTest1"
+    haplo = tmp_path / f"{tol_id}.hap1.1.all_haplotigs.curated.fa"
+    haplo.write_text("")
+
+    specs = [
+        ("hap1_fa", "{tol_id}.{hap1}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
+    ]
+    result = collect_outputs(specs, tmp_path, tol_id, hap1="hap1", hap2="hap2")
+    assert result == {}
+
+
+def test_collect_outputs_fallback(tmp_path):
+    """collect_outputs falls back to later spec when earlier key not matched."""
+    from grit.utils.helpers import collect_outputs
+
+    tol_id = "xbTest1"
+    primary = tmp_path / f"{tol_id}.1.primary.curated.fa"
+    primary.write_text("")
+
+    specs = [
+        ("hap1_fa", "{tol_id}.{hap1}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
+        ("hap1_fa", "{tol_id}.*.primary.curated.fa", ["hap1", "hap2", "all_haplotigs", "additional_haplotigs"]),
+    ]
+    result = collect_outputs(specs, tmp_path, tol_id, hap1="hap1", hap2="hap2")
+    assert result == {"hap1_fa": str(primary)}
+
+
+def test_collect_outputs_fallback_skipped_when_already_found(tmp_path):
+    """collect_outputs skips later specs for a key already found."""
+    from grit.utils.helpers import collect_outputs
+
+    tol_id = "xbTest1"
+    hap1_fa = tmp_path / f"{tol_id}.hap1.1.curated.fa"
+    hap1_fa.write_text("")
+    primary = tmp_path / f"{tol_id}.1.primary.curated.fa"
+    primary.write_text("")
+
+    specs = [
+        ("hap1_fa", "{tol_id}.{hap1}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
+        ("hap1_fa", "{tol_id}.*.primary.curated.fa", ["hap1", "hap2", "all_haplotigs", "additional_haplotigs"]),
+    ]
+    result = collect_outputs(specs, tmp_path, tol_id, hap1="hap1", hap2="hap2")
+    assert result == {"hap1_fa": str(hap1_fa)}
+
+
+# ---------------------------------------------------------------------------
 # run_pretext_to_asm
 # ---------------------------------------------------------------------------
 
@@ -397,13 +466,14 @@ def test_validate_curated_files_warns_on_missing_log(mock_ctx, tmp_path, capsys)
 # ---------------------------------------------------------------------------
 
 
+@patch("grit.steps.post_curation.qv._submit_bsub")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_creates_curated_dir(
-    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
+    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_bsub, mock_ctx, tmp_path
 ):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -457,13 +527,14 @@ def test_finalize_for_qc_print_only(mock_run, mock_ctx, tmp_path):
     assert any("mkdir" in c for c in calls)
 
 
+@patch("grit.steps.post_curation.qv._submit_bsub")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_assembly_override(
-    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
+    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_bsub, mock_ctx, tmp_path
 ):
     """--hap1-assembly bypasses find_canonical_fa for hap1."""
     mock_ctx.workdir = tmp_path
@@ -487,13 +558,14 @@ def test_finalize_for_qc_assembly_override(
     assert any(str(custom_fa) in c for c in calls)
 
 
+@patch("grit.steps.post_curation.qv._submit_bsub")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_hap2_map_copied_when_provided(
-    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
+    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_bsub, mock_ctx, tmp_path
 ):
     """--hap2-map triggers a second pretext map copy to NFS."""
     mock_ctx.workdir = tmp_path
@@ -522,13 +594,14 @@ def test_finalize_for_qc_hap2_map_copied_when_provided(
     assert any(hap2_dest in c for c in calls)
 
 
+@patch("grit.steps.post_curation.qv._submit_bsub")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_primary_alternate_assembly_single_hap_output(
-    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
+    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_bsub, mock_ctx, tmp_path
 ):
     """primary/alternate assemblies: only hap1 files copied, no hap prefix in dest names."""
     mock_ctx.workdir = tmp_path

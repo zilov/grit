@@ -26,6 +26,13 @@ log = logging.getLogger(__name__)
 _RENAME_AND_ORIENT_CMD = str(Path(sys.executable).parent / "rename-and-orient")
 _DEFAULT_MEM_MB = 60000
 
+_OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
+    ("hap1_fa", "{tol_id}.{hap1}.*.fa", ["haplotigs"]),
+]
+_OUTPUT_SPECS_HAP2: list[tuple[str, str, list[str]]] = [
+    ("hap2_fa", "{tol_id}.{hap2}.*.fa", ["haplotigs"]),
+]
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------

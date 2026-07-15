@@ -49,6 +49,8 @@ class RegistryManager:
         workdir: Path,
         *,
         status: str = "in_curation",
+        hap1_prefix: str = "hap1",
+        hap2_prefix: str = "hap2",
     ) -> None:
         """
         Add or update a ticket entry in the registry.
@@ -65,6 +67,8 @@ class RegistryManager:
             existing["tol_id"] = tol_id
             existing["species"] = species
             existing["workdir"] = str(workdir)
+            existing["hap1_prefix"] = hap1_prefix
+            existing["hap2_prefix"] = hap2_prefix
         else:
             tickets.append(
                 {
@@ -74,6 +78,8 @@ class RegistryManager:
                     "workdir": str(workdir),
                     "added_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "status": status,
+                    "hap1_prefix": hap1_prefix,
+                    "hap2_prefix": hap2_prefix,
                 }
             )
             log.info("Registry: added ticket %s (%s)", ticket_id, tol_id)
@@ -99,6 +105,10 @@ class RegistryManager:
     def find_ticket(self, ticket_id: str) -> dict | None:
         """Find any ticket by ID regardless of status."""
         return next((t for t in self._load() if t["ticket_id"] == ticket_id), None)
+
+    def find_ticket_by_workdir(self, workdir: Path) -> dict | None:
+        """Find any ticket by workdir path regardless of status."""
+        return next((t for t in self._load() if Path(t["workdir"]) == workdir), None)
 
     def all_tickets(self) -> list[dict]:
         """Return active tickets (status != 'done')."""
@@ -196,7 +206,7 @@ class RegistryManager:
         from grit.core.run_tracker import RunTracker
         from grit.utils.helpers import _check_bjobs
 
-        # Collect pending job_id → (tracker, entry, tol_id) across all active tickets
+        # Collect pending job_id → (tracker, entry, tol_id, hap1, hap2) across all active tickets
         pending: dict[str, tuple] = {}
         for ticket in self._load():
             if ticket.get("status") == "done":
@@ -206,10 +216,12 @@ class RegistryManager:
                 continue
             tracker = RunTracker(workdir)
             tol_id = ticket.get("tol_id", "")
+            hap1 = ticket.get("hap1_prefix", "hap1")
+            hap2 = ticket.get("hap2_prefix", "hap2")
             for entry in tracker.pending_jobs():
                 job_id = entry.get("job_id")
                 if job_id and job_id not in pending:
-                    pending[job_id] = (tracker, entry, tol_id)
+                    pending[job_id] = (tracker, entry, tol_id, hap1, hap2)
 
         if not pending:
             return
@@ -219,26 +231,26 @@ class RegistryManager:
         for job_id, bjobs_status in live.items():
             if job_id not in pending:
                 continue
-            tracker, entry, tol_id = pending[job_id]
+            tracker, entry, tol_id, hap1, hap2 = pending[job_id]
             step = entry.get("step", "")
             run_dir = Path(entry.get("run_dir", ""))
 
             if bjobs_status == "EXIT":
                 tracker.finish(step, run_dir, "failed")
             elif bjobs_status == "gone":
-                self._resolve_gone_job(tracker, step, run_dir, tol_id)
+                self._resolve_gone_job(tracker, step, run_dir, tol_id, hap1, hap2)
 
     @staticmethod
-    def _resolve_gone_job(tracker, step: str, run_dir: Path, tol_id: str) -> None:
+    def _resolve_gone_job(
+        tracker, step: str, run_dir: Path, tol_id: str, hap1: str = "hap1", hap2: str = "hap2"
+    ) -> None:
         """Resolve a gone bsub job via output file presence."""
-        if step in ("hic_remapping", "hic_remapping_hap2"):
-            matches = list(run_dir.glob(f"pretext_maps_processed/{tol_id}*hr.pretext")) if run_dir.exists() else []
-            if matches:
-                key = "hap1_pretext" if step == "hic_remapping" else "hap2_pretext"
-                outputs = {key: str(sorted(matches)[-1])}
-                tracker.finish(step, run_dir, "success", outputs=outputs)
-            else:
-                tracker.finish(step, run_dir, "failed")
+        from grit.utils.helpers import _get_step_specs, collect_outputs
+
+        specs = _get_step_specs(step)
+        if specs:
+            outputs = collect_outputs(specs, run_dir, tol_id, hap1=hap1, hap2=hap2)
+            tracker.finish(step, run_dir, "success" if outputs else "failed", outputs=outputs or None)
         elif step == "sex_matcher":
             found = run_dir.exists() and any(run_dir.glob("Best_match*"))
             tracker.finish(step, run_dir, "success" if found else "failed")

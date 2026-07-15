@@ -187,3 +187,53 @@ def test_refresh_statuses_reads_from_steps_array(reg, tmp_path):
 
     t = reg.all_tickets()[0]
     assert t["status"] == "post_curation"
+
+
+def test_add_ticket_stores_hap_prefixes(reg):
+    """add_ticket stores hap1_prefix and hap2_prefix in the registry record."""
+    reg.add_ticket(
+        "RC-5678",
+        "xbTest2",
+        "Test species",
+        Path("/work/xbTest2"),
+        hap1_prefix="primary",
+        hap2_prefix="alternate",
+    )
+    t = reg.find_ticket("RC-5678")
+    assert t is not None
+    assert t["hap1_prefix"] == "primary"
+    assert t["hap2_prefix"] == "alternate"
+
+
+def test_add_ticket_hap_prefix_defaults(reg):
+    """add_ticket defaults hap prefixes to hap1/hap2 when not supplied."""
+    reg.add_ticket("RC-0001", "xbTest3", "species", Path("/work/xbTest3"))
+    t = reg.find_ticket("RC-0001")
+    assert t["hap1_prefix"] == "hap1"
+    assert t["hap2_prefix"] == "hap2"
+
+
+def test_add_ticket_updates_hap_prefixes(reg):
+    """Calling add_ticket again updates hap prefixes on the existing record."""
+    reg.add_ticket("RC-9999", "xbTest4", "species", Path("/work"), hap1_prefix="hap1", hap2_prefix="hap2")
+    reg.add_ticket("RC-9999", "xbTest4", "species", Path("/work"), hap1_prefix="paternal", hap2_prefix="maternal")
+    t = reg.find_ticket("RC-9999")
+    assert t["hap1_prefix"] == "paternal"
+    assert t["hap2_prefix"] == "maternal"
+
+
+def test_find_ticket_by_workdir(reg, tmp_path):
+    """find_ticket_by_workdir returns the ticket matching the given workdir."""
+    workdir_a = tmp_path / "sDipInt39"
+    workdir_b = tmp_path / "xbOther1"
+    reg.add_ticket("RC-1234", "sDipInt39", "Dipturus intermedius", workdir_a)
+    reg.add_ticket("RC-5678", "xbOther1", "Other species", workdir_b)
+
+    found = reg.find_ticket_by_workdir(workdir_a)
+    assert found is not None
+    assert found["ticket_id"] == "RC-1234"
+
+
+def test_find_ticket_by_workdir_not_found(reg, tmp_path):
+    """find_ticket_by_workdir returns None when no ticket matches."""
+    assert reg.find_ticket_by_workdir(tmp_path / "nonexistent") is None

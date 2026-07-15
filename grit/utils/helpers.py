@@ -495,6 +495,49 @@ def _clean_species_name(species: str) -> str:
     return f"{words[0]} {second}"
 
 
+def collect_outputs(
+    specs: list[tuple[str, str, list[str]]],
+    run_dir: Path,
+    tol_id: str,
+    *,
+    hap1: str = "hap1",
+    hap2: str = "hap2",
+) -> dict[str, str]:
+    """Glob for step outputs once and return {key: path_str} dict."""
+    outputs: dict[str, str] = {}
+    for key, pattern, excludes in specs:
+        if key in outputs:  # already found via earlier spec (fallback skip)
+            continue
+        glob_pattern = pattern.format(tol_id=tol_id, hap1=hap1, hap2=hap2)
+        matches = [
+            f for f in run_dir.glob(glob_pattern)
+            if not any(e in f.name for e in excludes)
+        ]
+        if matches:
+            outputs[key] = str(sorted(matches)[-1])
+    return outputs
+
+
+def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
+    """Return _OUTPUT_SPECS for a step by lazy import. Returns [] for unknown steps."""
+    from importlib import import_module
+
+    _MAP = {
+        "pretext_to_asm": ("grit.steps.post_curation.pretext_to_asm", "_OUTPUT_SPECS"),
+        "rename_and_orient": ("grit.steps.optional.rename_and_orient", "_OUTPUT_SPECS"),
+        "rename_and_orient_hap2": ("grit.steps.optional.rename_and_orient", "_OUTPUT_SPECS_HAP2"),
+        "hic_remapping": ("grit.steps.post_curation.hic_remapping", "_OUTPUT_SPECS"),
+        "hic_remapping_hap2": ("grit.steps.post_curation.hic_remapping", "_OUTPUT_SPECS_HAP2"),
+    }
+    if step not in _MAP:
+        return []
+    mod_path, attr = _MAP[step]
+    try:
+        return getattr(import_module(mod_path), attr, [])
+    except ImportError:
+        return []
+
+
 def _sort_by_mtime(files: list[str]) -> list[str]:
     """Return files sorted by modification time, newest first."""
     return sorted(files, key=lambda x: Path(x).stat().st_mtime, reverse=True)
