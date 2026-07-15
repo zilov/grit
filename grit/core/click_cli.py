@@ -278,16 +278,51 @@ def done_cmd(ctx, ticket):
 @cli.command("migrate-tracker")
 @click.option("--dry-run", is_flag=True, default=False, help="Show what would be migrated without writing.")
 @click.option("--yes", is_flag=True, default=False, help="Actually migrate (required unless --dry-run).")
-def migrate_tracker_cmd(dry_run, yes):
-    """Migrate per-ticket runs.jsonl files into registry.json steps array."""
+@click.option("--from-registry", type=click.Path(exists=True), default=None,
+              help="Import tickets from an existing registry JSON file before migrating steps.")
+def migrate_tracker_cmd(dry_run, yes, from_registry):
+    """Migrate per-ticket runs.jsonl files into registry steps array.
+
+    Use --from-registry to seed from an existing registry.json (e.g. the old one)
+    before populating steps from runs.jsonl files.
+    """
     from grit.core.registry import RegistryManager
-    from grit.core.run_tracker import RunTracker
 
     if not dry_run and not yes:
         click.echo("Pass --yes to actually migrate, or --dry-run to preview.", err=True)
         raise SystemExit(1)
 
     reg = RegistryManager()
+
+    # Seed from an existing registry file (e.g. old registry.json)
+    if from_registry:
+        source_path = Path(from_registry)
+        try:
+            source_tickets = json.loads(source_path.read_text())
+        except Exception as exc:
+            click.echo(f"Could not read {source_path}: {exc}", err=True)
+            raise SystemExit(1)
+        imported = 0
+        for ticket in source_tickets:
+            tid = ticket.get("ticket_id", "?")
+            workdir = ticket.get("workdir")
+            if not workdir:
+                continue
+            if dry_run:
+                click.echo(f"Would import {tid} ({workdir})")
+            else:
+                reg.add_ticket(
+                    tid,
+                    ticket.get("tol_id", ""),
+                    ticket.get("species", ""),
+                    Path(workdir),
+                    status=ticket.get("status", "in_curation"),
+                    hap1_prefix=ticket.get("hap1_prefix", "hap1"),
+                    hap2_prefix=ticket.get("hap2_prefix", "hap2"),
+                )
+            imported += 1
+        click.echo(f"{'[dry-run] ' if dry_run else ''}Imported {imported} ticket(s) from {source_path.name}.")
+
     all_tickets = reg._load()
     migrated = 0
     skipped = 0
@@ -310,14 +345,14 @@ def migrate_tracker_cmd(dry_run, yes):
             if line.strip()
         ]
         if dry_run:
-            click.echo(f"Would migrate {len(records)} record(s) for {ticket_id} ({workdir})")
+            click.echo(f"Would migrate {len(records)} step record(s) for {ticket_id} ({workdir})")
         else:
             for record in records:
                 reg.append_step(workdir, record)
             log.info("migrate-tracker: migrated %d records for %s", len(records), ticket_id)
         migrated += 1
 
-    summary = f"{'[dry-run] ' if dry_run else ''}Migrated {migrated} ticket(s), skipped {skipped}."
+    summary = f"{'[dry-run] ' if dry_run else ''}Migrated steps for {migrated} ticket(s), skipped {skipped}."
     click.echo(summary)
 
 
