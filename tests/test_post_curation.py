@@ -397,13 +397,14 @@ def test_validate_curated_files_warns_on_missing_log(mock_ctx, tmp_path, capsys)
 # ---------------------------------------------------------------------------
 
 
+@patch("grit.steps.post_curation.qv._submit_bsub")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_creates_curated_dir(
-    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
+    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_bsub, mock_ctx, tmp_path
 ):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -457,13 +458,14 @@ def test_finalize_for_qc_print_only(mock_run, mock_ctx, tmp_path):
     assert any("mkdir" in c for c in calls)
 
 
+@patch("grit.steps.post_curation.qv._submit_bsub")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_assembly_override(
-    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
+    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_bsub, mock_ctx, tmp_path
 ):
     """--hap1-assembly bypasses find_canonical_fa for hap1."""
     mock_ctx.workdir = tmp_path
@@ -487,13 +489,14 @@ def test_finalize_for_qc_assembly_override(
     assert any(str(custom_fa) in c for c in calls)
 
 
+@patch("grit.steps.post_curation.qv._submit_bsub")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_hap2_map_copied_when_provided(
-    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
+    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_bsub, mock_ctx, tmp_path
 ):
     """--hap2-map triggers a second pretext map copy to NFS."""
     mock_ctx.workdir = tmp_path
@@ -522,13 +525,14 @@ def test_finalize_for_qc_hap2_map_copied_when_provided(
     assert any(hap2_dest in c for c in calls)
 
 
+@patch("grit.steps.post_curation.qv._submit_bsub")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_primary_alternate_assembly_single_hap_output(
-    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_ctx, tmp_path
+    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_bsub, mock_ctx, tmp_path
 ):
     """primary/alternate assemblies: only hap1 files copied, no hap prefix in dest names."""
     mock_ctx.workdir = tmp_path

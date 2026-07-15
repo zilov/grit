@@ -17,7 +17,6 @@ from grit.utils.helpers import (
     find_canonical_haplotigs,
     find_latest_dir,
 )
-from grit.utils.modules import module_cmd
 from grit.utils.output import console, print_done, print_step_header
 
 log = logging.getLogger(__name__)
@@ -189,9 +188,8 @@ def finalize_for_qc(
     # 4. QV if merquryk not yet present
     qv_dir = dest_dir / "merquryk"
     if not qv_dir.exists():
-        qv_cmd = f"{module_cmd('GRIT')} && cd {ctx.workdir} && kmer_completeness.bash {ctx.tol_id} {ctx.release_version}"
-        console.print("\n[bold]Running QV analysis (merquryk not found):[/bold]")
-        _run(qv_cmd, ctx.print_only)
+        from grit.steps.post_curation.qv import run_qv
+        run_qv(ctx)
 
     if ctx.print_only:
         console.print("\n[yellow]print-only: files not copied — commands above show what would run[/yellow]")
