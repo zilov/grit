@@ -86,7 +86,8 @@ def _build_allosome_string(sex_ids: list[str]) -> str:
 def parse_pta_log(path: Path) -> tuple[int, int, int] | None:
     """Return (cuts, breaks, joins) from pretext_to_asm log, or None if not found."""
     m = re.search(
-        r"Curation made (\d+) cuts? in contigs?,\s*(\d+) breaks? at gaps? and (\d+) joins?",
+        r"Curation made (\d+) cuts? in (?:\w+\s+)?contigs?,\s*"
+        r"(\d+) breaks? at (?:\w+\s+)?gaps? and (\d+) joins?",
         path.read_text(),
     )
     if m:
