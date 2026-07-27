@@ -1,5 +1,12 @@
 # 36 — Step invalidation and explicit canonical registry
 
+**Status: DONE.** Implemented as described below, with one naming change:
+`grit invalidate` / `tracker.invalidate()` / `--invalidated`/`-i` were renamed
+to `grit untrack` / `tracker.untrack()` / `--untracked`/`-u` for readability
+(status string `"invalidated"` → `"untracked"` too). Everything else —
+tracked outputs via `get_output`, `find_canonical_*` priority chain, and the
+`grit status -t` display of non-canonical runs — matches the design below.
+
 ## Problem
 
 `find_canonical_fa` (and siblings) use implicit glob-based discovery with a fixed
