@@ -138,7 +138,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     bsub_opts = build_bsub_opts(
         group="team135",
         cores=8,
-        memory_mb=24000,
+        memory_mb=ctx.bsub_ram or 24000,
         output="o_fastga",
         error="e_fastga",
         run_dir=run_dir,
@@ -166,7 +166,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-@click.command("fastga", cls=GritCommand)
+@click.command("fastga", cls=GritCommand, bsub_ram_default=24000)
 @click.option("--reference", "-r", default=None, help="Path to reference FASTA (overrides auto-search in workdir/reference/).")
 @click.pass_context
 def fastga_cmd(ctx, reference):

@@ -18,9 +18,27 @@ class GritCommand(click.RichCommand):
     global position before it).
     """
 
-    def __init__(self, name=None, **kwargs):
+    def __init__(
+        self,
+        name=None,
+        bsub_ram_default: int | None = None,
+        bsub_ram_help: str | None = None,
+        **kwargs,
+    ):
         super().__init__(name=name, **kwargs)
-        # Insert in reverse order so --ticket appears first, --print-only second, --untracked third
+        # Insert in reverse order so --ticket appears first, --print-only second, --untracked
+        # third, --bsub-ram fourth (only for steps that pass bsub_ram_default/bsub_ram_help)
+        if bsub_ram_default is not None or bsub_ram_help is not None:
+            help_text = bsub_ram_help or f"LSF memory limit in MB [default: {bsub_ram_default}]"
+            self.params.insert(
+                0,
+                click.Option(
+                    ["--bsub-ram"],
+                    type=int,
+                    default=None,
+                    help=help_text,
+                ),
+            )
         self.params.insert(
             0,
             click.Option(
@@ -53,6 +71,7 @@ class GritCommand(click.RichCommand):
         ticket = ctx.params.pop("ticket", None)
         print_only = ctx.params.pop("print_only", False)
         untracked = ctx.params.pop("untracked", False)
+        bsub_ram = ctx.params.pop("bsub_ram", None)
 
         if ctx.obj is not None:
             # Local --print-only ORs with the global flag
@@ -61,6 +80,9 @@ class GritCommand(click.RichCommand):
 
             if untracked:
                 ctx.obj.untracked = True
+
+            if bsub_ram is not None:
+                ctx.obj.bsub_ram = bsub_ram
 
             if ticket:
                 ctx.obj.ticket = ticket

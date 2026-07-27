@@ -86,6 +86,7 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     else:
         mem_mb = 220000
 
+    mem_mb = ctx.bsub_ram or mem_mb
     mem_gb = mem_mb // 1000
     log.info("File size: %.2f GB", file_size_gb)
     log.info("Memory allocation: %d GB", mem_gb)
@@ -125,7 +126,14 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-@click.command("busco-curated", cls=GritCommand)
+@click.command(
+    "busco-curated",
+    cls=GritCommand,
+    bsub_ram_help=(
+        "LSF memory limit in MB "
+        "(default: auto-scaled by curated FASTA size — 50000/100000/150000/220000)."
+    ),
+)
 @click.option("--lineage", required=True, help="BUSCO lineage name (e.g. insecta_odb10).")
 @click.pass_context
 def busco_curated_cmd(ctx, lineage):

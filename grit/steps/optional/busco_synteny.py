@@ -137,7 +137,7 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
     run_dir = ctx.tracker.start("busco_synteny", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else None
     bsub_opts = build_bsub_opts(
         cores=32,
-        memory_mb=50000,
+        memory_mb=ctx.bsub_ram or 50000,
         output="o_busco_synt",
         run_dir=run_dir,
     )
@@ -154,7 +154,7 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-@click.command("busco-synteny", cls=GritCommand)
+@click.command("busco-synteny", cls=GritCommand, bsub_ram_default=50000)
 @click.option("--lineage", required=True, help="BUSCO lineage name (e.g. insecta_odb10).")
 @click.pass_context
 def busco_synteny_cmd(ctx, lineage):

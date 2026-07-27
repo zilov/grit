@@ -8,6 +8,7 @@ from pathlib import Path
 from rich.table import Table
 
 from grit.utils.output import console, print_curation_results, print_tip
+from grit.utils.result_parsers import find_lsf_log, parse_lsf_exit_reason
 
 
 def show_global_status(registry) -> None:
@@ -209,10 +210,13 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     hic_success_run_dir = _latest_hic_dir("hic_remapping")
     hic_hap2_success_run_dir = _latest_hic_dir("hic_remapping_hap2")
 
+    memlimit_steps: list[str] = []
+
     for step, entry in step_latest.items():
         status = entry.get("status", "")
         job_id = entry.get("job_id") or ""
         ts = entry.get("timestamp", "")
+        run_dir = Path(entry["run_dir"]) if entry.get("run_dir") else None
 
         # Enrich bsub job status from live bjobs query
         if status == "started" and job_id and job_id in live_job_statuses:
@@ -224,7 +228,6 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             elif bjobs_status in ("RUN", "PEND"):
                 status = f"running ({bjobs_status})"
             elif bjobs_status == "gone":
-                run_dir = Path(entry["run_dir"]) if entry.get("run_dir") else None
                 if tracker.verify_outputs(step, tol_id, run_dir) in ("ok", "no_files"):
                     outputs = _auto_step_outputs(
                         step,
@@ -240,6 +243,15 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
 
         if status == "started":
             status = "running"
+
+        # Surface the LSF TERM_ reason (e.g. TERM_MEMLIMIT) for failed steps
+        if "fail" in status and run_dir is not None:
+            log_file = find_lsf_log(run_dir)
+            reason = parse_lsf_exit_reason(log_file) if log_file else None
+            if reason:
+                status = f"{status} ({reason})"
+                if reason == "TERM_MEMLIMIT":
+                    memlimit_steps.append(step)
 
         style = ""
         if "success" in status:
@@ -270,6 +282,12 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
 
     console.print(table)
     console.print()
+
+    for step in memlimit_steps:
+        print_tip(
+            f"{step} hit the memory limit — re-run with a higher limit:\n"
+            f"  grit {step.replace('_', '-')} -t {ticket_id} --bsub-ram <higher value>"
+        )
 
     # Prefer the actually-used dir recorded by finalize_qc; fall back to deriving it:
     # workdir = .../working/<user>_curation/<tol_id>/

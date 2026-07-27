@@ -89,6 +89,7 @@ class CurationContext:
     release_version: int = 1  # release version from the ticket
     print_only: bool = False  # if True, print commands instead of running them
     untracked: bool = False  # if True, tracker.start() marks runs as non-canonical
+    bsub_ram: int | None = None  # if set, overrides a step's default LSF memory limit (MB)
 
     # --- raw data ---
     yaml_data: dict[str, Any] = field(default_factory=dict)
@@ -115,6 +116,7 @@ class CurationContext:
         teloseq: str = "",
         print_only: bool = False,
         untracked: bool = False,
+        bsub_ram: int | None = None,
     ) -> "CurationContext":
         """
         Build a CurationContext directly from a parsed YAML dict and user config.
@@ -181,6 +183,7 @@ class CurationContext:
             release_version=release_version,
             print_only=print_only,
             untracked=untracked,
+            bsub_ram=bsub_ram,
             yaml_data=yaml_data,
             tracker=RunTracker(workdir, print_only=print_only),
         )
@@ -195,6 +198,7 @@ class CurationContext:
         yaml_override: dict[str, Any] | None = None,
         print_only: bool = False,
         untracked: bool = False,
+        bsub_ram: int | None = None,
     ) -> "CurationContext":
         """
         Fetch YAML from Jira (or use yaml_override for tests) and build context.
@@ -222,6 +226,7 @@ class CurationContext:
             teloseq=teloseq,
             print_only=print_only,
             untracked=untracked,
+            bsub_ram=bsub_ram,
         )
 
 

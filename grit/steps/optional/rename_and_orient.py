@@ -96,7 +96,7 @@ def _submit_rename_and_orient_for_hap(
     bsub_opts = build_bsub_opts(
         group="team135",
         cores=4,
-        memory_mb=_DEFAULT_MEM_MB,
+        memory_mb=ctx.bsub_ram or _DEFAULT_MEM_MB,
         output="o_rename_and_orient",
         error="e_rename_and_orient",
         run_dir=run_dir,
@@ -177,7 +177,7 @@ def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> No
 # ---------------------------------------------------------------------------
 
 
-@click.command("rename-and-orient", cls=GritCommand)
+@click.command("rename-and-orient", cls=GritCommand, bsub_ram_default=_DEFAULT_MEM_MB)
 @click.option("--hap2", "run_hap2", is_flag=True, default=False,
               help="Also rename and orient hap2 using the mapping table from hap1 run.")
 @click.pass_context
