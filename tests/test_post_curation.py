@@ -508,6 +508,48 @@ def test_finalize_for_qc_creates_curated_dir(
     assert any("touch" in c and "hap2" in c and "all_haplotigs" in c for c in calls)
 
 
+@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_registers_curated_dir_output(
+    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_qv_run, mock_ctx, tmp_path
+):
+    """finalize_qc.finish() must record the *actually used* dest_dir, so overrides
+    (via the curated_dir= kwarg) are discoverable via tracker.get_output, not just
+    the default ctx.assembly_curated_dir."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.post_curation.finalize_qc import finalize_for_qc
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
+    mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    mock_find_fa.return_value = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
+    mock_find_csv.return_value = tmp_path / "sDipInt39.1.hap1.chromosome.list.csv"
+    mock_find_haplotigs.side_effect = [
+        tmp_path / "sDipInt39.1.haplotigs.fa", FileNotFoundError("no haplotigs for hap2")
+    ]
+    mock_glob.side_effect = [[], []]
+    mock_run.return_value = ""
+
+    override_dir = tmp_path / "custom_curated_dest"
+    finalize_for_qc(mock_ctx, curated_dir=override_dir)
+
+    assert mock_ctx.tracker.get_output("finalize_qc", "curated_dir") == str(override_dir)
+
+
 @patch("grit.steps.post_curation.finalize_qc._run")
 def test_finalize_for_qc_print_only(mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path

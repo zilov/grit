@@ -200,7 +200,7 @@ def finalize_for_qc(
     )
 
     if ctx.tracker and run_dir:
-        ctx.tracker.finish("finalize_qc", run_dir, "success")
+        ctx.tracker.finish("finalize_qc", run_dir, "success", outputs={"curated_dir": str(dest_dir)})
 
     from grit.utils.output import print_curation_results, print_tip
     print_curation_results(ctx.tracker, ctx.workdir, ctx.tol_id, curated_dir=dest_dir)
