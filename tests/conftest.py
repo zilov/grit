@@ -110,11 +110,9 @@ def fake_workdir(tmp_path, mock_ctx):
             hic_remapping/
                 2025-06-02T15_00_00/
                     sDipInt39.1.hap1.hr.pretext         (remapped map)
-            .grit/
-                runs.jsonl                              (RunTracker log)
+            .grit_reg/
+                registry_v2.json                        (isolated registry, seeded with step history)
     """
-    import json
-
     mock_ctx.workdir = tmp_path
     tol_id = mock_ctx.tol_id          # sDipInt39
     tol_id_v = mock_ctx.tol_id_versioned  # sDipInt39.1
@@ -146,21 +144,23 @@ def fake_workdir(tmp_path, mock_ctx):
     hic_dir.mkdir(parents=True)
     (hic_dir / f"{tol_id_v}.hap1.hr.pretext").write_text("")
 
-    # .grit/runs.jsonl
-    grit_dir = tmp_path / ".grit"
-    grit_dir.mkdir()
-    runs = [
-        {"step": "setup_curation", "timestamp": "2025-06-02T10_00_00", "status": "success",
-         "ticket_id": mock_ctx.ticket_id, "tol_id": tol_id, "run_dir": str(tmp_path)},
-        {"step": "pretext_to_asm", "timestamp": pta_ts, "status": "success",
-         "ticket_id": mock_ctx.ticket_id, "tol_id": tol_id, "run_dir": str(pta_dir)},
-        {"step": "hic_remapping", "timestamp": hic_ts, "status": "success",
-         "ticket_id": mock_ctx.ticket_id, "tol_id": tol_id, "run_dir": str(hic_dir)},
-    ]
-    (grit_dir / "runs.jsonl").write_text("\n".join(json.dumps(r) for r in runs) + "\n")
+    # Seed step history directly in an isolated registry
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, tol_id, "species", tmp_path)
+    for step, ts, run_dir in [
+        ("setup_curation", "2025-06-02T10_00_00", tmp_path),
+        ("pretext_to_asm", pta_ts, pta_dir),
+        ("hic_remapping", hic_ts, hic_dir),
+    ]:
+        reg.append_step(tmp_path, {
+            "step": step, "timestamp": ts, "status": "success",
+            "ticket_id": mock_ctx.ticket_id, "tol_id": tol_id, "run_dir": str(run_dir),
+        })
 
     # Attach a tracker pointing to the real tmp_path
-    from grit.core.run_tracker import RunTracker
-    mock_ctx.tracker = RunTracker(tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
 
     return tmp_path
