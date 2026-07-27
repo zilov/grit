@@ -17,6 +17,13 @@ from grit.utils.output import console, print_done, print_step_header, print_tip
 
 log = logging.getLogger(__name__)
 
+_OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
+    ("hap1_pretext", "pretext_maps_processed/{tol_id}*hr.pretext", []),
+]
+_OUTPUT_SPECS_HAP2: list[tuple[str, str, list[str]]] = [
+    ("hap2_pretext", "pretext_maps_processed/{tol_id}*hr.pretext", []),
+]
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -64,7 +71,7 @@ def _submit_hic_remapping(
                 return
 
     run_dir = (
-        ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, suffix=hap_prefix)
+        ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, suffix=hap_prefix, invalidated=ctx.invalidated)
         if ctx.tracker
         else ctx.workdir / step_name / "untracked"
     )

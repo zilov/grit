@@ -134,7 +134,7 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
 
     # --- submit BUSCO synteny job ---
     inner_cmd = f"{_BUSCO_SYNTENY_SCRIPT} -r {ref_reheader} -q {query_fa} -l {lineage}"
-    run_dir = ctx.tracker.start("busco_synteny", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
+    run_dir = ctx.tracker.start("busco_synteny", ctx.ticket_id, ctx.tol_id, invalidated=ctx.invalidated) if ctx.tracker else None
     bsub_opts = build_bsub_opts(
         cores=32,
         memory_mb=50000,

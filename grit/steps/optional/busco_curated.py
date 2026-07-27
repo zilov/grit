@@ -102,7 +102,7 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     )
 
     # --- build bsub options ---
-    run_dir = ctx.tracker.start("busco_curated", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
+    run_dir = ctx.tracker.start("busco_curated", ctx.ticket_id, ctx.tol_id, invalidated=ctx.invalidated) if ctx.tracker else None
     bsub_opts = build_bsub_opts(
         memory_mb=mem_mb,
         cores=32,

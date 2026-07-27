@@ -15,6 +15,75 @@ from grit.steps.post_curation import (
 )
 
 # ---------------------------------------------------------------------------
+# collect_outputs
+# ---------------------------------------------------------------------------
+
+
+def test_collect_outputs_basic(tmp_path):
+    """collect_outputs globs for files and returns {key: path_str} dict."""
+    from grit.utils.helpers import collect_outputs
+
+    tol_id = "xbTest1"
+    fa = tmp_path / f"{tol_id}.hap1.1.curated.fa"
+    fa.write_text("")
+
+    specs = [
+        ("hap1_fa", "{tol_id}.{hap1}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
+    ]
+    result = collect_outputs(specs, tmp_path, tol_id, hap1="hap1", hap2="hap2")
+    assert result == {"hap1_fa": str(fa)}
+
+
+def test_collect_outputs_excludes(tmp_path):
+    """collect_outputs skips files that contain an exclude keyword."""
+    from grit.utils.helpers import collect_outputs
+
+    tol_id = "xbTest1"
+    haplo = tmp_path / f"{tol_id}.hap1.1.all_haplotigs.curated.fa"
+    haplo.write_text("")
+
+    specs = [
+        ("hap1_fa", "{tol_id}.{hap1}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
+    ]
+    result = collect_outputs(specs, tmp_path, tol_id, hap1="hap1", hap2="hap2")
+    assert result == {}
+
+
+def test_collect_outputs_fallback(tmp_path):
+    """collect_outputs falls back to later spec when earlier key not matched."""
+    from grit.utils.helpers import collect_outputs
+
+    tol_id = "xbTest1"
+    primary = tmp_path / f"{tol_id}.1.primary.curated.fa"
+    primary.write_text("")
+
+    specs = [
+        ("hap1_fa", "{tol_id}.{hap1}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
+        ("hap1_fa", "{tol_id}.*.primary.curated.fa", ["hap1", "hap2", "all_haplotigs", "additional_haplotigs"]),
+    ]
+    result = collect_outputs(specs, tmp_path, tol_id, hap1="hap1", hap2="hap2")
+    assert result == {"hap1_fa": str(primary)}
+
+
+def test_collect_outputs_fallback_skipped_when_already_found(tmp_path):
+    """collect_outputs skips later specs for a key already found."""
+    from grit.utils.helpers import collect_outputs
+
+    tol_id = "xbTest1"
+    hap1_fa = tmp_path / f"{tol_id}.hap1.1.curated.fa"
+    hap1_fa.write_text("")
+    primary = tmp_path / f"{tol_id}.1.primary.curated.fa"
+    primary.write_text("")
+
+    specs = [
+        ("hap1_fa", "{tol_id}.{hap1}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
+        ("hap1_fa", "{tol_id}.*.primary.curated.fa", ["hap1", "hap2", "all_haplotigs", "additional_haplotigs"]),
+    ]
+    result = collect_outputs(specs, tmp_path, tol_id, hap1="hap1", hap2="hap2")
+    assert result == {"hap1_fa": str(hap1_fa)}
+
+
+# ---------------------------------------------------------------------------
 # run_pretext_to_asm
 # ---------------------------------------------------------------------------
 

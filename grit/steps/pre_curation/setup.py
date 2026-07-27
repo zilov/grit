@@ -268,12 +268,14 @@ def run_setup(ctx: CurationContext) -> None:
     if not ctx.print_only:
         from grit.core.registry import RegistryManager
         RegistryManager().add_ticket(
-            ctx.ticket_id, ctx.tol_id, ctx.species, ctx.workdir
+            ctx.ticket_id, ctx.tol_id, ctx.species, ctx.workdir,
+            hap1_prefix=ctx.hap1_prefix,
+            hap2_prefix=ctx.hap2_prefix,
         )
 
     # Track execution
     if ctx.tracker:
-        run_dir = ctx.tracker.start("setup_curation", ctx.ticket_id, ctx.tol_id, create_dir=False)
+        run_dir = ctx.tracker.start("setup_curation", ctx.ticket_id, ctx.tol_id, create_dir=False, invalidated=ctx.invalidated)
 
     print_curation_summary(ctx)
     try:

@@ -4,6 +4,7 @@ Click-based CLI for the curation pipeline.
 This is the new Click-based interface, allowing modular use of pipeline steps.
 """
 
+import json
 import logging
 import sys
 from pathlib import Path
@@ -39,6 +40,7 @@ class GlobalState:
         yaml: str = None,
         print_only: bool = False,
         logging_level: str = "INFO",
+        invalidated: bool = False,
     ):
         self.verbose = verbose
         self.config_path = config_path or Path.home() / ".grit_curation_config.yaml"
@@ -46,6 +48,7 @@ class GlobalState:
         self.yaml = yaml
         self.print_only = print_only
         self.logging_level = logging_level
+        self.invalidated = invalidated
 
 
 @click.group()
@@ -100,6 +103,7 @@ def build_context(state: GlobalState) -> CurationContext:
         user_config,
         yaml_override=yaml_override,
         print_only=state.print_only,
+        invalidated=getattr(state, "invalidated", False),
     )
 
 
@@ -157,10 +161,27 @@ def status_cmd(ctx, ticket):
 @click.option("--job-id", "job_id", default=None, help="LSF job ID.")
 def state_update_cmd(workdir, step, run_dir, status, job_id):
     """[Internal] Called by bsub -Ep epilogue to record job completion."""
+    from grit.core.registry import RegistryManager
     from grit.core.run_tracker import RunTracker
-    tracker = RunTracker(Path(workdir))
-    tracker.finish(step, Path(run_dir), status, job_id=job_id)
-    log.info("_state-update: step=%s status=%s job_id=%s", step, status, job_id)
+    from grit.utils.helpers import _get_step_specs, collect_outputs
+
+    workdir_path = Path(workdir)
+    tracker = RunTracker(workdir_path)
+    outputs = None
+    if status == "success":
+        ticket = RegistryManager().find_ticket_by_workdir(workdir_path)
+        if ticket:
+            tol_id = ticket.get("tol_id", "")
+            hap1 = ticket.get("hap1_prefix", "hap1")
+            hap2 = ticket.get("hap2_prefix", "hap2")
+            specs = _get_step_specs(step)
+            if specs and tol_id:
+                outputs = collect_outputs(specs, Path(run_dir), tol_id, hap1=hap1, hap2=hap2) or None
+    tracker.finish(step, Path(run_dir), status, job_id=job_id, outputs=outputs)
+    log.info(
+        "_state-update: step=%s status=%s job_id=%s outputs=%s",
+        step, status, job_id, list(outputs) if outputs else None,
+    )
 
 
 cli.add_command(sex_matcher_cmd)
@@ -192,6 +213,48 @@ from grit.core.cleanup import cleanup_cmd  # noqa: E402
 cli.add_command(cleanup_cmd)
 
 
+@cli.command("invalidate")
+@click.option("--ticket", "-t", required=True, help="Ticket ID.")
+@click.option("--step", "-s", required=True, help="Step name to invalidate (e.g. rename_and_orient).")
+@click.option("--undo", is_flag=True, default=False, help="Re-enable latest invalidated run.")
+@click.pass_context
+def invalidate_cmd(ctx, ticket, step, undo):
+    """Mark the latest run of a step as non-canonical (or undo that)."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.utils.output import print_done
+
+    reg = RegistryManager()
+    entry = reg.find_ticket(ticket)
+    if entry is None:
+        click.echo(f"Ticket {ticket} not found in registry.", err=True)
+        raise SystemExit(1)
+    workdir = Path(entry["workdir"])
+    tracker = RunTracker(workdir)
+    if undo:
+        runs = tracker.history(step)
+        inv = [r for r in runs if r.get("status") == "invalidated" and r.get("run_dir")]
+        if not inv:
+            click.echo(f"No invalidated runs found for step {step!r}.", err=True)
+            raise SystemExit(1)
+        run_dir = Path(inv[-1]["run_dir"])
+        success_before = [r for r in runs if r.get("status") == "success"
+                         and r.get("run_dir") == str(run_dir)]
+        outputs = success_before[-1].get("outputs") if success_before else None
+        tracker.finish(step, run_dir, "success", outputs=outputs)
+        print_done(f"Re-enabled {step!r} run: {run_dir.name}")
+    else:
+        if not tracker.invalidate(step):
+            click.echo(f"No successful run found for step {step!r} in {ticket}.", err=True)
+            raise SystemExit(1)
+        run_dir = tracker.latest_run_dir(step)
+        console_hint = f" → canonical is now: {run_dir.name}" if run_dir else ""
+        print_done(f"Invalidated latest {step!r} run{console_hint}")
+
+
+cli.add_command(invalidate_cmd)
+
+
 @cli.command("done")
 @click.option("--ticket", "-t", required=True, help="Ticket ID to mark as done.")
 @click.pass_context
@@ -210,6 +273,87 @@ def done_cmd(ctx, ticket):
         return
     reg.mark_done(ticket)
     print_done(f"{ticket} ({entry.get('tol_id', '')}) marked as done — removed from active list.")
+
+
+@cli.command("migrate-tracker")
+@click.option("--dry-run", is_flag=True, default=False, help="Show what would be migrated without writing.")
+@click.option("--yes", is_flag=True, default=False, help="Actually migrate (required unless --dry-run).")
+@click.option("--from-registry", type=click.Path(exists=True), default=None,
+              help="Import tickets from an existing registry JSON file before migrating steps.")
+def migrate_tracker_cmd(dry_run, yes, from_registry):
+    """Migrate per-ticket runs.jsonl files into registry steps array.
+
+    Use --from-registry to seed from an existing registry.json (e.g. the old one)
+    before populating steps from runs.jsonl files.
+    """
+    from grit.core.registry import RegistryManager
+
+    if not dry_run and not yes:
+        click.echo("Pass --yes to actually migrate, or --dry-run to preview.", err=True)
+        raise SystemExit(1)
+
+    reg = RegistryManager()
+
+    # Seed from an existing registry file (e.g. old registry.json)
+    if from_registry:
+        source_path = Path(from_registry)
+        try:
+            source_tickets = json.loads(source_path.read_text())
+        except Exception as exc:
+            click.echo(f"Could not read {source_path}: {exc}", err=True)
+            raise SystemExit(1)
+        imported = 0
+        for ticket in source_tickets:
+            tid = ticket.get("ticket_id", "?")
+            workdir = ticket.get("workdir")
+            if not workdir:
+                continue
+            if dry_run:
+                click.echo(f"Would import {tid} ({workdir})")
+            else:
+                reg.add_ticket(
+                    tid,
+                    ticket.get("tol_id", ""),
+                    ticket.get("species", ""),
+                    Path(workdir),
+                    status=ticket.get("status", "in_curation"),
+                    hap1_prefix=ticket.get("hap1_prefix", "hap1"),
+                    hap2_prefix=ticket.get("hap2_prefix", "hap2"),
+                )
+            imported += 1
+        click.echo(f"{'[dry-run] ' if dry_run else ''}Imported {imported} ticket(s) from {source_path.name}.")
+
+    all_tickets = reg._load()
+    migrated = 0
+    skipped = 0
+
+    for ticket in all_tickets:
+        ticket_id = ticket.get("ticket_id", "?")
+        workdir = Path(ticket["workdir"])
+        if ticket.get("steps"):
+            log.debug("migrate-tracker: %s already has steps, skipping", ticket_id)
+            skipped += 1
+            continue
+        runs_log = workdir / ".grit" / "runs.jsonl"
+        if not runs_log.exists():
+            log.debug("migrate-tracker: %s has no runs.jsonl", ticket_id)
+            skipped += 1
+            continue
+        records = [
+            json.loads(line)
+            for line in runs_log.read_text().splitlines()
+            if line.strip()
+        ]
+        if dry_run:
+            click.echo(f"Would migrate {len(records)} step record(s) for {ticket_id} ({workdir})")
+        else:
+            for record in records:
+                reg.append_step(workdir, record)
+            log.info("migrate-tracker: migrated %d records for %s", len(records), ticket_id)
+        migrated += 1
+
+    summary = f"{'[dry-run] ' if dry_run else ''}Migrated steps for {migrated} ticket(s), skipped {skipped}."
+    click.echo(summary)
 
 
 if __name__ == "__main__":

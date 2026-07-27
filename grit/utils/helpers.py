@@ -247,8 +247,9 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     Find the canonical assembly FASTA for *hap_prefix*.
 
     Priority:
-      1. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.fa
-      2. ``pretext_to_asm`` output   — via find_curated_fa (excludes haplotig files)
+      1. Tracker outputs — rename_and_orient → rename_and_orient_hap2 → pretext_to_asm
+      2. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.fa
+      3. ``pretext_to_asm`` output   — via find_curated_fa (excludes haplotig files)
 
     Dot-delimited token matching avoids "primary" prefix colliding with the
     ".primary.curated.fa" filename suffix shared by all curated FAs.
@@ -258,6 +259,14 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
         "primary": "hap1", "paternal": "hap1",
         "alternate": "hap2", "maternal": "hap2",
     }
+
+    if ctx.tracker:
+        for step in ("rename_and_orient", "rename_and_orient_hap2", "pretext_to_asm"):
+            for k in (f"{hap_prefix}_fa", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_fa"):
+                val = ctx.tracker.get_output(step, k)
+                if val and Path(val).exists():
+                    return Path(val)
+
     rao_dir = ctx.workdir / "rename_and_orient"
     if rao_dir.exists():
         def _rao_search(token: str) -> list[str]:
@@ -278,6 +287,10 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
     Find the haplotig FASTA for *hap_prefix* in the latest pretext_to_asm run dir.
 
+    Priority:
+      1. Tracker outputs — pretext_to_asm step
+      2. Filesystem glob in the latest pretext_to_asm run dir
+
     pretext-to-asm naming by curation type:
       - dual hap:   ``{tol_id}.1.haplotigs.fa``                      (no hap prefix, combined)
       - single hap: ``{tol_id}.1.additional_haplotigs.curated.fa``
@@ -293,6 +306,14 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
         "primary": "hap1", "paternal": "hap1",
         "alternate": "hap2", "maternal": "hap2",
     }
+
+    if ctx.tracker:
+        for step in ("pretext_to_asm",):
+            for k in (f"{hap_prefix}_haplotigs", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_haplotigs"):
+                val = ctx.tracker.get_output(step, k)
+                if val and Path(val).exists():
+                    return Path(val)
+
     pta_dir = find_latest_dir(ctx, "pretext_to_asm")
 
     def _hap_specific(token: str) -> Path | None:
@@ -343,8 +364,9 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     Find the canonical chromosome list CSV for *hap_prefix*.
 
     Priority:
-      1. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.chromosome.list.csv
-      2. ``pretext_to_asm`` output
+      1. Tracker outputs — rename_and_orient → rename_and_orient_hap2 → pretext_to_asm
+      2. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.chromosome.list.csv
+      3. ``pretext_to_asm`` output
 
     Dot-delimited token matching avoids "primary" prefix colliding with the
     ".primary." suffix that appears in all chromosome list filenames.
@@ -357,6 +379,13 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
         "primary": "hap1", "paternal": "hap1",
         "alternate": "hap2", "maternal": "hap2",
     }
+
+    if ctx.tracker:
+        for step in ("rename_and_orient", "rename_and_orient_hap2", "pretext_to_asm"):
+            for k in (f"{hap_prefix}_chr_list", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_chr_list"):
+                val = ctx.tracker.get_output(step, k)
+                if val and Path(val).exists():
+                    return Path(val)
 
     def _search_dir(directory: Path, token: str) -> list[str]:
         return glob.glob(str(directory / f"{ctx.tol_id}.{token}.*.chromosome.list.csv"))
@@ -464,6 +493,49 @@ def _clean_species_name(species: str) -> str:
     if second == "sp." or any(ch.isdigit() for ch in second):
         return words[0]
     return f"{words[0]} {second}"
+
+
+def collect_outputs(
+    specs: list[tuple[str, str, list[str]]],
+    run_dir: Path,
+    tol_id: str,
+    *,
+    hap1: str = "hap1",
+    hap2: str = "hap2",
+) -> dict[str, str]:
+    """Glob for step outputs once and return {key: path_str} dict."""
+    outputs: dict[str, str] = {}
+    for key, pattern, excludes in specs:
+        if key in outputs:  # already found via earlier spec (fallback skip)
+            continue
+        glob_pattern = pattern.format(tol_id=tol_id, hap1=hap1, hap2=hap2)
+        matches = [
+            f for f in run_dir.glob(glob_pattern)
+            if not any(e in f.name for e in excludes)
+        ]
+        if matches:
+            outputs[key] = str(sorted(matches)[-1])
+    return outputs
+
+
+def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
+    """Return _OUTPUT_SPECS for a step by lazy import. Returns [] for unknown steps."""
+    from importlib import import_module
+
+    _MAP = {
+        "pretext_to_asm": ("grit.steps.post_curation.pretext_to_asm", "_OUTPUT_SPECS"),
+        "rename_and_orient": ("grit.steps.optional.rename_and_orient", "_OUTPUT_SPECS"),
+        "rename_and_orient_hap2": ("grit.steps.optional.rename_and_orient", "_OUTPUT_SPECS_HAP2"),
+        "hic_remapping": ("grit.steps.post_curation.hic_remapping", "_OUTPUT_SPECS"),
+        "hic_remapping_hap2": ("grit.steps.post_curation.hic_remapping", "_OUTPUT_SPECS_HAP2"),
+    }
+    if step not in _MAP:
+        return []
+    mod_path, attr = _MAP[step]
+    try:
+        return getattr(import_module(mod_path), attr, [])
+    except ImportError:
+        return []
 
 
 def _sort_by_mtime(files: list[str]) -> list[str]:

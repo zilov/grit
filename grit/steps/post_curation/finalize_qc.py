@@ -109,7 +109,7 @@ def finalize_for_qc(
     log.info("finalize-qc | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Finalize for QC")
 
-    run_dir = ctx.tracker.start("finalize_qc", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
+    run_dir = ctx.tracker.start("finalize_qc", ctx.ticket_id, ctx.tol_id, invalidated=ctx.invalidated) if ctx.tracker else None
 
     dest_dir = curated_dir or ctx.assembly_curated_dir
 

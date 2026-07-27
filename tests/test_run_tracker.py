@@ -136,3 +136,101 @@ def test_verify_outputs_setup_curation_checks_workdir(tmp_path):
 
     result = tracker.verify_outputs("setup_curation", "sDipInt39")
     assert result == "ok"
+
+
+def test_invalidate_marks_latest_success(tracker):
+    r1 = tracker.start("pretext_to_asm", "RC-1234", "sDipInt39", suffix="a")
+    tracker.finish("pretext_to_asm", r1, "success")
+    r2 = tracker.start("pretext_to_asm", "RC-1234", "sDipInt39", suffix="b")
+    tracker.finish("pretext_to_asm", r2, "success")
+
+    result = tracker.invalidate("pretext_to_asm")
+    assert result is True
+    # Latest success (r2) is now invalidated; previous success (r1) becomes canonical
+    assert tracker.latest_run_dir("pretext_to_asm") == r1
+
+
+def test_invalidate_returns_false_when_no_success(tracker):
+    result = tracker.invalidate("nonexistent_step")
+    assert result is False
+
+
+def test_get_output_skips_invalidated(tracker):
+    r1 = tracker.start("pretext_to_asm", "RC-1234", "sDipInt39", suffix="a")
+    tracker.finish("pretext_to_asm", r1, "success", outputs={"fa": "/path/to/r1.fa"})
+    r2 = tracker.start("pretext_to_asm", "RC-1234", "sDipInt39", suffix="b")
+    tracker.finish("pretext_to_asm", r2, "success", outputs={"fa": "/path/to/r2.fa"})
+
+    tracker.invalidate("pretext_to_asm")  # invalidates r2
+    assert tracker.get_output("pretext_to_asm", "fa") == "/path/to/r1.fa"
+
+
+def test_start_invalidated_never_canonical(tracker):
+    r1 = tracker.start("qv", "RC-1234", "sDipInt39", invalidated=True)
+    # Even though we have a run_dir, latest_run_dir should not return it
+    assert tracker.latest_run_dir("qv") is None
+
+
+def test_invalidate_undo(tracker):
+    r1 = tracker.start("pretext_to_asm", "RC-1234", "sDipInt39")
+    tracker.finish("pretext_to_asm", r1, "success", outputs={"fa": "/path/to/r1.fa"})
+    tracker.invalidate("pretext_to_asm")
+    assert tracker.latest_run_dir("pretext_to_asm") is None
+
+    # Undo: append a success record for r1
+    tracker.finish("pretext_to_asm", r1, "success", outputs={"fa": "/path/to/r1.fa"})
+    assert tracker.latest_run_dir("pretext_to_asm") == r1
+    assert tracker.get_output("pretext_to_asm", "fa") == "/path/to/r1.fa"
+
+
+def test_history_reads_from_registry_when_available(tmp_path):
+    """RunTracker.history() delegates to registry when workdir is registered."""
+    from grit.core.registry import RegistryManager
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket("RC-9999", "xbTest1", "species", workdir)
+    reg.append_step(workdir, {
+        "step": "pretext_to_asm",
+        "timestamp": "2026-07-01T10_00_00",
+        "status": "success",
+        "run_dir": str(workdir / "pretext_to_asm" / "2026-07-01T10_00_00"),
+        "job_id": None,
+    })
+
+    tracker = RunTracker(workdir)
+    # Inject the test registry so the tracker doesn't hit ~/.grit/registry.json
+    tracker._registry_cache = reg
+
+    steps = tracker.history("pretext_to_asm")
+    assert len(steps) == 1
+    assert steps[0]["status"] == "success"
+
+    all_steps = tracker.history()
+    assert len(all_steps) == 1
+
+
+def test_tracker_dual_writes_to_registry(tmp_path):
+    """start/finish calls should also appear in registry steps when workdir is registered."""
+    from grit.core.registry import RegistryManager
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket("RC-9999", "xbTest1", "species", workdir)
+
+    tracker = RunTracker(workdir)
+    tracker._registry_cache = reg
+
+    run_dir = tracker.start("qv", "RC-9999", "xbTest1")
+    tracker.finish("qv", run_dir, "success")
+
+    # Verify JSONL still written
+    assert tracker.runs_log.exists()
+
+    # Verify registry also has the records
+    steps = reg.get_steps(workdir)
+    assert len(steps) == 2
+    assert steps[0]["status"] == "started"
+    assert steps[1]["status"] == "success"

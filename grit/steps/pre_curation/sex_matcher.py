@@ -94,7 +94,7 @@ def run_sex_matcher(ctx: CurationContext) -> None:
                 )
                 return
 
-    run_dir = ctx.tracker.start("sex_matcher", ctx.ticket_id, ctx.tol_id) if ctx.tracker else None
+    run_dir = ctx.tracker.start("sex_matcher", ctx.ticket_id, ctx.tol_id, invalidated=ctx.invalidated) if ctx.tracker else None
     work_dir = run_dir if run_dir else ctx.workdir
 
     if not ctx.print_only and run_dir:
