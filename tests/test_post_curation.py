@@ -422,6 +422,53 @@ def test_run_qv_print_only(mock_run, mock_ctx, tmp_path):
     assert mock_run.call_args[0][1] is True  # print_only passed through
 
 
+@patch("grit.steps.post_curation.qv._run")
+def test_run_qv_registers_outputs_when_files_present(mock_run, mock_ctx, tmp_path):
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    merquryk = mock_ctx.assembly_curated_dir / "merquryk"
+    merquryk.mkdir(parents=True)
+    qv_file = merquryk / "sDipInt39.qv"
+    qv_file.write_text("qv\t60.0\n")
+    comp_file = merquryk / "sDipInt39.completeness.stats"
+    comp_file.write_text("completeness\t99.9\n")
+
+    run_qv(mock_ctx)
+
+    assert mock_ctx.tracker.get_output("qv", "qv") == str(qv_file)
+    assert mock_ctx.tracker.get_output("qv", "completeness_stats") == str(comp_file)
+
+
+@patch("grit.steps.post_curation.qv._run")
+def test_run_qv_outputs_empty_when_files_missing(mock_run, mock_ctx, tmp_path):
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    run_qv(mock_ctx)
+
+    assert mock_ctx.tracker.get_output("qv", "qv") is None
+    assert mock_ctx.tracker.get_output("qv", "completeness_stats") is None
+
+
 # ---------------------------------------------------------------------------
 # validate_curated_files
 # ---------------------------------------------------------------------------
@@ -458,6 +505,34 @@ def test_validate_curated_files_warns_on_missing_log(mock_ctx, tmp_path, capsys)
     # no log file created
 
     validate_curated_files(mock_ctx)  # should not raise
+
+
+def test_validate_curated_files_reads_tracker_qv_output(mock_ctx, tmp_path, capsys):
+    """When qv registered outputs, validate-files must read those exact paths,
+    not glob curated_dir/merquryk (which may contain stale/unrelated files)."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.assembly_curated_dir = tmp_path / "curated"
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    tracked_qv = tmp_path / "elsewhere" / "sDipInt39.qv"
+    tracked_qv.parent.mkdir()
+    tracked_qv.write_text("tracked qv content\n")
+    mock_ctx.tracker.finish(
+        "qv", tmp_path / "qv" / "run1", "success", outputs={"qv": str(tracked_qv)}
+    )
+
+    validate_curated_files(mock_ctx)  # should not raise
+
+    out = capsys.readouterr().out
+    assert "tracked qv content" in out
 
 
 # ---------------------------------------------------------------------------

@@ -15,6 +15,29 @@ from grit.utils.output import print_done, print_step_header
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _find_qv_outputs(ctx: CurationContext) -> dict[str, str]:
+    """
+    Check for the two files kmer_completeness.bash writes into
+    ``{ctx.assembly_curated_dir}/merquryk/`` — always that dir regardless of
+    the ``cd {ctx.workdir}`` the command runs from (the script locates its
+    output dir from tol_id itself, not from cwd).
+    """
+    qv_dir = ctx.assembly_curated_dir / "merquryk"
+    outputs: dict[str, str] = {}
+    qv_file = qv_dir / f"{ctx.tol_id}.qv"
+    if qv_file.exists():
+        outputs["qv"] = str(qv_file)
+    completeness_file = qv_dir / f"{ctx.tol_id}.completeness.stats"
+    if completeness_file.exists():
+        outputs["completeness_stats"] = str(completeness_file)
+    return outputs
+
+
+# ---------------------------------------------------------------------------
 # Public step functions
 # ---------------------------------------------------------------------------
 
@@ -44,7 +67,8 @@ def run_qv(ctx: CurationContext) -> None:
     _run(cmd, ctx.print_only)
 
     if ctx.tracker and run_dir:
-        ctx.tracker.finish("qv", run_dir, "success")
+        outputs = None if ctx.print_only else (_find_qv_outputs(ctx) or None)
+        ctx.tracker.finish("qv", run_dir, "success", outputs=outputs)
 
     print_done("QV analysis done")
 

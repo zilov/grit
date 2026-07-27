@@ -259,11 +259,16 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     console.print(table)
     console.print()
 
-    # Derive assembly_curated_dir: workdir = .../working/<user>_curation/<tol_id>/
+    # Prefer the actually-used dir recorded by finalize_qc; fall back to deriving it:
+    # workdir = .../working/<user>_curation/<tol_id>/
     # assembly_curated_dir = .../assembly/curated/<tol_id>.<release>/
-    curated_base = workdir.parent.parent.parent / "assembly" / "curated"
-    curated_dirs = sorted(curated_base.glob(f"{tol_id}.*")) if curated_base.exists() else []
-    curated_dir = curated_dirs[0] if curated_dirs else None
+    curated_dir_out = tracker.get_output("finalize_qc", "curated_dir") if tracker else None
+    if curated_dir_out:
+        curated_dir = Path(curated_dir_out)
+    else:
+        curated_base = workdir.parent.parent.parent / "assembly" / "curated"
+        curated_dirs = sorted(curated_base.glob(f"{tol_id}.*")) if curated_base.exists() else []
+        curated_dir = curated_dirs[0] if curated_dirs else None
 
     print_curation_results(tracker, workdir, tol_id, curated_dir=curated_dir)
     console.print()
