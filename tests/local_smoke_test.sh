@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
-# Local smoke test — runs all grit commands with --print-only + --yaml (no server needed).
+# Farm smoke test — runs all grit commands with --print-only + --yaml.
 # Usage: bash tests/local_smoke_test.sh [config_path]
+#
+# Requires real farm paths to exist (this fixture ticket's assembly/draft dir,
+# and — for the pipeline steps below that check for a prior step's output even
+# in --print-only mode (add-gap-track, add-telo-track, fastga,
+# blast-contaminants, hic-remapping, rename-and-orient) — those upstream
+# outputs to already be on disk. Run this on the farm after a real setup/fastga
+# pass, not on a laptop or in CI.
+#
+# For a hermetic, dependency-free version of this check covering the commands
+# that don't require real prior output (setup, find-reference, pretext-to-asm,
+# haplotig-files, qv, validate-files, finalize-qc), see tests/test_smoke.py —
+# that one runs as part of `pytest tests/`.
 #
 # Requires:
 #   - grit installed (pip install -e .)
