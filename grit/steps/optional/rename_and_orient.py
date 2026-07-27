@@ -65,7 +65,15 @@ def _submit_rename_and_orient_for_hap(
         print_done(f"Already done → {outdir / f'{prefix}.fa'}")
         return None
 
-    input_fa = find_curated_fa(ctx, hap_prefix)
+    # Prefer blast_contaminants' decontaminated output over the raw pretext_to_asm
+    # FASTA; never chain onto a previous rename_and_orient run's own output here.
+    input_fa = None
+    if ctx.tracker:
+        val = ctx.tracker.get_output("blast_contaminants", f"{hap_prefix}_fa")
+        if val and Path(val).exists():
+            input_fa = Path(val)
+    if input_fa is None:
+        input_fa = find_curated_fa(ctx, hap_prefix)
     log.info("Curated %s FASTA: %s", hap_prefix, input_fa)
 
     source_arg = f"--mapping-table {mapping_table}" if mapping_table else f"--paf {paf_file}"

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import glob
 import logging
 from pathlib import Path
 
@@ -10,7 +9,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _clean_species_name, _run, find_latest_dir
+from grit.utils.helpers import _clean_species_name, _run, find_curated_fa
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -33,22 +32,17 @@ LINEAGE_SCRIPT = "/software/grit/projects/vgp_curation_scripts/get_lineage_from_
 
 def run_blast_contaminants(ctx: CurationContext) -> None:
     """
-    Run blast contaminants search in shrapnel scaffolds.
+    Run blast contaminants search in shrapnel scaffolds, once per haplotype.
 
     This step identifies potential contaminants in the curated assembly by blasting
-    scaffolds against a database and filtering based on taxonomic lineage.
-
-    Steps:
-        1. Find the curated FASTA file in workdir (e.g., {tol_id}*.curated.fa).
-        2. Create blast.me input file with scaffold IDs.
-        3. Run decon_blastBTK to perform BLAST searches.
-        4. Extract taxonomic information from BLAST results.
-        5. Identify non-target contaminants (e.g., non-mollusc hits).
-        6. Create contaminated.bed file with contaminant regions.
-        7. Remove contaminants from the curated FASTA.
+    scaffolds against a database and filtering based on taxonomic lineage. It always
+    reads the raw ``pretext_to_asm`` output as input (never a previous
+    ``blast_contaminants`` run's own output) and writes a distinctly-named
+    decontaminated FASTA into its own run_dir — the original curated FASTA is never
+    modified or moved, so re-running or invalidating this step cannot lose data.
 
     Requires:
-        - Curated FASTA file in workdir.
+        - Curated FASTA file(s) from ``pretext_to_asm`` in the workdir.
         - Access to ~mh6/decon_blastBTK and related scripts.
 
     Prints:
@@ -58,45 +52,49 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     print_step_header(ctx.ticket_id, ctx.tol_id, "Blast contaminants search")
 
     run_dir = ctx.tracker.start("blast_contaminants", ctx.ticket_id, ctx.tol_id, invalidated=ctx.invalidated) if ctx.tracker else None
+
+    is_single_hap = ctx.hap1_prefix in ("primary", "paternal")
+    haps_to_process = [ctx.hap1_prefix] if is_single_hap else [ctx.hap1_prefix, ctx.hap2_prefix]
+
     try:
-        _blast_contaminants_body(ctx)
+        outputs: dict[str, str] = {}
+        for hap_prefix in haps_to_process:
+            dest = _blast_contaminants_for_hap(ctx, hap_prefix, run_dir)
+            outputs[f"{hap_prefix}_fa"] = str(dest)
         if ctx.tracker and run_dir:
-            ctx.tracker.finish("blast_contaminants", run_dir, "success")
+            ctx.tracker.finish("blast_contaminants", run_dir, "success", outputs=outputs or None)
     except Exception:
         if ctx.tracker and run_dir:
             ctx.tracker.finish("blast_contaminants", run_dir, "failed")
         raise
 
+    print_done("Contaminant blasting completed")
 
-def _blast_contaminants_body(ctx: CurationContext) -> None:
+
+def _blast_contaminants_for_hap(ctx: CurationContext, hap_prefix: str, run_dir: Path | None) -> Path:
+    """Blast one haplotype's curated FASTA and return the decontaminated output path."""
     # Get target phylum from species lineage
     cleaned_species = _clean_species_name(ctx.species)
-    log.info("Species: %s", cleaned_species)
+    log.info("[%s] Species: %s", hap_prefix, cleaned_species)
 
     lineage_cmd = f"{LINEAGE_SCRIPT} {cleaned_species}"
     our_lineage = _run(lineage_cmd, ctx.print_only).strip()
-    log.info("Species lineage: %s", our_lineage)
+    log.info("[%s] Species lineage: %s", hap_prefix, our_lineage)
 
     # Parse phylum (typically 4th element: Eukaryota; Metazoa; ...; Phylum; ...)
     lineage_parts = [part.strip() for part in our_lineage.split(";")]
     target_phylum = lineage_parts[3] if len(lineage_parts) > 3 else "Unknown"
-    log.info("Target phylum: %s", target_phylum)
+    log.info("[%s] Target phylum: %s", hap_prefix, target_phylum)
 
-    # 1. Find curated FASTA
-    # haplotig-files writes *.curated.fa into the pretext_to_asm run dir, not workdir root
-    base_dir = find_latest_dir(ctx, "pretext_to_asm")
-    curated_fa_pattern = str(base_dir / f"{ctx.tol_id}*.curated.fa")
-    curated_fa_files = glob.glob(curated_fa_pattern)
-    if not curated_fa_files:
-        raise FileNotFoundError(f"No curated FASTA found: {curated_fa_pattern}")
-    curated_fasta = Path(curated_fa_files[0])
-    log.info("Curated FASTA: %s", curated_fasta)
+    # 1. Find this haplotype's curated FASTA from pretext_to_asm — always the raw
+    #    output, never a previous blast_contaminants run's own decontaminated FASTA.
+    curated_fasta = find_curated_fa(ctx, hap_prefix)
+    log.info("[%s] Curated FASTA: %s", hap_prefix, curated_fasta)
 
     # 2. Create blast.me file
-    blast_me = ctx.workdir / "blast.me"
-    log.info("Blast input file: %s", blast_me)
+    blast_me = ctx.workdir / f"blast_{hap_prefix}.me"
+    log.info("[%s] Blast input file: %s", hap_prefix, blast_me)
 
-    # Create header
     header_cmd = f"echo 'header' > {blast_me}"
     _run(header_cmd, ctx.print_only)
 
@@ -107,10 +105,10 @@ def _blast_contaminants_body(ctx: CurationContext) -> None:
     _run(extract_cmd, ctx.print_only)
 
     # 3. Run decon_blastBTK
-    blast_out_dir = ctx.workdir / "blast_out_dir"
+    blast_out_dir = ctx.workdir / f"blast_out_dir_{hap_prefix}"
     blast_cmd = f"~mh6/decon_blastBTK -b {blast_me} -f {curated_fasta} -o {blast_out_dir}"
     _run(blast_cmd, ctx.print_only)
-    log.info("Blast output dir: %s", blast_out_dir)
+    log.info("[%s] Blast output dir: %s", hap_prefix, blast_out_dir)
 
     # 4. Extract taxonomic information
     taxonomy_txt = blast_out_dir / "taxonomy.txt"
@@ -131,38 +129,36 @@ def _blast_contaminants_body(ctx: CurationContext) -> None:
         f"> {taxonomy_txt}"
     )
     _run(taxonomy_cmd, ctx.print_only)
-    log.info("Taxonomy file: %s", taxonomy_txt)
+    log.info("[%s] Taxonomy file: %s", hap_prefix, taxonomy_txt)
 
     # 5. Create contaminated.bed (filter non-target phylum hits)
-    contaminated_bed = ctx.workdir / f"{ctx.tol_id}.contaminated.bed"
+    contaminated_bed = ctx.workdir / f"{ctx.tol_id}.{hap_prefix}.contaminated.bed"
     bed_cmd = (
         f"grep -v {target_phylum} {taxonomy_txt} | "
         "perl -anE 'say \"$F[0]\\t0\\t10000\\tREMOVE\"' "
         f">> {contaminated_bed}"
     )
     _run(bed_cmd, ctx.print_only)
-    log.info("Contaminated BED: %s", contaminated_bed)
+    log.info("[%s] Contaminated BED: %s", hap_prefix, contaminated_bed)
 
-    # 6. Remove contamination from FASTA
-    backup_fasta = curated_fasta.with_suffix(".original.fa")
-    mv_backup_cmd = f"mv {curated_fasta} {backup_fasta}"
-    _run(mv_backup_cmd, ctx.print_only)
-
-    remove_cmd = f"~mh6/remove_contamination_bed -f {backup_fasta} -c {contaminated_bed}"
+    # 6. Remove contamination — writes {curated_fasta}.cleaned.fa next to the
+    #    (untouched) original; the original pretext_to_asm output is never renamed
+    #    or moved, so it stays intact regardless of how this step turns out.
+    remove_cmd = f"~mh6/remove_contamination_bed -f {curated_fasta} -c {contaminated_bed}"
     _run(remove_cmd, ctx.print_only)
 
-    # The script likely produces curated_fasta_cleaned, rename it back
-    cleaned_fasta = backup_fasta.with_suffix(".cleaned.fa")
+    cleaned_fasta = curated_fasta.with_suffix(".cleaned.fa")
+    dest = (run_dir or ctx.workdir) / f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.decontaminated.fa"
+
     if not ctx.print_only:
         if cleaned_fasta.exists():
-            mv_clean_cmd = f"mv {cleaned_fasta} {curated_fasta}"
-            _run(mv_clean_cmd, ctx.print_only)
+            _run(f"mv {cleaned_fasta} {dest}", ctx.print_only)
         else:
-            log.warning("Cleaned FASTA not found: %s", cleaned_fasta)
+            log.warning("[%s] Cleaned FASTA not found: %s", hap_prefix, cleaned_fasta)
     else:
-        log.info("Would rename: %s -> %s", cleaned_fasta, curated_fasta)
+        log.info("[%s] Would move: %s -> %s", hap_prefix, cleaned_fasta, dest)
 
-    print_done("Contaminant blasting completed")
+    return dest
 
 
 # ---------------------------------------------------------------------------

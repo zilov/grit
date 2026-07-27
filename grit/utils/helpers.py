@@ -247,7 +247,8 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     Find the canonical assembly FASTA for *hap_prefix*.
 
     Priority:
-      1. Tracker outputs — rename_and_orient → rename_and_orient_hap2 → pretext_to_asm
+      1. Tracker outputs — rename_and_orient → rename_and_orient_hap2 →
+         blast_contaminants → pretext_to_asm
       2. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.fa
       3. ``pretext_to_asm`` output   — via find_curated_fa (excludes haplotig files)
 
@@ -261,7 +262,7 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     }
 
     if ctx.tracker:
-        for step in ("rename_and_orient", "rename_and_orient_hap2", "pretext_to_asm"):
+        for step in ("rename_and_orient", "rename_and_orient_hap2", "blast_contaminants", "pretext_to_asm"):
             for k in (f"{hap_prefix}_fa", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_fa"):
                 val = ctx.tracker.get_output(step, k)
                 if val and Path(val).exists():
