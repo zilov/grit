@@ -144,7 +144,7 @@ def test_patch_step_job_id(reg, tmp_path):
 
 
 def test_refresh_statuses_reads_from_steps_array(reg, tmp_path):
-    """refresh_statuses uses registry steps if present, skipping runs.jsonl."""
+    """refresh_statuses re-derives status from the registry steps array."""
     workdir = tmp_path / "work"
     workdir.mkdir()
     reg.add_ticket("RC-1234", "xbTest1", "species", workdir)
