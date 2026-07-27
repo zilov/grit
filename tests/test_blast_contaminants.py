@@ -75,8 +75,8 @@ def test_never_moves_original_curated_fasta(mock_find_fa, mock_run, mock_ctx, tm
 
 @patch("grit.steps.optional.blast_contaminants._run", return_value="")
 @patch("grit.steps.optional.blast_contaminants.find_curated_fa")
-def test_output_survives_invalidation_fallback(mock_find_fa, mock_run, mock_ctx, tmp_path):
-    """Invalidating blast_contaminants must not lose the original curated FASTA —
+def test_output_survives_untrack_fallback(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    """Untracking blast_contaminants must not lose the original curated FASTA —
     find_canonical_fa should fall back to it since it was never touched."""
     _attach_tracker(mock_ctx, tmp_path)
     mock_find_fa.side_effect = _fake_find_curated_fa(tmp_path)
@@ -86,7 +86,7 @@ def test_output_survives_invalidation_fallback(mock_find_fa, mock_run, mock_ctx,
     run_blast_contaminants(mock_ctx)
     assert mock_ctx.tracker.get_output("blast_contaminants", f"{mock_ctx.hap1_prefix}_fa") is not None
 
-    mock_ctx.tracker.invalidate("blast_contaminants")
+    mock_ctx.tracker.untrack("blast_contaminants")
     assert mock_ctx.tracker.get_output("blast_contaminants", f"{mock_ctx.hap1_prefix}_fa") is None
 
     # The original pretext_to_asm curated FASTA is untouched on disk regardless.

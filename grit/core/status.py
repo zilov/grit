@@ -248,7 +248,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             style = "red"
         elif "running" in status or status == "started":
             style = "yellow"
-        elif status == "invalidated":
+        elif status == "untracked":
             style = "dim"
 
         table.add_row(

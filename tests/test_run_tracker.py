@@ -144,43 +144,43 @@ def test_verify_outputs_setup_curation_checks_workdir(tracker, tmp_path):
     assert result == "ok"
 
 
-def test_invalidate_marks_latest_success(tracker):
+def test_untrack_marks_latest_success(tracker):
     r1 = tracker.start("pretext_to_asm", "RC-1234", "sDipInt39", suffix="a")
     tracker.finish("pretext_to_asm", r1, "success")
     r2 = tracker.start("pretext_to_asm", "RC-1234", "sDipInt39", suffix="b")
     tracker.finish("pretext_to_asm", r2, "success")
 
-    result = tracker.invalidate("pretext_to_asm")
+    result = tracker.untrack("pretext_to_asm")
     assert result is True
-    # Latest success (r2) is now invalidated; previous success (r1) becomes canonical
+    # Latest success (r2) is now untracked; previous success (r1) becomes canonical
     assert tracker.latest_run_dir("pretext_to_asm") == r1
 
 
-def test_invalidate_returns_false_when_no_success(tracker):
-    result = tracker.invalidate("nonexistent_step")
+def test_untrack_returns_false_when_no_success(tracker):
+    result = tracker.untrack("nonexistent_step")
     assert result is False
 
 
-def test_get_output_skips_invalidated(tracker):
+def test_get_output_skips_untracked(tracker):
     r1 = tracker.start("pretext_to_asm", "RC-1234", "sDipInt39", suffix="a")
     tracker.finish("pretext_to_asm", r1, "success", outputs={"fa": "/path/to/r1.fa"})
     r2 = tracker.start("pretext_to_asm", "RC-1234", "sDipInt39", suffix="b")
     tracker.finish("pretext_to_asm", r2, "success", outputs={"fa": "/path/to/r2.fa"})
 
-    tracker.invalidate("pretext_to_asm")  # invalidates r2
+    tracker.untrack("pretext_to_asm")  # untracks r2
     assert tracker.get_output("pretext_to_asm", "fa") == "/path/to/r1.fa"
 
 
-def test_start_invalidated_never_canonical(tracker):
-    tracker.start("qv", "RC-1234", "sDipInt39", invalidated=True)
+def test_start_untracked_never_canonical(tracker):
+    tracker.start("qv", "RC-1234", "sDipInt39", untracked=True)
     # Even though we have a run_dir, latest_run_dir should not return it
     assert tracker.latest_run_dir("qv") is None
 
 
-def test_invalidate_undo(tracker):
+def test_untrack_undo(tracker):
     r1 = tracker.start("pretext_to_asm", "RC-1234", "sDipInt39")
     tracker.finish("pretext_to_asm", r1, "success", outputs={"fa": "/path/to/r1.fa"})
-    tracker.invalidate("pretext_to_asm")
+    tracker.untrack("pretext_to_asm")
     assert tracker.latest_run_dir("pretext_to_asm") is None
 
     # Undo: append a success record for r1

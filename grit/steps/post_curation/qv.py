@@ -61,7 +61,7 @@ def run_qv(ctx: CurationContext) -> None:
     log.info("qv | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "QV analysis")
 
-    run_dir = ctx.tracker.start("qv", ctx.ticket_id, ctx.tol_id, invalidated=ctx.invalidated) if ctx.tracker else None
+    run_dir = ctx.tracker.start("qv", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else None
 
     cmd = f"{module_cmd('GRIT')} && cd {ctx.workdir} && kmer_completeness.bash {ctx.tol_id} {ctx.release_version}"
     _run(cmd, ctx.print_only)

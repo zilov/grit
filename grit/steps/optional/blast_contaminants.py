@@ -51,7 +51,7 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     log.info("blast-contaminants | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Blast contaminants search")
 
-    run_dir = ctx.tracker.start("blast_contaminants", ctx.ticket_id, ctx.tol_id, invalidated=ctx.invalidated) if ctx.tracker else None
+    run_dir = ctx.tracker.start("blast_contaminants", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else None
 
     is_single_hap = ctx.hap1_prefix in ("primary", "paternal")
     haps_to_process = [ctx.hap1_prefix] if is_single_hap else [ctx.hap1_prefix, ctx.hap2_prefix]

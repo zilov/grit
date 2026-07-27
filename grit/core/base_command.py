@@ -20,14 +20,14 @@ class GritCommand(click.RichCommand):
 
     def __init__(self, name=None, **kwargs):
         super().__init__(name=name, **kwargs)
-        # Insert in reverse order so --ticket appears first, --print-only second, --invalidated third
+        # Insert in reverse order so --ticket appears first, --print-only second, --untracked third
         self.params.insert(
             0,
             click.Option(
-                ["--invalidated", "-i"],
+                ["--untracked", "-u"],
                 is_flag=True,
                 default=False,
-                help="Run step but mark output as non-canonical (invalidated).",
+                help="Run step but mark output as non-canonical (untracked).",
             ),
         )
         self.params.insert(
@@ -52,15 +52,15 @@ class GritCommand(click.RichCommand):
     def invoke(self, ctx: click.Context):
         ticket = ctx.params.pop("ticket", None)
         print_only = ctx.params.pop("print_only", False)
-        invalidated = ctx.params.pop("invalidated", False)
+        untracked = ctx.params.pop("untracked", False)
 
         if ctx.obj is not None:
             # Local --print-only ORs with the global flag
             if print_only:
                 ctx.obj.print_only = True
 
-            if invalidated:
-                ctx.obj.invalidated = True
+            if untracked:
+                ctx.obj.untracked = True
 
             if ticket:
                 ctx.obj.ticket = ticket

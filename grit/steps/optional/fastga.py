@@ -128,7 +128,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
 
     # --- submit bsub job ---
     # Each run gets its own tracker run_dir so multiple fastga runs don't overwrite each other
-    run_dir = ctx.tracker.start("fastga", ctx.ticket_id, ctx.tol_id, invalidated=ctx.invalidated) if ctx.tracker else ctx.workdir / "fastga" / "untracked"
+    run_dir = ctx.tracker.start("fastga", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else ctx.workdir / "fastga" / "untracked"
     fastga_script = "/software/grit/projects/vgp_curation_scripts/FastGA_dot_dgenies.sh"
     inner_cmd = (
         f"cd {run_dir} && "

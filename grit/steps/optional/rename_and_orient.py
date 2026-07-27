@@ -88,7 +88,7 @@ def _submit_rename_and_orient_for_hap(
     )
 
     run_dir = (
-        ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, invalidated=ctx.invalidated)
+        ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
         if ctx.tracker
         else ctx.workdir / step_name / "untracked"
     )
