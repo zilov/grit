@@ -23,7 +23,7 @@ usage() {
 cat << EOF
 Usage: $0 -r reference_species.fasta -q query_species.fasta -l busco_lineage -p wd_path [OPTIONAL -u Query_ID, -f Ref_ID, -k]
 
-Note that both reference and query fasta headers must have chromsomes names as 'SUPER_n'
+Note that chromosome names must be prefixed 'SUPER_n' (curated query) or 'chr_n'/'chrN' (reheadered reference)
 
 REQUIRED:
   -r [file] Reference species Fasta file

@@ -8,7 +8,13 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, _state_update_epilogue, _submit_bsub, build_bsub_opts, find_canonical_fa, find_latest_dir
+from grit.utils.helpers import (
+    _state_update_epilogue,
+    _submit_bsub,
+    build_bsub_opts,
+    find_canonical_fa,
+    find_reheadered_reference,
+)
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
     print_done,
@@ -74,57 +80,22 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     hap1_fa = find_canonical_fa(ctx, ctx.hap1_prefix)
     log.info("Curated hap1 FASTA: %s", hap1_fa)
 
+    from grit.steps.pre_curation.find_reference import reheader_reference
+
     # --- find reference ---
     if reference_path:
         ref_path = Path(reference_path)
         if not ctx.print_only and not ref_path.exists():
             raise FileNotFoundError(f"Reference not found: {ref_path}")
         log.info("Reference FASTA (explicit): %s", ref_path)
+        ref_reheader = reheader_reference(ctx, ref_path)
     else:
-        ref_dir = find_latest_dir(ctx, "find_reference")
-        ref_patterns = [
-            str(ref_dir / "*.fna.gz"),
-            str(ref_dir / "*.fna"),
-            str(ref_dir / "*.fa.gz"),
-            str(ref_dir / "*.fa"),
-        ]
-        ref_path = None
-        for pattern in ref_patterns:
-            matches = glob.glob(pattern)
-            if matches:
-                ref_path = Path(sorted(matches)[-1])
-                break
+        ref_reheader = find_reheadered_reference(ctx)
+        log.info("Reference FASTA: %s", ref_reheader)
 
-        if ref_path is None or (not ctx.print_only and not ref_path.exists()):
-            log.info("No reference found, running find-reference first")
-            from grit.steps.pre_curation.find_reference import find_closest_reference
-
-            find_closest_reference(ctx)
-            ref_dir = find_latest_dir(ctx, "find_reference")
-            ref_matches = glob.glob(str(ref_dir / "*.fna.gz")) + glob.glob(str(ref_dir / "*.fna"))
-            if not ref_matches:
-                raise FileNotFoundError(f"No reference found in {ref_dir}")
-            ref_path = Path(sorted(ref_matches)[-1])
-
-        log.info("Reference FASTA: %s", ref_path)
-
-    # --- prepare reference (gunzip + reheader if needed) ---
-    # Strip _reheader suffix so repeated runs don't chain: GCA_reheader_reheader_reheader.fna
-    raw_stem = ref_path.stem.split(".")[0]
-    ref_prefix = raw_stem.removesuffix("_reheader")
+    ref_prefix = ref_reheader.stem.split(".")[0].removesuffix("_reheader")
     assembly_prefix = hap1_fa.stem.split(".")[0]
     run_prefix = f"{ref_prefix}_vs_{assembly_prefix}"
-    ref_reheader = ref_path.parent / f"{ref_prefix}_reheader.fna"
-
-    if ref_reheader.exists():
-        log.info("Reheadered reference already exists — skipping prep: %s", ref_reheader)
-    else:
-        if ref_path.suffix == ".gz":
-            prep_cmd = f"gunzip {ref_path} && reheader {ref_path.with_suffix('')} > {ref_reheader}"
-        else:
-            prep_cmd = f"reheader {ref_path} > {ref_reheader}"
-        ml_grit = module_cmd("GRIT")
-        _run(f"{ml_grit} && {prep_cmd}", ctx.print_only)
 
     # --- submit bsub job ---
     # Each run gets its own tracker run_dir so multiple fastga runs don't overwrite each other

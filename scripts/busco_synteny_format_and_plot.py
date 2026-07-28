@@ -3,6 +3,7 @@
 #! pip install python-circos
 import argparse
 import random
+import re
 import shutil
 from datetime import datetime
 
@@ -47,12 +48,27 @@ table_headers=["Busco id", "Status", "Sequence", "Gene Start", "Gene End"]
 # Data types in busco full table
 my_types = {"Busco id": "string","Status": "string","Sequence": "string","Gene Start": "Int64","Gene End": "Int64",}
 
-def readfulltables(ID):
+# Chromosome header prefixes we accept: 'SUPER_n' (curated ToL assemblies) and
+# 'chr_n' / 'chrN' (references reheadered by the shared GRIT `reheader` tool).
+# Checked in this order since 'chr_' must win over the looser 'chr' before it.
+_KNOWN_CHROM_PREFIXES = ('SUPER_', 'chr_', 'chr')
+
+def detect_chrom_prefix(names):
+    """Detect which chromosome-header convention a genome's contig names use."""
+    for prefix in _KNOWN_CHROM_PREFIXES:
+        if any(n.startswith(prefix) for n in names):
+            return prefix
+    raise ValueError(
+        f"No recognized chromosome prefix ({'/'.join(_KNOWN_CHROM_PREFIXES)}) "
+        f"found in headers: {list(names)[:5]}"
+    )
+
+def readfulltables(ID, prefix):
     # The bash wrapper (busco-synteny.sh) always flattens BUSCO's full table
     # to this path immediately after running BUSCO for this genome, before
     # this script is invoked — see run_busco_if_needed() in that script.
     ID_table = pd.read_csv(f'{base_path}{ID}_BUSCO_full_table.tsv', sep="\t", skiprows=3, names=table_headers, dtype=my_types, usecols=["Busco id", "Status", "Sequence", "Gene Start", "Gene End"])
-    ID_table['Sequence']=ID_table.Sequence.replace({'SUPER_':ID}, regex=True)
+    ID_table['Sequence']=ID_table.Sequence.str.replace(f'^{re.escape(prefix)}', ID, regex=True)
     ID_table = ID_table[(ID_table["Status"]=='Complete') & (ID_table.Sequence.str.startswith(ID))]
     return ID_table
 
@@ -71,14 +87,20 @@ def get_chroms_data(fasta, id):
     ffdata['start']= start
     ffdata['end'] = end
 
-    ffdata = ffdata[ffdata['chr'].str.contains('SUPER_[a-zA-Z0-9]')]
-    ffdata['chr'] = ffdata.chr.replace({'SUPER_':id}, regex=True)
+    prefix = detect_chrom_prefix(ffdata['chr'])
+    ffdata = ffdata[ffdata['chr'].str.startswith(prefix)]
+    ffdata['chr'] = ffdata.chr.str.replace(f'^{re.escape(prefix)}', id, regex=True)
     filter = ffdata['chr'].str.contains('unloc')
     fffdata_filter = ffdata[~filter]
-    return fffdata_filter
+    return fffdata_filter, prefix
 
-sp1_data = readfulltables(sp1)
-sp2_data = readfulltables(sp2)
+sp1_chroms, sp1_prefix = get_chroms_data(args.ref, sp1)
+sp2_chroms, sp2_prefix = get_chroms_data(args.query, sp2)
+chroms = pd.concat([sp2_chroms, sp1_chroms], axis=0)
+chroms.to_csv(f'{base_path}/{sp1}_{sp2}_chrom.csv', sep = ',', index = False)
+
+sp1_data = readfulltables(sp1, sp1_prefix)
+sp2_data = readfulltables(sp2, sp2_prefix)
 
 links = pd.merge(sp1_data, sp2_data, how ='inner', on =['Busco id'])
 links = links.rename(columns={'Sequence_x': 'chr1', 'Gene Start_x': 'start1', 'Gene End_x': 'end1','Sequence_y': 'chr2', 'Gene Start_y': 'start2', 'Gene End_y': 'end2' })
@@ -89,11 +111,6 @@ links_tidy['end1'] = links_tidy['end1']+1000000
 links_tidy = links_tidy.rename(columns={'chr2':'chr1', 'start2':'start1', 'end2':'end1','chr1':'chr2','start1':'start2','end1':'end2'})
 
 links_tidy.to_csv(f'{base_path}/{sp1}_{sp2}.links', sep = ',', index = False)
-
-sp1_chroms = get_chroms_data(args.ref, sp1)
-sp2_chroms = get_chroms_data(args.query, sp2)
-chroms = pd.concat([sp2_chroms, sp1_chroms], axis=0)
-chroms.to_csv(f'{base_path}/{sp1}_{sp2}_chrom.csv', sep = ',', index = False)
 
 def bestSexMatch(df):
     RfZs = df[df.chr2.str.endswith(("Z", "X"))]
