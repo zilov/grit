@@ -16,12 +16,15 @@ from grit.utils.output import (
 
 log = logging.getLogger(__name__)
 
+_REPO_ROOT = Path(__file__).parent.parent.parent.parent
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 _REHEADER_SCRIPT = "/software/grit/projects/vgp_curation_scripts/reheader_fna.py"
-_BUSCO_SYNTENY_SCRIPT = "/software/grit/projects/vgp_curation_scripts/busco_synteny.sh"
+# Path to the bundled busco-synteny script (relative to repo root)
+_BUSCO_SYNTENY_SCRIPT = _REPO_ROOT / "scripts" / "busco-synteny.sh"
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +136,7 @@ def run_busco_synteny(ctx: CurationContext, lineage: str) -> None:
     log.info("Query FASTA: %s", query_fa)
 
     # --- submit BUSCO synteny job ---
-    inner_cmd = f"{_BUSCO_SYNTENY_SCRIPT} -r {ref_reheader} -q {query_fa} -l {lineage}"
+    inner_cmd = f"bash {_BUSCO_SYNTENY_SCRIPT} -r {ref_reheader} -q {query_fa} -l {lineage} -p {ctx.workdir}"
     run_dir = ctx.tracker.start("busco_synteny", ctx.ticket_id, ctx.tol_id, invalidated=ctx.invalidated) if ctx.tracker else None
     bsub_opts = build_bsub_opts(
         cores=32,

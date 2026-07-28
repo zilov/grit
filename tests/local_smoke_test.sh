@@ -53,6 +53,7 @@ $GRIT --yaml "$HAP_YAML" finalize-qc                      && ok "finalize-qc"
 $GRIT --yaml "$HAP_YAML" fastga                           && ok "fastga"
 $GRIT --yaml "$HAP_YAML" blast-contaminants               && ok "blast-contaminants"
 $GRIT --yaml "$HAP_YAML" rename-and-orient                && ok "rename-and-orient"
+$GRIT --yaml "$HAP_YAML" busco-synteny --lineage stramenopiles_odb10 && ok "busco-synteny"
 
 echo ""
 echo "=== All passed ==="
