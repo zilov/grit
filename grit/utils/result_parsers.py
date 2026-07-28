@@ -39,7 +39,7 @@ class CurationResults:
 def parse_chromosome_list(path: Path) -> tuple[int, list[str]]:
     """Return (autosome_count, [sex_chrom_ids]) from one haplotype CSV.
 
-    Unlocalized scaffolds (_unloc_) are excluded from both counts.
+    Unlocalized scaffolds (e.g. "Z_unloc10") are excluded from both counts.
     sex_chrom_ids are the raw chromosome IDs (e.g. "Z", "W", "Z1", "W1").
     """
     autosomes = 0
@@ -52,7 +52,7 @@ def parse_chromosome_list(path: Path) -> tuple[int, list[str]]:
         if len(parts) < 2:
             continue
         chrom_id = parts[1].strip()
-        if "_unloc_" in chrom_id.lower():
+        if "unloc" in chrom_id.lower():
             continue
         if re.search(r'[XYZW]', chrom_id, re.IGNORECASE):
             sex_ids.append(chrom_id.strip())
@@ -178,22 +178,31 @@ def collect_curation_results(
                 pass
             break
 
-    # --- QV and completeness: always in curated_dir/merquryk ---
+    # --- QV and completeness: tracker outputs first, curated_dir/merquryk fallback ---
+    qv_path = Path(tracker.get_output("qv", "qv")) if tracker and tracker.get_output("qv", "qv") else None
+    comp_path = (
+        Path(tracker.get_output("qv", "completeness_stats"))
+        if tracker and tracker.get_output("qv", "completeness_stats")
+        else None
+    )
+
     if curated_dir:
         mdir = curated_dir / "merquryk"
-        if mdir.exists():
-            qv_files = list(mdir.glob(f"{tol_id}.qv"))
-            if qv_files:
-                try:
-                    r.qv_text = read_tabular(qv_files[0])
-                except Exception:
-                    pass
+        if qv_path is None:
+            qv_path = mdir / f"{tol_id}.qv"
+        if comp_path is None:
+            comp_path = mdir / f"{tol_id}.completeness.stats"
 
-            comp_files = list(mdir.glob("*.completeness.stats"))
-            if comp_files:
-                try:
-                    r.completeness_text = read_tabular(comp_files[0])
-                except Exception:
-                    pass
+    if qv_path and qv_path.exists():
+        try:
+            r.qv_text = read_tabular(qv_path)
+        except Exception:
+            pass
+
+    if comp_path and comp_path.exists():
+        try:
+            r.completeness_text = read_tabular(comp_path)
+        except Exception:
+            pass
 
     return r

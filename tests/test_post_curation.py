@@ -422,6 +422,53 @@ def test_run_qv_print_only(mock_run, mock_ctx, tmp_path):
     assert mock_run.call_args[0][1] is True  # print_only passed through
 
 
+@patch("grit.steps.post_curation.qv._run")
+def test_run_qv_registers_outputs_when_files_present(mock_run, mock_ctx, tmp_path):
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    merquryk = mock_ctx.assembly_curated_dir / "merquryk"
+    merquryk.mkdir(parents=True)
+    qv_file = merquryk / "sDipInt39.qv"
+    qv_file.write_text("qv\t60.0\n")
+    comp_file = merquryk / "sDipInt39.completeness.stats"
+    comp_file.write_text("completeness\t99.9\n")
+
+    run_qv(mock_ctx)
+
+    assert mock_ctx.tracker.get_output("qv", "qv") == str(qv_file)
+    assert mock_ctx.tracker.get_output("qv", "completeness_stats") == str(comp_file)
+
+
+@patch("grit.steps.post_curation.qv._run")
+def test_run_qv_outputs_empty_when_files_missing(mock_run, mock_ctx, tmp_path):
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    run_qv(mock_ctx)
+
+    assert mock_ctx.tracker.get_output("qv", "qv") is None
+    assert mock_ctx.tracker.get_output("qv", "completeness_stats") is None
+
+
 # ---------------------------------------------------------------------------
 # validate_curated_files
 # ---------------------------------------------------------------------------
@@ -458,6 +505,34 @@ def test_validate_curated_files_warns_on_missing_log(mock_ctx, tmp_path, capsys)
     # no log file created
 
     validate_curated_files(mock_ctx)  # should not raise
+
+
+def test_validate_curated_files_reads_tracker_qv_output(mock_ctx, tmp_path, capsys):
+    """When qv registered outputs, validate-files must read those exact paths,
+    not glob curated_dir/merquryk (which may contain stale/unrelated files)."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.assembly_curated_dir = tmp_path / "curated"
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    tracked_qv = tmp_path / "elsewhere" / "sDipInt39.qv"
+    tracked_qv.parent.mkdir()
+    tracked_qv.write_text("tracked qv content\n")
+    mock_ctx.tracker.finish(
+        "qv", tmp_path / "qv" / "run1", "success", outputs={"qv": str(tracked_qv)}
+    )
+
+    validate_curated_files(mock_ctx)  # should not raise
+
+    out = capsys.readouterr().out
+    assert "tracked qv content" in out
 
 
 # ---------------------------------------------------------------------------
@@ -506,6 +581,48 @@ def test_finalize_for_qc_creates_curated_dir(
     assert any(str(haplotig) in c for c in calls)
     # hap2 haplotigs not found — empty file created
     assert any("touch" in c and "hap2" in c and "all_haplotigs" in c for c in calls)
+
+
+@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_registers_curated_dir_output(
+    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_qv_run, mock_ctx, tmp_path
+):
+    """finalize_qc.finish() must record the *actually used* dest_dir, so overrides
+    (via the curated_dir= kwarg) are discoverable via tracker.get_output, not just
+    the default ctx.assembly_curated_dir."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.post_curation.finalize_qc import finalize_for_qc
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
+    mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    mock_find_fa.return_value = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
+    mock_find_csv.return_value = tmp_path / "sDipInt39.1.hap1.chromosome.list.csv"
+    mock_find_haplotigs.side_effect = [
+        tmp_path / "sDipInt39.1.haplotigs.fa", FileNotFoundError("no haplotigs for hap2")
+    ]
+    mock_glob.side_effect = [[], []]
+    mock_run.return_value = ""
+
+    override_dir = tmp_path / "custom_curated_dest"
+    finalize_for_qc(mock_ctx, curated_dir=override_dir)
+
+    assert mock_ctx.tracker.get_output("finalize_qc", "curated_dir") == str(override_dir)
 
 
 @patch("grit.steps.post_curation.finalize_qc._run")

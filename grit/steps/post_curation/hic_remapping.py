@@ -71,7 +71,7 @@ def _submit_hic_remapping(
                 return
 
     run_dir = (
-        ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, suffix=hap_prefix, invalidated=ctx.invalidated)
+        ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, suffix=hap_prefix, untracked=ctx.untracked)
         if ctx.tracker
         else ctx.workdir / step_name / "untracked"
     )

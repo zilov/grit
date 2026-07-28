@@ -160,11 +160,9 @@ class RegistryManager:
         """
         Re-derive each active ticket's status from its step history.
 
-        Reads from the registry steps array first; falls back to runs.jsonl
-        via RunTracker for tickets not yet migrated. Skips done tickets.
+        Skips done tickets.
         """
         from grit.core.manifests import STEP_TO_STATUS
-        from grit.core.run_tracker import RunTracker
 
         self._refresh_pending_jobs()
 
@@ -177,9 +175,6 @@ class RegistryManager:
             if not workdir.exists():
                 continue
             history = ticket.get("steps", [])
-            if not history:
-                tracker = RunTracker(workdir)
-                history = tracker.history()
             success_steps = [r["step"] for r in history if r.get("status") == "success"]
             if not success_steps:
                 continue
@@ -215,7 +210,7 @@ class RegistryManager:
             workdir = Path(ticket["workdir"])
             if not workdir.exists():
                 continue
-            tracker = RunTracker(workdir)
+            tracker = RunTracker(workdir, registry=self)
             tol_id = ticket.get("tol_id", "")
             hap1 = ticket.get("hap1_prefix", "hap1")
             hap2 = ticket.get("hap2_prefix", "hap2")

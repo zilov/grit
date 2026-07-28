@@ -36,7 +36,7 @@ def run_post_processing(ctx: CurationContext) -> None:
 
     require_workdir(ctx)
 
-    run_dir = ctx.tracker.start("post_processing", ctx.ticket_id, ctx.tol_id, invalidated=ctx.invalidated) if ctx.tracker else None
+    run_dir = ctx.tracker.start("post_processing", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else None
 
     script_lines = [
         f". {_MODULES_INIT}",

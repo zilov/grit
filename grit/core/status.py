@@ -69,6 +69,71 @@ def show_global_status(registry) -> None:
             console.print(f"  [dim]{t['ticket_id']} ({t.get('tol_id', '')}) — {t.get('status', '')}[/dim]")
 
 
+def _parse_ts(ts: str) -> datetime.datetime | None:
+    """Parse either registry timestamp format (added_at or step timestamp)."""
+    if not ts:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H_%M_%S"):
+        try:
+            return datetime.datetime.strptime(ts, fmt).replace(tzinfo=datetime.timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _last_ticket_timestamp(ticket: dict) -> datetime.datetime | None:
+    """Best-effort timestamp for when a ticket last changed — latest step, else added_at."""
+    steps = ticket.get("steps", [])
+    if steps:
+        parsed = _parse_ts(steps[-1].get("timestamp", ""))
+        if parsed:
+            return parsed
+    return _parse_ts(ticket.get("added_at", ""))
+
+
+def show_summary(registry) -> None:
+    """Print active ticket counts by status, and done-ticket counts by time period."""
+    from collections import Counter
+
+    tickets = registry._load()
+    active = [t for t in tickets if t.get("status") != "done"]
+    done = [t for t in tickets if t.get("status") == "done"]
+
+    status_counts = Counter(t.get("status", "unknown") for t in active)
+
+    table = Table(title="Active tickets by status", show_header=True, header_style="bold cyan")
+    table.add_column("Status")
+    table.add_column("Count", justify="right")
+    for status, count in sorted(status_counts.items(), key=lambda kv: -kv[1]):
+        table.add_row(status, str(count))
+    console.print(table)
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = day_start - datetime.timedelta(days=now.weekday())
+    month_start = day_start.replace(day=1)
+    quarter_start_month = (now.month - 1) // 3 * 3 + 1
+    quarter_start = day_start.replace(month=quarter_start_month, day=1)
+
+    week_n = month_n = quarter_n = 0
+    for t in done:
+        completed = _last_ticket_timestamp(t)
+        if completed is None:
+            continue
+        if completed >= week_start:
+            week_n += 1
+        if completed >= month_start:
+            month_n += 1
+        if completed >= quarter_start:
+            quarter_n += 1
+
+    console.print()
+    console.print(
+        f"[bold]Done:[/bold] {len(done)} total — "
+        f"{week_n} this week, {month_n} this month, {quarter_n} this quarter"
+    )
+
+
 def _print_canonical_files(ctx) -> None:
     """Print a table of canonical output files found for this ticket."""
     from grit.utils.helpers import (
@@ -110,20 +175,26 @@ def _print_canonical_files(ctx) -> None:
     console.print()
 
 
-def _auto_step_outputs(step: str, run_dir: Path | None, tol_id: str) -> dict[str, str]:
+def _auto_step_outputs(
+    step: str, run_dir: Path | None, tol_id: str, hap1: str = "hap1", hap2: str = "hap2"
+) -> dict[str, str]:
     """
     Scan for known output files after a bsub job completes and return a populated
     outputs dict for storage in the tracker. Returns an empty dict when nothing
     can be determined (caller should pass None rather than {}).
+
+    Same spec source (`_OUTPUT_SPECS` via `_get_step_specs`) as the normal
+    `_state-update` epilogue path — this is the bjobs-polling fallback for when
+    that epilogue never fired.
     """
+    from grit.utils.helpers import _get_step_specs, collect_outputs
+
     if not run_dir or not run_dir.exists():
         return {}
-    if step in ("hic_remapping", "hic_remapping_hap2"):
-        matches = list((run_dir / "pretext_maps_processed").glob(f"{tol_id}*hr.pretext"))
-        if matches:
-            key = "hap1_pretext" if step == "hic_remapping" else "hap2_pretext"
-            return {key: str(sorted(matches)[-1])}
-    return {}
+    specs = _get_step_specs(step)
+    if not specs:
+        return {}
+    return collect_outputs(specs, run_dir, tol_id, hap1=hap1, hap2=hap2)
 
 
 def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
@@ -172,7 +243,8 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     step_counts: dict[str, int] = {}
     for r in history:
         step = r.get("step", "")
-        step_counts[step] = step_counts.get(step, 0) + 1
+        if r.get("status") in ("success", "failed"):
+            step_counts[step] = step_counts.get(step, 0) + 1
         step_latest[step] = r
 
     table = Table(
@@ -220,7 +292,13 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             elif bjobs_status == "gone":
                 run_dir = Path(entry["run_dir"]) if entry.get("run_dir") else None
                 if tracker.verify_outputs(step, tol_id, run_dir) in ("ok", "no_files"):
-                    outputs = _auto_step_outputs(step, run_dir, tol_id)
+                    outputs = _auto_step_outputs(
+                        step,
+                        run_dir,
+                        tol_id,
+                        ticket.get("hap1_prefix", "hap1"),
+                        ticket.get("hap2_prefix", "hap2"),
+                    )
                     tracker.finish(step, run_dir, "success", outputs=outputs or None)
                     status = "success"
                 else:
@@ -236,7 +314,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             style = "red"
         elif "running" in status or status == "started":
             style = "yellow"
-        elif status == "invalidated":
+        elif status == "untracked":
             style = "dim"
 
         table.add_row(
@@ -259,11 +337,16 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     console.print(table)
     console.print()
 
-    # Derive assembly_curated_dir: workdir = .../working/<user>_curation/<tol_id>/
+    # Prefer the actually-used dir recorded by finalize_qc; fall back to deriving it:
+    # workdir = .../working/<user>_curation/<tol_id>/
     # assembly_curated_dir = .../assembly/curated/<tol_id>.<release>/
-    curated_base = workdir.parent.parent.parent / "assembly" / "curated"
-    curated_dirs = sorted(curated_base.glob(f"{tol_id}.*")) if curated_base.exists() else []
-    curated_dir = curated_dirs[0] if curated_dirs else None
+    curated_dir_out = tracker.get_output("finalize_qc", "curated_dir") if tracker else None
+    if curated_dir_out:
+        curated_dir = Path(curated_dir_out)
+    else:
+        curated_base = workdir.parent.parent.parent / "assembly" / "curated"
+        curated_dirs = sorted(curated_base.glob(f"{tol_id}.*")) if curated_base.exists() else []
+        curated_dir = curated_dirs[0] if curated_dirs else None
 
     print_curation_results(tracker, workdir, tol_id, curated_dir=curated_dir)
     console.print()

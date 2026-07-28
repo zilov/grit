@@ -78,33 +78,6 @@ def test_done_tickets_limit(reg):
     assert len(done) == 3
 
 
-def test_refresh_statuses(reg, tmp_path):
-    """refresh_statuses should re-derive status from runs.jsonl."""
-    import json as _json
-    from grit.core.run_tracker import RunTracker
-
-    workdir = tmp_path / "work_sDipInt39"
-    workdir.mkdir()
-    reg.add_ticket("RC-1234", "sDipInt39", "species", workdir)
-
-    # Write a runs.jsonl that shows pretext_to_asm succeeded
-    grit_dir = workdir / ".grit"
-    grit_dir.mkdir()
-    runs = [
-        {"step": "setup_curation", "timestamp": "2025-06-01T10_00_00", "status": "success",
-         "ticket_id": "RC-1234", "tol_id": "sDipInt39", "run_dir": str(workdir)},
-        {"step": "pretext_to_asm", "timestamp": "2025-06-01T12_00_00", "status": "success",
-         "ticket_id": "RC-1234", "tol_id": "sDipInt39",
-         "run_dir": str(workdir / "pretext_to_asm" / "2025-06-01T12_00_00")},
-    ]
-    (grit_dir / "runs.jsonl").write_text("\n".join(_json.dumps(r) for r in runs) + "\n")
-
-    reg.refresh_statuses()
-
-    t = reg.all_tickets()[0]
-    assert t["status"] == "post_curation"
-
-
 def test_append_step_and_get_steps(reg, tmp_path):
     workdir = tmp_path / "work"
     workdir.mkdir()
@@ -171,7 +144,7 @@ def test_patch_step_job_id(reg, tmp_path):
 
 
 def test_refresh_statuses_reads_from_steps_array(reg, tmp_path):
-    """refresh_statuses uses registry steps if present, skipping runs.jsonl."""
+    """refresh_statuses re-derives status from the registry steps array."""
     workdir = tmp_path / "work"
     workdir.mkdir()
     reg.add_ticket("RC-1234", "xbTest1", "species", workdir)

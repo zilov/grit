@@ -40,7 +40,7 @@ class GlobalState:
         yaml: str = None,
         print_only: bool = False,
         logging_level: str = "INFO",
-        invalidated: bool = False,
+        untracked: bool = False,
     ):
         self.verbose = verbose
         self.config_path = config_path or Path.home() / ".grit_curation_config.yaml"
@@ -48,7 +48,7 @@ class GlobalState:
         self.yaml = yaml
         self.print_only = print_only
         self.logging_level = logging_level
-        self.invalidated = invalidated
+        self.untracked = untracked
 
 
 @click.group()
@@ -103,7 +103,7 @@ def build_context(state: GlobalState) -> CurationContext:
         user_config,
         yaml_override=yaml_override,
         print_only=state.print_only,
-        invalidated=getattr(state, "invalidated", False),
+        untracked=getattr(state, "untracked", False),
     )
 
 
@@ -213,12 +213,12 @@ from grit.core.cleanup import cleanup_cmd  # noqa: E402
 cli.add_command(cleanup_cmd)
 
 
-@cli.command("invalidate")
+@cli.command("untrack")
 @click.option("--ticket", "-t", required=True, help="Ticket ID.")
-@click.option("--step", "-s", required=True, help="Step name to invalidate (e.g. rename_and_orient).")
-@click.option("--undo", is_flag=True, default=False, help="Re-enable latest invalidated run.")
+@click.option("--step", "-s", required=True, help="Step name to untrack (e.g. rename_and_orient).")
+@click.option("--undo", is_flag=True, default=False, help="Re-enable latest untracked run.")
 @click.pass_context
-def invalidate_cmd(ctx, ticket, step, undo):
+def untrack_cmd(ctx, ticket, step, undo):
     """Mark the latest run of a step as non-canonical (or undo that)."""
     from grit.core.registry import RegistryManager
     from grit.core.run_tracker import RunTracker
@@ -233,26 +233,26 @@ def invalidate_cmd(ctx, ticket, step, undo):
     tracker = RunTracker(workdir)
     if undo:
         runs = tracker.history(step)
-        inv = [r for r in runs if r.get("status") == "invalidated" and r.get("run_dir")]
-        if not inv:
-            click.echo(f"No invalidated runs found for step {step!r}.", err=True)
+        untracked_runs = [r for r in runs if r.get("status") == "untracked" and r.get("run_dir")]
+        if not untracked_runs:
+            click.echo(f"No untracked runs found for step {step!r}.", err=True)
             raise SystemExit(1)
-        run_dir = Path(inv[-1]["run_dir"])
+        run_dir = Path(untracked_runs[-1]["run_dir"])
         success_before = [r for r in runs if r.get("status") == "success"
                          and r.get("run_dir") == str(run_dir)]
         outputs = success_before[-1].get("outputs") if success_before else None
         tracker.finish(step, run_dir, "success", outputs=outputs)
         print_done(f"Re-enabled {step!r} run: {run_dir.name}")
     else:
-        if not tracker.invalidate(step):
+        if not tracker.untrack(step):
             click.echo(f"No successful run found for step {step!r} in {ticket}.", err=True)
             raise SystemExit(1)
         run_dir = tracker.latest_run_dir(step)
         console_hint = f" → canonical is now: {run_dir.name}" if run_dir else ""
-        print_done(f"Invalidated latest {step!r} run{console_hint}")
+        print_done(f"Untracked latest {step!r} run{console_hint}")
 
 
-cli.add_command(invalidate_cmd)
+cli.add_command(untrack_cmd)
 
 
 @cli.command("done")
@@ -273,6 +273,36 @@ def done_cmd(ctx, ticket):
         return
     reg.mark_done(ticket)
     print_done(f"{ticket} ({entry.get('tol_id', '')}) marked as done — removed from active list.")
+
+
+@cli.command("reopen")
+@click.option("--ticket", "-t", required=True, help="Ticket ID to reopen.")
+@click.pass_context
+def reopen_cmd(ctx, ticket):
+    """Set a done ticket's status back to active curation."""
+    from grit.core.registry import RegistryManager
+    from grit.utils.output import print_done
+
+    reg = RegistryManager()
+    entry = reg.find_ticket(ticket)
+    if entry is None:
+        click.echo(f"Ticket {ticket} not found in registry.", err=True)
+        raise SystemExit(1)
+    if entry.get("status") != "done":
+        click.echo(f"{ticket} is not marked as done (status: {entry.get('status')}).")
+        return
+    reg.update_status(ticket, "in_curation")
+    print_done(f"{ticket} ({entry.get('tol_id', '')}) reopened — status set to in_curation.")
+
+
+@cli.command("summary")
+@click.pass_context
+def summary_cmd(ctx):
+    """Show ticket counts by status, and done-ticket counts by time period."""
+    from grit.core.registry import RegistryManager
+    from grit.core.status import show_summary
+
+    show_summary(RegistryManager())
 
 
 @cli.command("migrate-tracker")

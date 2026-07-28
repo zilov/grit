@@ -6,46 +6,57 @@ Storage layout:
         <step>/
             <ISO-timestamp>/    ← run_dir for repeatable steps
         .grit/
-            runs.jsonl          ← append-only execution log (one JSON per line)
             <step>/
                 <timestamp>.log ← per-run stdout/stderr capture
 
-Non-repeatable steps (setup, haplotig_files, …) still log to runs.jsonl but
-their output files stay in workdir/ or the parent step's run_dir.
+Step history itself lives in the global registry (RegistryManager,
+~/.grit/registry_v2.json) — RunTracker is a workdir-scoped view over it, not
+a separate store. Non-repeatable steps (setup, haplotig_files, …) still log
+history the same way; their output files stay in workdir/ or the parent
+step's run_dir.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from grit.core.registry import RegistryManager
 
 log = logging.getLogger(__name__)
 
 
-def _invalidated_dirs(records: list[dict]) -> set[str]:
-    """Return the set of run_dirs whose most recent record status is 'invalidated'.
+def _untracked_dirs(records: list[dict]) -> set[str]:
+    """Return the set of run_dirs whose most recent record status is 'untracked'.
 
     Iterating forward means the last status seen for each run_dir wins, which
-    correctly handles undo (a later 'success' re-enables a previously invalidated dir).
+    correctly handles undo (a later 'success' re-enables a previously untracked dir).
     """
     latest_status: dict[str, str] = {}
     for r in records:
         rd = r.get("run_dir")
         if rd:
             latest_status[rd] = r.get("status", "")
-    return {rd for rd, st in latest_status.items() if st == "invalidated"}
+    return {rd for rd, st in latest_status.items() if st == "untracked"}
 
 
 class RunTracker:
-    """Tracks step executions for a single ticket workdir."""
+    """Workdir-scoped view over the global registry's step history."""
 
-    def __init__(self, workdir: Path, *, print_only: bool = False) -> None:
+    def __init__(
+        self,
+        workdir: Path,
+        *,
+        print_only: bool = False,
+        registry: "RegistryManager | None" = None,
+    ) -> None:
         self.workdir = workdir
         self.grit_dir = workdir / ".grit"
-        self.runs_log = self.grit_dir / "runs.jsonl"
         self.print_only = print_only
+        self._registry_obj = registry
 
     # ------------------------------------------------------------------
     # Core API
@@ -59,7 +70,7 @@ class RunTracker:
         *,
         create_dir: bool = True,
         suffix: str = "",
-        invalidated: bool = False,
+        untracked: bool = False,
     ) -> Path:
         """
         Record step start; create and return the timestamped run_dir.
@@ -68,7 +79,7 @@ class RunTracker:
         and don't need a dedicated run subdirectory.
         Pass ``suffix`` to append a string to the timestamp (e.g. hap prefix) so
         that two steps started within the same second get unique run_dirs.
-        Pass ``invalidated=True`` to mark the run as non-canonical from the start
+        Pass ``untracked=True`` to mark the run as non-canonical from the start
         so that ``latest_run_dir`` never returns it.
 
         In print_only mode: returns a virtual path without touching the filesystem.
@@ -80,9 +91,9 @@ class RunTracker:
         if not self.print_only:
             if create_dir:
                 run_dir.mkdir(parents=True, exist_ok=True)
-            self.grit_dir.mkdir(parents=True, exist_ok=True)
-            status = "invalidated" if invalidated else "started"
-            self._append(
+            status = "untracked" if untracked else "started"
+            self._registry.append_step(
+                self.workdir,
                 {
                     "step": step,
                     "timestamp": ts,
@@ -91,9 +102,9 @@ class RunTracker:
                     "tol_id": tol_id,
                     "run_dir": str(run_dir),
                     "job_id": None,
-                }
+                },
             )
-            log.debug("Run started: step=%s run_dir=%s invalidated=%s", step, run_dir, invalidated)
+            log.debug("Run started: step=%s run_dir=%s untracked=%s", step, run_dir, untracked)
 
         return run_dir
 
@@ -129,7 +140,7 @@ class RunTracker:
         if outputs is not None:
             record["outputs"] = outputs
         if not self.print_only:
-            self._append(record)
+            self._registry.append_step(self.workdir, record)
             log.debug("Run finished: step=%s status=%s", step, status)
 
     def record_job(self, step: str, run_dir: Path, job_id: str) -> None:
@@ -140,37 +151,11 @@ class RunTracker:
         """
         if self.print_only:
             return
-        if self.runs_log.exists():
-            lines = self.runs_log.read_text().splitlines()
-            updated = []
-            patched = False
-            for line in reversed(lines):
-                if not patched:
-                    try:
-                        r = json.loads(line)
-                        if r.get("step") == step and r.get("run_dir") == str(run_dir) and r.get("status") == "started":
-                            r["job_id"] = job_id
-                            line = json.dumps(r)
-                            patched = True
-                    except json.JSONDecodeError:
-                        pass
-                updated.append(line)
-            self.runs_log.write_text("\n".join(reversed(updated)) + "\n")
-        reg = self._registry
-        if reg is not None:
-            reg.patch_step_job_id(self.workdir, step, run_dir, job_id)
+        self._registry.patch_step_job_id(self.workdir, step, run_dir, job_id)
 
     def history(self, step: str | None = None) -> list[dict]:
-        """Return all log entries, optionally filtered by step name."""
-        reg = self._registry
-        if reg is not None:
-            steps = reg.get_steps(self.workdir, step)
-            if steps:
-                return steps
-        if not self.runs_log.exists():
-            return []
-        records = [json.loads(line) for line in self.runs_log.read_text().splitlines() if line.strip()]
-        return [r for r in records if step is None or r.get("step") == step]
+        """Return all step records, optionally filtered by step name."""
+        return self._registry.get_steps(self.workdir, step)
 
     def latest_run_dir(self, step: str) -> Path | None:
         """
@@ -178,21 +163,21 @@ class RunTracker:
 
         If the step only has a 'started' entry (bsub job still running or finished
         but _state-update hasn't fired yet), returns that run_dir as a fallback.
-        Run dirs whose most recent record has status 'invalidated' are excluded.
+        Run dirs whose most recent record has status 'untracked' are excluded.
         """
         runs = self.history(step)
-        invalidated_dirs = _invalidated_dirs(runs)
+        untracked_dirs = _untracked_dirs(runs)
         success_runs = [
             r for r in runs
             if r.get("status") == "success" and r.get("run_dir")
-            and r["run_dir"] not in invalidated_dirs
+            and r["run_dir"] not in untracked_dirs
         ]
         if success_runs:
             return Path(success_runs[-1]["run_dir"])
         started_runs = [
             r for r in runs
             if r.get("status") == "started" and r.get("run_dir")
-            and r["run_dir"] not in invalidated_dirs
+            and r["run_dir"] not in untracked_dirs
         ]
         if started_runs:
             return Path(started_runs[-1]["run_dir"])
@@ -203,27 +188,30 @@ class RunTracker:
         Return the path string for *key* from the latest successful run of *step*.
 
         Returns None if no successful run exists or the key is absent.
-        Runs whose most recent record has status 'invalidated' are excluded.
+        Runs whose most recent record has status 'untracked' are excluded.
         """
         runs = self.history(step)
-        inv_dirs = _invalidated_dirs(runs)
+        untracked_dirs = _untracked_dirs(runs)
         success_runs = [
             r for r in runs
             if r.get("status") == "success" and r.get("outputs")
-            and r.get("run_dir") not in inv_dirs
+            and r.get("run_dir") not in untracked_dirs
         ]
         if not success_runs:
             return None
         return success_runs[-1]["outputs"].get(key)
 
-    def invalidate(self, step: str, run_dir: Path | None = None) -> bool:
-        """Mark the latest success run of *step* as invalidated. Returns True if found."""
+    def untrack(self, step: str, run_dir: Path | None = None) -> bool:
+        """Mark the latest success run of *step* as untracked (non-canonical). Returns True if found."""
         if run_dir is None:
             run_dir = self.latest_run_dir(step)
         if run_dir is None:
             return False
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H_%M_%S")
-        self._append({"step": step, "timestamp": ts, "status": "invalidated", "run_dir": str(run_dir)})
+        self._registry.append_step(
+            self.workdir,
+            {"step": step, "timestamp": ts, "status": "untracked", "run_dir": str(run_dir)},
+        )
         return True
 
     def pending_jobs(self) -> list[dict]:
@@ -235,7 +223,6 @@ class RunTracker:
         """
         all_records = self.history()
         terminal = {"success", "failed"}
-        # Latest status seen for each (step, run_dir) key
         latest: dict[tuple, str] = {}
         for r in all_records:
             key = (r.get("step"), r.get("run_dir"))
@@ -274,7 +261,6 @@ class RunTracker:
         found = 0
         for pattern in patterns:
             resolved = pattern.replace("{tol_id}", tol_id)
-            # Support subdirectory patterns like "pretext_maps_processed/*.pretext"
             matches = list(check_dir.glob(resolved))
             if matches:
                 found += 1
@@ -301,18 +287,8 @@ class RunTracker:
     # ------------------------------------------------------------------
 
     @property
-    def _registry(self) -> "RegistryManager | None":
-        """Lazy RegistryManager — None if workdir not in registry (e.g. test fixtures)."""
-        if not hasattr(self, "_registry_cache"):
+    def _registry(self) -> "RegistryManager":
+        if self._registry_obj is None:
             from grit.core.registry import RegistryManager
-            reg = RegistryManager()
-            tickets = reg._load()
-            self._registry_cache = reg if any(Path(t["workdir"]) == self.workdir for t in tickets) else None
-        return self._registry_cache
-
-    def _append(self, record: dict) -> None:
-        with self.runs_log.open("a") as fh:
-            fh.write(json.dumps(record) + "\n")
-        reg = self._registry
-        if reg is not None:
-            reg.append_step(self.workdir, record)
+            self._registry_obj = RegistryManager()
+        return self._registry_obj
