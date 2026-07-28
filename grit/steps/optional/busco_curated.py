@@ -8,7 +8,12 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _state_update_epilogue, _submit_bsub, build_bsub_opts, find_latest_dir
+from grit.utils.helpers import (
+    _state_update_epilogue,
+    _submit_bsub,
+    build_bsub_opts,
+    find_latest_dir,
+)
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -29,7 +34,14 @@ _BUSCO_LINEAGES = "/lustre/scratch122/tol/resources/busco/latest/lineages"
 # ---------------------------------------------------------------------------
 
 
-def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
+def run_busco_curated(
+    ctx: CurationContext | None = None,
+    lineage: str = "",
+    *,
+    query_fasta: str | None = None,
+    outdir: str | None = None,
+    print_only: bool = False,
+) -> None:
     """
     Runs BUSCO analysis on the curated genome assembly.
 
@@ -53,25 +65,45 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
 
     Prints:
         Step header, input FASTA, file size, memory allocation, bsub command.
-    """
-    log.info("busco-curated | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
-    print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO on curated genome")
 
-    # --- find curated FASTA ---
-    # haplotig-files writes *.curated.fa into the pretext_to_asm run dir, not workdir root
-    if ctx.print_only:
-        curated_fa = ctx.workdir / f"{ctx.tol_id}_merged_curated.{ctx.hap1_prefix}.fa"
+    Standalone mode (``ctx=None``): pass ``query_fasta`` and ``outdir`` — there's
+    no ticket, workdir, or run tracking involved, so nothing gets recorded.
+    """
+    if ctx is None:
+        if not query_fasta or not outdir:
+            raise click.UsageError(
+                "--query-fasta and --outdir are both required to run standalone."
+            )
+        log.info("busco-curated (standalone) | query=%s outdir=%s", query_fasta, outdir)
+        print_step_header("-", "-", "Run BUSCO on curated genome (standalone)")
+        curated_fa = Path(query_fasta)
+        if not print_only and not curated_fa.exists():
+            raise FileNotFoundError(f"Query FASTA not found: {curated_fa}")
+        run_dir = Path(outdir)
+        if not print_only:
+            run_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = run_dir / "busco_singularity"
     else:
-        base_dir = find_latest_dir(ctx, "pretext_to_asm")
-        curated_pattern = str(base_dir / f"{ctx.tol_id}*.curated.fa")
-        curated_matches = glob.glob(curated_pattern)
-        if not curated_matches:
-            raise FileNotFoundError(f"No curated FASTA found: {curated_pattern}")
-        curated_fa = Path(sorted(curated_matches)[-1])
+        print_only = ctx.print_only
+        log.info("busco-curated | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
+        print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO on curated genome")
+
+        # --- find curated FASTA ---
+        # haplotig-files writes *.curated.fa into the pretext_to_asm run dir, not workdir root
+        if print_only:
+            curated_fa = ctx.workdir / f"{ctx.tol_id}_merged_curated.{ctx.hap1_prefix}.fa"
+        else:
+            base_dir = find_latest_dir(ctx, "pretext_to_asm")
+            curated_pattern = str(base_dir / f"{ctx.tol_id}*.curated.fa")
+            curated_matches = glob.glob(curated_pattern)
+            if not curated_matches:
+                raise FileNotFoundError(f"No curated FASTA found: {curated_pattern}")
+            curated_fa = Path(sorted(curated_matches)[-1])
+        output_dir = ctx.workdir / f"{ctx.tol_id}_busco_singularity"
     log.info("Curated FASTA: %s", curated_fa)
 
     # --- determine file size and memory ---
-    if ctx.print_only:
+    if print_only:
         file_size_gb = 2.5  # example
     else:
         file_size_bytes = curated_fa.stat().st_size
@@ -90,9 +122,6 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     log.info("File size: %.2f GB", file_size_gb)
     log.info("Memory allocation: %d GB", mem_gb)
 
-    # --- build output dir ---
-    output_dir = ctx.workdir / f"{ctx.tol_id}_busco_singularity"
-
     # --- build inner command ---
     busco_lineage = str(Path(_BUSCO_LINEAGES) / lineage)
     inner_cmd = (
@@ -102,7 +131,8 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     )
 
     # --- build bsub options ---
-    run_dir = ctx.tracker.start("busco_curated", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else None
+    if ctx is not None:
+        run_dir = ctx.tracker.start("busco_curated", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else None
     bsub_opts = build_bsub_opts(
         memory_mb=mem_mb,
         cores=32,
@@ -112,9 +142,9 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     )
 
     # --- submit ---
-    epilogue = _state_update_epilogue(ctx.workdir, "busco_curated", run_dir) if run_dir else None
-    job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
-    if ctx.tracker and run_dir and job_id:
+    epilogue = _state_update_epilogue(ctx.workdir, "busco_curated", run_dir) if ctx is not None and run_dir else None
+    job_id = _submit_bsub(inner_cmd, bsub_opts, print_only, epilogue_cmd=epilogue)
+    if ctx is not None and ctx.tracker and run_dir and job_id:
         ctx.tracker.record_job("busco_curated", run_dir, job_id)
 
     print_done("BUSCO on curated genome submitted.")
@@ -127,14 +157,27 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
 
 @click.command("busco-curated", cls=GritCommand)
 @click.option("--lineage", required=True, help="BUSCO lineage name (e.g. insecta_odb10).")
+@click.option(
+    "--query-fasta", default=None,
+    help="Run standalone, without --ticket: path to the curated FASTA (requires --outdir).",
+)
+@click.option("--outdir", default=None, help="Output directory for a standalone run (with --query-fasta).")
 @click.pass_context
-def busco_curated_cmd(ctx, lineage):
+def busco_curated_cmd(ctx, lineage, query_fasta, outdir):
     """Run BUSCO on the curated genome assembly."""
-    from grit.core.click_cli import build_context
-
-    curation_ctx = build_context(ctx.obj)
     try:
-        run_busco_curated(curation_ctx, lineage)
+        if query_fasta:
+            run_busco_curated(
+                lineage=lineage,
+                query_fasta=query_fasta,
+                outdir=outdir,
+                print_only=ctx.obj.print_only,
+            )
+        else:
+            from grit.core.click_cli import build_context
+
+            curation_ctx = build_context(ctx.obj)
+            run_busco_curated(curation_ctx, lineage)
     except Exception:
         log.exception("busco-curated failed")
         raise SystemExit(1)

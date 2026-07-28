@@ -16,6 +16,10 @@ class GritCommand(click.RichCommand):
     the ticket_id is derived from the YAML filename stem.
     --print-only can be specified after the subcommand name (in addition to the
     global position before it).
+
+    --ticket is also optional for commands that declare their own ``--query-fasta``
+    option (fastga, busco-curated, busco-synteny) — passing ``--query-fasta`` runs
+    the step standalone, with no CurationContext/tracker involved at all.
     """
 
     def __init__(self, name=None, **kwargs):
@@ -54,6 +58,10 @@ class GritCommand(click.RichCommand):
         print_only = ctx.params.pop("print_only", False)
         untracked = ctx.params.pop("untracked", False)
 
+        # Commands that support standalone (ticket-free) runs declare their own
+        # --query-fasta option; passing it makes --ticket optional here.
+        standalone = bool(ctx.params.get("query_fasta"))
+
         if ctx.obj is not None:
             # Local --print-only ORs with the global flag
             if print_only:
@@ -64,7 +72,7 @@ class GritCommand(click.RichCommand):
 
             if ticket:
                 ctx.obj.ticket = ticket
-            elif ctx.obj.ticket is None:
+            elif ctx.obj.ticket is None and not standalone:
                 # --ticket not given; try to derive from --yaml filename
                 if ctx.obj.yaml:
                     ctx.obj.ticket = Path(ctx.obj.yaml).stem

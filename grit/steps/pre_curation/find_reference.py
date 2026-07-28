@@ -30,7 +30,7 @@ _GET_NEAREST_COMPARATOR = "/software/grit/projects/vgp_curation_scripts/get_near
 # ---------------------------------------------------------------------------
 
 
-def reheader_reference(ctx: CurationContext, raw: Path, *, remove_raw: bool = False) -> Path:
+def reheader_reference(raw: Path, *, print_only: bool = False, remove_raw: bool = False) -> Path:
     """
     Reheader a single reference FASTA with the GRIT ``reheader`` tool (gunzipping
     first if needed) and return the resulting ``{prefix}_reheader.fna`` path.
@@ -38,6 +38,9 @@ def reheader_reference(ctx: CurationContext, raw: Path, *, remove_raw: bool = Fa
 
     ``remove_raw`` deletes the (decompressed) source file afterwards — used for
     references we downloaded ourselves, never for a user-supplied ``--reference-path``.
+
+    Takes ``print_only`` directly (not a ``CurationContext``) so it can be used
+    from standalone (ticket-free) step invocations too.
     """
     ref_prefix = raw.stem.split(".")[0].removesuffix("_reheader")
     ref_reheader = raw.parent / f"{ref_prefix}_reheader.fna"
@@ -54,7 +57,7 @@ def reheader_reference(ctx: CurationContext, raw: Path, *, remove_raw: bool = Fa
         cmd = f"reheader {raw} > {ref_reheader}"
         if remove_raw:
             cmd += f" && rm {raw}"
-    _run(f"{module_cmd('GRIT')} && {cmd}", ctx.print_only)
+    _run(f"{module_cmd('GRIT')} && {cmd}", print_only)
     return ref_reheader
 
 
@@ -71,7 +74,7 @@ def _reheader_downloaded_references(ctx: CurationContext, run_dir: Path) -> None
     raw_paths = sorted(Path(p) for p in raw_matches if not p.endswith("_reheader.fna"))
 
     for raw in raw_paths:
-        reheader_reference(ctx, raw, remove_raw=True)
+        reheader_reference(raw, print_only=ctx.print_only, remove_raw=True)
 
 
 # ---------------------------------------------------------------------------

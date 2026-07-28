@@ -43,7 +43,14 @@ def _fastga_scp_tip(farm_host: str, run_dir: Path, tol_id: str, print_only: bool
 # ---------------------------------------------------------------------------
 
 
-def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
+def run_fastga(
+    ctx: CurationContext | None = None,
+    reference_path: str | None = None,
+    *,
+    query_fasta: str | None = None,
+    outdir: str | None = None,
+    print_only: bool = False,
+) -> None:
     """
     Runs a FastGA dot-plot comparison of the curated assembly vs. a reference.
 
@@ -72,23 +79,45 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
 
     Prints:
         Step header, bsub command, scp commands (if output exists).
-    """
-    log.info("fastga | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
-    print_step_header(ctx.ticket_id, ctx.tol_id, "Run FastGA")
 
-    # --- find canonical hap1 FASTA (rename_and_orient output preferred) ---
-    hap1_fa = find_canonical_fa(ctx, ctx.hap1_prefix)
-    log.info("Curated hap1 FASTA: %s", hap1_fa)
+    Standalone mode (``ctx=None``): pass ``query_fasta``, ``outdir``, and an
+    explicit ``reference_path`` — there's no ticket, workdir, or run tracking
+    involved, so nothing gets recorded and no auto-discovery happens.
+    """
+    if ctx is None:
+        if not query_fasta or not outdir:
+            raise click.UsageError(
+                "--query-fasta and --outdir are both required to run standalone."
+            )
+        if not reference_path:
+            raise click.UsageError(
+                "--reference is required without --ticket (no find-reference to fall back on)."
+            )
+        log.info("fastga (standalone) | query=%s outdir=%s", query_fasta, outdir)
+        print_step_header("-", "-", "Run FastGA (standalone)")
+        hap1_fa = Path(query_fasta)
+        if not print_only and not hap1_fa.exists():
+            raise FileNotFoundError(f"Query FASTA not found: {hap1_fa}")
+        run_dir = Path(outdir)
+        if not print_only:
+            run_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        print_only = ctx.print_only
+        log.info("fastga | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
+        print_step_header(ctx.ticket_id, ctx.tol_id, "Run FastGA")
+        # --- find canonical hap1 FASTA (rename_and_orient output preferred) ---
+        hap1_fa = find_canonical_fa(ctx, ctx.hap1_prefix)
+        log.info("Curated hap1 FASTA: %s", hap1_fa)
 
     from grit.steps.pre_curation.find_reference import reheader_reference
 
     # --- find reference ---
     if reference_path:
         ref_path = Path(reference_path)
-        if not ctx.print_only and not ref_path.exists():
+        if not print_only and not ref_path.exists():
             raise FileNotFoundError(f"Reference not found: {ref_path}")
         log.info("Reference FASTA (explicit): %s", ref_path)
-        ref_reheader = reheader_reference(ctx, ref_path)
+        ref_reheader = reheader_reference(ref_path, print_only=print_only)
     else:
         ref_reheader = find_reheadered_reference(ctx)
         log.info("Reference FASTA: %s", ref_reheader)
@@ -98,8 +127,10 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     run_prefix = f"{ref_prefix}_vs_{assembly_prefix}"
 
     # --- submit bsub job ---
-    # Each run gets its own tracker run_dir so multiple fastga runs don't overwrite each other
-    run_dir = ctx.tracker.start("fastga", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else ctx.workdir / "fastga" / "untracked"
+    if ctx is not None:
+        # Each run gets its own tracker run_dir so multiple fastga runs don't overwrite each other
+        run_dir = ctx.tracker.start("fastga", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else ctx.workdir / "fastga" / "untracked"
+
     fastga_script = "/software/grit/projects/vgp_curation_scripts/FastGA_dot_dgenies.sh"
     inner_cmd = (
         f"cd {run_dir} && "
@@ -114,20 +145,21 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
         error="e_fastga",
         run_dir=run_dir,
     )
-    epilogue = _state_update_epilogue(ctx.workdir, "fastga", run_dir) if run_dir else None
+    epilogue = _state_update_epilogue(ctx.workdir, "fastga", run_dir) if ctx is not None and run_dir else None
     try:
-        job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
-        if ctx.tracker and run_dir and job_id:
+        job_id = _submit_bsub(inner_cmd, bsub_opts, print_only, epilogue_cmd=epilogue)
+        if ctx is not None and ctx.tracker and run_dir and job_id:
             ctx.tracker.record_job("fastga", run_dir, job_id)
     except Exception:
-        if ctx.tracker and run_dir:
+        if ctx is not None and ctx.tracker and run_dir:
             ctx.tracker.finish("fastga", run_dir, "failed")
         raise
 
-    # --- tip: scp commands if output already exists ---
-    tip = _fastga_scp_tip(ctx.farm_host, run_dir, ctx.tol_id, ctx.print_only)
-    if tip:
-        print_tip(tip)
+    # --- tip: scp commands if output already exists (needs ctx.farm_host) ---
+    if ctx is not None:
+        tip = _fastga_scp_tip(ctx.farm_host, run_dir, ctx.tol_id, print_only)
+        if tip:
+            print_tip(tip)
 
     print_done("FastGA submitted.")
 
@@ -138,15 +170,31 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
 
 
 @click.command("fastga", cls=GritCommand)
-@click.option("--reference", "-r", default=None, help="Path to reference FASTA (overrides auto-search in workdir/reference/).")
+@click.option(
+    "--reference", "-r", default=None,
+    help="Path to reference FASTA (overrides auto-search in workdir/reference/; required standalone).",
+)
+@click.option(
+    "--query-fasta", default=None,
+    help="Run standalone, without --ticket: query FASTA path (requires --outdir, --reference).",
+)
+@click.option("--outdir", default=None, help="Output directory for a standalone run (with --query-fasta).")
 @click.pass_context
-def fastga_cmd(ctx, reference):
+def fastga_cmd(ctx, reference, query_fasta, outdir):
     """Run FastGA dot-plot comparison of curated assembly vs reference."""
-    from grit.core.click_cli import build_context
-
-    curation_ctx = build_context(ctx.obj)
     try:
-        run_fastga(curation_ctx, reference_path=reference)
+        if query_fasta:
+            run_fastga(
+                reference_path=reference,
+                query_fasta=query_fasta,
+                outdir=outdir,
+                print_only=ctx.obj.print_only,
+            )
+        else:
+            from grit.core.click_cli import build_context
+
+            curation_ctx = build_context(ctx.obj)
+            run_fastga(curation_ctx, reference_path=reference)
     except Exception:
         log.exception("fastga failed")
         raise SystemExit(1)
