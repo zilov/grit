@@ -275,6 +275,36 @@ def done_cmd(ctx, ticket):
     print_done(f"{ticket} ({entry.get('tol_id', '')}) marked as done — removed from active list.")
 
 
+@cli.command("reopen")
+@click.option("--ticket", "-t", required=True, help="Ticket ID to reopen.")
+@click.pass_context
+def reopen_cmd(ctx, ticket):
+    """Set a done ticket's status back to active curation."""
+    from grit.core.registry import RegistryManager
+    from grit.utils.output import print_done
+
+    reg = RegistryManager()
+    entry = reg.find_ticket(ticket)
+    if entry is None:
+        click.echo(f"Ticket {ticket} not found in registry.", err=True)
+        raise SystemExit(1)
+    if entry.get("status") != "done":
+        click.echo(f"{ticket} is not marked as done (status: {entry.get('status')}).")
+        return
+    reg.update_status(ticket, "in_curation")
+    print_done(f"{ticket} ({entry.get('tol_id', '')}) reopened — status set to in_curation.")
+
+
+@cli.command("summary")
+@click.pass_context
+def summary_cmd(ctx):
+    """Show ticket counts by status, and done-ticket counts by time period."""
+    from grit.core.registry import RegistryManager
+    from grit.core.status import show_summary
+
+    show_summary(RegistryManager())
+
+
 @cli.command("migrate-tracker")
 @click.option("--dry-run", is_flag=True, default=False, help="Show what would be migrated without writing.")
 @click.option("--yes", is_flag=True, default=False, help="Actually migrate (required unless --dry-run).")

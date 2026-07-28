@@ -69,6 +69,71 @@ def show_global_status(registry) -> None:
             console.print(f"  [dim]{t['ticket_id']} ({t.get('tol_id', '')}) — {t.get('status', '')}[/dim]")
 
 
+def _parse_ts(ts: str) -> datetime.datetime | None:
+    """Parse either registry timestamp format (added_at or step timestamp)."""
+    if not ts:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H_%M_%S"):
+        try:
+            return datetime.datetime.strptime(ts, fmt).replace(tzinfo=datetime.timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _last_ticket_timestamp(ticket: dict) -> datetime.datetime | None:
+    """Best-effort timestamp for when a ticket last changed — latest step, else added_at."""
+    steps = ticket.get("steps", [])
+    if steps:
+        parsed = _parse_ts(steps[-1].get("timestamp", ""))
+        if parsed:
+            return parsed
+    return _parse_ts(ticket.get("added_at", ""))
+
+
+def show_summary(registry) -> None:
+    """Print active ticket counts by status, and done-ticket counts by time period."""
+    from collections import Counter
+
+    tickets = registry._load()
+    active = [t for t in tickets if t.get("status") != "done"]
+    done = [t for t in tickets if t.get("status") == "done"]
+
+    status_counts = Counter(t.get("status", "unknown") for t in active)
+
+    table = Table(title="Active tickets by status", show_header=True, header_style="bold cyan")
+    table.add_column("Status")
+    table.add_column("Count", justify="right")
+    for status, count in sorted(status_counts.items(), key=lambda kv: -kv[1]):
+        table.add_row(status, str(count))
+    console.print(table)
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = day_start - datetime.timedelta(days=now.weekday())
+    month_start = day_start.replace(day=1)
+    quarter_start_month = (now.month - 1) // 3 * 3 + 1
+    quarter_start = day_start.replace(month=quarter_start_month, day=1)
+
+    week_n = month_n = quarter_n = 0
+    for t in done:
+        completed = _last_ticket_timestamp(t)
+        if completed is None:
+            continue
+        if completed >= week_start:
+            week_n += 1
+        if completed >= month_start:
+            month_n += 1
+        if completed >= quarter_start:
+            quarter_n += 1
+
+    console.print()
+    console.print(
+        f"[bold]Done:[/bold] {len(done)} total — "
+        f"{week_n} this week, {month_n} this month, {quarter_n} this quarter"
+    )
+
+
 def _print_canonical_files(ctx) -> None:
     """Print a table of canonical output files found for this ticket."""
     from grit.utils.helpers import (
@@ -178,7 +243,8 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     step_counts: dict[str, int] = {}
     for r in history:
         step = r.get("step", "")
-        step_counts[step] = step_counts.get(step, 0) + 1
+        if r.get("status") in ("success", "failed"):
+            step_counts[step] = step_counts.get(step, 0) + 1
         step_latest[step] = r
 
     table = Table(
