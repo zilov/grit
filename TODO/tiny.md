@@ -18,3 +18,11 @@ Small fixes and improvements — close in one batch when still relevant.
   `step_counts` in `status.py` counts both, so a single run shows as 2.
   Fix: count only terminal entries (`success` or `failed`) per step,
   or count unique `run_dir` values instead of raw lines.
+
+- [ ] **Generalize `--untracked` to all steps** — currently only some steps
+  wire `ctx.untracked` through to `tracker.start(..., untracked=...)`. Worth
+  making this a default option every step gets (via `GritCommand` base class,
+  same pattern as `-t`/`--print-only`) rather than something each step opts
+  into individually. Came up while designing TODO 38 (shared `busco` step)
+  as the mechanism for running a step without it counting as canonical
+  registry state.
