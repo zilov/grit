@@ -86,8 +86,15 @@ def run_busco_synteny(
     log.info("Query FASTA: %s", query_fa)
 
     # --- submit BUSCO synteny job ---
-    inner_cmd = f"bash {_BUSCO_SYNTENY_SCRIPT} -r {ref_reheader} -q {query_fa} -l {lineage} -p {ctx.workdir}"
-    run_dir = ctx.tracker.start("busco_synteny", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else None
+    # Each run gets its own run_dir so multiple busco-synteny runs don't overwrite each other
+    run_dir = (
+        ctx.tracker.start("busco_synteny", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else ctx.workdir / "busco_synteny" / "untracked"
+    )
+    inner_cmd = (
+        f"bash {_BUSCO_SYNTENY_SCRIPT} -r {ref_reheader} -q {query_fa} -l {lineage} -p {run_dir}"
+    )
     bsub_opts = build_bsub_opts(
         cores=32,
         memory_mb=50000,
@@ -110,7 +117,9 @@ def run_busco_synteny(
 @click.command("busco-synteny", cls=GritCommand)
 @click.option("--lineage", required=True, help="BUSCO lineage name (e.g. insecta_odb10).")
 @click.option(
-    "--reference", "-r", default=None,
+    "--reference",
+    "-r",
+    default=None,
     help="Path to reference FASTA (overrides auto-search via find-reference).",
 )
 @click.pass_context

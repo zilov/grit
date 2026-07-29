@@ -3,7 +3,6 @@
 # Scaffold IDs need to be in final tol format.
 # Query and ref short IDs need to be two letter codes eg. "Ac".
 # Query and ref fasta files need to be in working dir.
-# Must be run in curation_v2 for plotting to complete (python dependencies - matplotlib, seaborn)
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
@@ -99,5 +98,5 @@ run_busco_if_needed "$myReference" "$ref_short_id"
 run_busco_if_needed "$myQuery" "$query_short_id"
 
 # Run circos plotting
-python "$SCRIPT_DIR/busco_synteny_format_and_plot.py" \
+uv run --script "$SCRIPT_DIR/busco_synteny_format_and_plot.py" \
     -r "$myReference" -q "$myQuery" -ri "$ref_short_id" -qi "$query_short_id" -p "$myDirPath" $filesKeep

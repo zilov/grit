@@ -1,6 +1,13 @@
-#!/bin/python
-
-#! pip install python-circos
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "pandas",
+#     "seaborn",
+#     "python-circos",
+#     "biopython>=1.80",
+# ]
+# ///
 import argparse
 import random
 import re
