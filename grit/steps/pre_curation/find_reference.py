@@ -79,20 +79,28 @@ def _reheader_downloaded_references(ctx: CurationContext, run_dir: Path) -> None
 # ---------------------------------------------------------------------------
 
 
-def find_closest_reference(ctx: CurationContext, number: int = 1) -> None:
+def find_closest_reference(
+    ctx: CurationContext, number: int = 1, local_path: str | None = None
+) -> None:
     """
     Finds (and downloads) the closest reference genome from NCBI for the
-    species being curated.
+    species being curated, or preps a user-supplied local reference in its
+    place when ``local_path`` is given.
 
-    The reference FASTA is downloaded into ``{ctx.workdir}/reference/``.
-    The script must be run from that directory, so we ``cd`` into it first.
+    The reference FASTA lands in the tracked ``find_reference`` run_dir,
+    the same as a downloaded one, so ``fastga``/``busco-synteny`` pick it up
+    automatically via ``find_reheadered_reference()``.
 
-    Command::
+    Command (download path)::
 
         mkdir -p {ctx.workdir}/reference && \\
         cd {ctx.workdir}/reference && \\
         /software/grit/projects/vgp_curation_scripts/get_nearest_comparator.rb \\
             -s "{ctx.species}" -d -n {number}
+
+    Local path: symlinks ``local_path`` into the run_dir and reheaders it via
+    ``reheader_reference(..., remove_raw=True)`` — the symlink is removed
+    afterwards, the original file is never touched.
 
     Prints:
         Step header, command executed, path to reference directory.
@@ -100,12 +108,38 @@ def find_closest_reference(ctx: CurationContext, number: int = 1) -> None:
     log.info("find-reference | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Find closest reference")
 
+    run_dir = ctx.tracker.start("find_reference", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else ctx.workdir / "find_reference" / "untracked"
+    log.info("Reference dir: %s", run_dir)
+
+    if local_path:
+        if number != 1:
+            log.warning(
+                "--local given together with --number=%s; ignoring --number "
+                "(only one local reference is used).",
+                number,
+            )
+        local = Path(local_path).expanduser()
+        if not ctx.print_only and not local.exists():
+            raise FileNotFoundError(f"Local reference not found: {local}")
+        log.info("Using local reference: %s", local)
+
+        try:
+            link_path = run_dir / local.name
+            _run(f"mkdir -p {run_dir} && ln -s {local.resolve()} {link_path}", ctx.print_only)
+            reheader_reference(ctx, link_path, remove_raw=True)
+            if ctx.tracker and run_dir:
+                ctx.tracker.finish("find_reference", run_dir, "success")
+        except Exception:
+            if ctx.tracker and run_dir:
+                ctx.tracker.finish("find_reference", run_dir, "failed")
+            raise
+        print_done(f"Local reference prepared in {run_dir}")
+        return
+
     species_query = _clean_species_name(ctx.species)
     log.info("Species (raw): %s", ctx.species)
     log.info("Species (query): %s", species_query)
 
-    run_dir = ctx.tracker.start("find_reference", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else ctx.workdir / "find_reference" / "untracked"
-    log.info("Reference dir: %s", run_dir)
     cmd = (
         f"mkdir -p {run_dir} && "
         f"cd {run_dir} && "
@@ -129,15 +163,22 @@ def find_closest_reference(ctx: CurationContext, number: int = 1) -> None:
 
 
 @click.command("find-reference", cls=GritCommand)
+@click.option(
+    "--local",
+    "-l",
+    "local_path",
+    default=None,
+    help="Path to a local reference FASTA (.fa/.fna, optionally .gz) — skips the NCBI download and preps this file instead.",
+)
 @click.pass_context
-def find_reference_cmd(ctx):
+def find_reference_cmd(ctx, local_path):
     """Find and download closest reference genome."""
     from grit.core.click_cli import build_context
 
     state = ctx.obj
     curation_ctx = build_context(state)
     try:
-        find_closest_reference(curation_ctx)
+        find_closest_reference(curation_ctx, local_path=local_path)
     except Exception:
         log.exception("find-reference failed")
         raise SystemExit(1)
