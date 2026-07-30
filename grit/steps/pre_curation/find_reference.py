@@ -108,7 +108,11 @@ def find_closest_reference(
     log.info("find-reference | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Find closest reference")
 
-    run_dir = ctx.tracker.start("find_reference", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else ctx.workdir / "find_reference" / "untracked"
+    run_dir = (
+        ctx.tracker.start("find_reference", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else ctx.workdir / "find_reference" / "untracked"
+    )
     log.info("Reference dir: %s", run_dir)
 
     if local_path:
@@ -168,7 +172,8 @@ def find_closest_reference(
     "-l",
     "local_path",
     default=None,
-    help="Path to a local reference FASTA (.fa/.fna, optionally .gz) — skips the NCBI download and preps this file instead.",
+    help="Path to a local reference FASTA (.fa/.fna, optionally .gz) — "
+    "skips the NCBI download and preps this file instead.",
 )
 @click.pass_context
 def find_reference_cmd(ctx, local_path):
