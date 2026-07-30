@@ -51,11 +51,26 @@ args = parser.parse_args()
 sp1 = args.ref_id
 sp2 = args.query_id
 base_path = f"{args.path}/"
+paf_name = Path(args.paf).stem
 
 paf = pd.read_csv(args.paf, sep="\t", header=None, usecols=range(12), names=PAF_COLUMNS)
 paf = paf[paf["alnlen"] >= args.min_len]
 if paf.empty:
     raise SystemExit(f"No alignment blocks >= {args.min_len} bp found in {args.paf}")
+
+################## ALIGNMENT LENGTH SUMMARY TABLE ##################
+
+# Total aligned bp per (query, ref) contig pair, longest pairs first - a quick
+# way to spot the dominant matches without reading the circos plot.
+alignment_summary = (
+    paf.groupby(["qname", "tname"], as_index=False)["alnlen"]
+    .sum()
+    .rename(columns={"qname": "query_header", "tname": "ref_header", "alnlen": "alignment_length"})
+    .sort_values("alignment_length", ascending=False)
+)
+alignment_summary.to_csv(
+    f"{base_path}{sp1}_vs_{sp2}_{paf_name}.alignment_summary.tsv", sep="\t", index=False
+)
 
 ################## CHROMOSOMES + LINKS FROM PAF ##################
 
@@ -127,7 +142,6 @@ for i, row in c.iterrows():
 
 circle.set_garcs()
 
-paf_name = Path(args.paf).stem
 circle.ax.set_title(f"{sp1}_vs_{sp2}_{paf_name}", pad=40)
 
 for i, row in links.iterrows():

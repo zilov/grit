@@ -36,6 +36,7 @@ DEFAULT_MIN_ALIGN_LEN = 10_000
 # and surfaced as an scp tip in `grit status` — see build_scp_tip().
 _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("png", "*.png", []),
+    ("alignment_summary", "*.alignment_summary.tsv", []),
 ]
 
 
