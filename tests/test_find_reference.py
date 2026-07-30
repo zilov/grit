@@ -74,6 +74,32 @@ def test_download_path_unaffected_when_no_local_path(
     mock_reheader_downloaded.assert_called_once()
 
 
+@patch("grit.steps.pre_curation.find_reference.reheader_reference")
+@patch("grit.steps.pre_curation.find_reference._run")
+def test_local_already_in_run_dir_skips_symlink(mock_run, mock_reheader, mock_ctx, tmp_path):
+    """
+    Regression test: if --local already points at a file inside the step's
+    own run_dir, `ln -s <path> <same path>` would create a self-referential
+    symlink and blow up gunzip with "Too many levels of symbolic links".
+    """
+    mock_ctx.workdir = tmp_path / "workdir"
+    mock_ctx.print_only = False
+
+    run_dir = mock_ctx.workdir / "find_reference" / "untracked"
+    run_dir.mkdir(parents=True)
+    local_ref = run_dir / "already_here.fa"
+    local_ref.write_text(">chr1\nACGT\n")
+
+    find_closest_reference(mock_ctx, local_path=str(local_ref))
+
+    mock_run.assert_not_called()  # no ln -s — file is already in place
+    mock_reheader.assert_called_once()
+    reheader_args, reheader_kwargs = mock_reheader.call_args
+    assert reheader_kwargs.get("remove_raw") is True
+    prep_target = reheader_args[1]
+    assert prep_target == local_ref
+
+
 @patch("grit.steps.pre_curation.find_reference._run")
 def test_local_missing_file_with_tracker_marks_failed(mock_run, mock_ctx, tmp_path):
     """Regression test: tracker should mark run as 'failed' when --local file doesn't exist."""

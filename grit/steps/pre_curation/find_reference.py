@@ -129,8 +129,18 @@ def find_closest_reference(
             if not ctx.print_only and not local.exists():
                 raise FileNotFoundError(f"Local reference not found: {local}")
             link_path = run_dir / local.name
-            _run(f"mkdir -p {run_dir} && ln -s {local.resolve()} {link_path}", ctx.print_only)
-            reheader_reference(ctx, link_path, remove_raw=True)
+            if local.resolve() == link_path.resolve():
+                # Local reference already lives in run_dir (e.g. staged there
+                # ahead of time) — prep it in place, no symlink needed.
+                # Symlinking a path onto itself would create a self-loop and
+                # blow up gunzip with "Too many levels of symbolic links".
+                prep_target = local
+            else:
+                _run(
+                    f"mkdir -p {run_dir} && ln -s {local.resolve()} {link_path}", ctx.print_only
+                )
+                prep_target = link_path
+            reheader_reference(ctx, prep_target, remove_raw=True)
             if ctx.tracker and run_dir:
                 ctx.tracker.finish("find_reference", run_dir, "success")
         except Exception:
