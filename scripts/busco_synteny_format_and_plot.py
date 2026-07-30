@@ -225,4 +225,6 @@ circle.figure.savefig(f"{base_path}/{ref_name}_vs_{query_name}.{current_time}.pn
 if args.keep:
     pass
 else:
-    shutil.rmtree(f'{base_path}/busco_downloads/')
+    busco_downloads_dir = Path(base_path) / 'busco_downloads'
+    if busco_downloads_dir.exists():
+        shutil.rmtree(busco_downloads_dir)
