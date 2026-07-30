@@ -6,6 +6,7 @@
 #     "seaborn",
 #     "python-circos",
 #     "biopython>=1.80",
+#     "requests>=2.28",
 # ]
 # ///
 import argparse
