@@ -197,6 +197,32 @@ def _auto_step_outputs(
     return collect_outputs(specs, run_dir, tol_id, hap1=hap1, hap2=hap2)
 
 
+# Steps whose recorded `outputs` (populated by the bsub -Ep epilogue, or by the
+# bjobs-polling fallback in show_ticket_history for steps that don't use one)
+# are worth offering to scp to the curator's local machine.
+_SCP_TIP_STEPS = [
+    ("fastga", "FastGA results"),
+    ("busco_synteny", "busco-synteny plot"),
+    ("fastga_synteny", "fastga-synteny plot"),
+    ("hic_remapping", "remapped pretext map"),
+    ("hic_remapping_hap2", "remapped hap2 pretext map"),
+]
+
+
+def _print_scp_tips(step_latest: dict[str, dict], farm_host: str, tol_id: str) -> None:
+    """Print an scp-download tip for each successful step in `_SCP_TIP_STEPS`."""
+    from grit.utils.helpers import build_scp_tip
+
+    for step, label in _SCP_TIP_STEPS:
+        entry = step_latest.get(step)
+        if not entry or entry.get("status") != "success":
+            continue
+        files = sorted((entry.get("outputs") or {}).values())
+        tip = build_scp_tip(farm_host, tol_id, files, label)
+        if tip:
+            print_tip(tip)
+
+
 def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     """Print per-step run history and curation results for a single ticket."""
     from grit.core.run_tracker import RunTracker
@@ -258,23 +284,6 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     table.add_column("Status")
     table.add_column("Job ID")
 
-    # Use canonical (latest) run dirs for scp tips — prefer newest on filesystem
-    # in case a manual run exists that wasn't recorded in the tracker.
-    def _latest_hic_dir(step: str) -> Path | None:
-        step_dir = workdir / step
-        fs_last: Path | None = None
-        if step_dir.is_dir():
-            subdirs = sorted(d for d in step_dir.iterdir() if d.is_dir())
-            if subdirs:
-                fs_last = subdirs[-1]
-        tracked = tracker.latest_run_dir(step)
-        if fs_last and tracked and tracked.exists():
-            return fs_last if fs_last.name >= tracked.name else tracked
-        return fs_last or (tracked if tracked and tracked.exists() else None)
-
-    hic_success_run_dir = _latest_hic_dir("hic_remapping")
-    hic_hap2_success_run_dir = _latest_hic_dir("hic_remapping_hap2")
-
     for step, entry in step_latest.items():
         status = entry.get("status", "")
         job_id = entry.get("job_id") or ""
@@ -300,6 +309,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
                         ticket.get("hap2_prefix", "hap2"),
                     )
                     tracker.finish(step, run_dir, "success", outputs=outputs or None)
+                    entry["outputs"] = outputs
                     status = "success"
                 else:
                     status = "unknown (gone)"
@@ -353,33 +363,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
 
     farm_host = user_config.get("farm_host", "<farm_host>")
 
-    fastga_entry = step_latest.get("fastga")
-    if fastga_entry and fastga_entry.get("status") == "success":
-        fastga_run_dir = Path(fastga_entry.get("run_dir", ""))
-        if fastga_run_dir.exists():
-            from grit.steps.optional.fastga import _fastga_scp_tip
-            fastga_tip = _fastga_scp_tip(farm_host, fastga_run_dir, tol_id)
-            if fastga_tip:
-                print_tip(fastga_tip)
-
-    if hic_success_run_dir:
-        remapped_pattern = str(
-            hic_success_run_dir / "pretext_maps_processed" / f"{tol_id}*normal.pretext"
-        )
-        print_tip(
-            f"To copy remapped pretext map to your local machine:\n"
-            f"[bold cyan]scp {farm_host}:'{remapped_pattern}' "
-            f"~/curations/work/{tol_id}/{tol_id}_remapped.pretext[/bold cyan]"
-        )
-    if hic_hap2_success_run_dir:
-        remapped_pattern_hap2 = str(
-            hic_hap2_success_run_dir / "pretext_maps_processed" / f"{tol_id}*normal.pretext"
-        )
-        print_tip(
-            f"To copy remapped hap2 pretext map to your local machine:\n"
-            f"[bold cyan]scp {farm_host}:'{remapped_pattern_hap2}' "
-            f"~/curations/work/{tol_id}/{tol_id}_hap2_remapped.pretext[/bold cyan]"
-        )
+    _print_scp_tips(step_latest, farm_host, tol_id)
 
     print_tip(
         f"To copy AGP from your local machine:\n"
@@ -401,7 +385,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             f"[bold cyan]grit post-curation -t {ticket_id}[/bold cyan] "
             f"[dim](add --hap2 if you need to build both hap maps)[/dim]"
         )
-    elif hic_success_run_dir:
+    elif step_latest.get("hic_remapping", {}).get("status") == "success":
         print_tip(
             f"HiC remapping done — next step:\n"
             f"[bold cyan]grit finalize-qc -t {ticket_id}[/bold cyan]"

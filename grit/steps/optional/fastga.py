@@ -1,6 +1,5 @@
 """Run FastGA dot-plot comparison."""
 
-import glob
 import logging
 from pathlib import Path
 
@@ -19,23 +18,16 @@ from grit.utils.modules import module_cmd
 from grit.utils.output import (
     print_done,
     print_step_header,
-    print_tip,
 )
 
 log = logging.getLogger(__name__)
 
-
-def _fastga_scp_tip(farm_host: str, run_dir: Path, tol_id: str, print_only: bool = False) -> str | None:
-    """Return a print_tip string with scp commands for FastGA outputs, or None if no files found."""
-    local_dir = f"~/curations/work/{tol_id}"
-    if print_only:
-        files = [str(run_dir / f"{tol_id}.fa.idx"), str(run_dir / f"{tol_id}_FastGA.paf")]
-    else:
-        files = sorted(glob.glob(str(run_dir / "*.idx")) + glob.glob(str(run_dir / "*FastGA.paf")))
-    if not files:
-        return None
-    cmds = " && \\\n".join(f"scp {farm_host}:{f} {local_dir}" for f in files)
-    return f"Download FastGA results:\n[bold cyan]{cmds}[/bold cyan]"
+# Downloadable outputs, picked up by the bsub -Ep epilogue (grit _state-update)
+# and surfaced as an scp tip in `grit status` — see build_scp_tip().
+_OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
+    ("idx", "*.idx", []),
+    ("paf", "*FastGA.paf", []),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -64,14 +56,12 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
                    {ref_reheader} {hap1_fa} {run_prefix} {outdir}
 
         4. Print command and submit via subprocess.
-        5. If a ``fastga/`` output directory already exists: print scp commands
-           for the index and PAF files::
 
-               scp {ctx.farm_host}:{fastga_outdir}/*.f*a.idx ~/curations/.../
-               scp {ctx.farm_host}:{fastga_outdir}/*FastGA.paf ~/curations/.../
+    Downloadable outputs (idx/paf) are surfaced later as an scp tip in
+    ``grit status``, once the job's bsub epilogue records them.
 
     Prints:
-        Step header, bsub command, scp commands (if output exists).
+        Step header, bsub command.
     """
     log.info("fastga | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run FastGA")
@@ -123,11 +113,6 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
         if ctx.tracker and run_dir:
             ctx.tracker.finish("fastga", run_dir, "failed")
         raise
-
-    # --- tip: scp commands if output already exists ---
-    tip = _fastga_scp_tip(ctx.farm_host, run_dir, ctx.tol_id, ctx.print_only)
-    if tip:
-        print_tip(tip)
 
     print_done("FastGA submitted.")
 

@@ -5,6 +5,7 @@
 #     "pandas",
 #     "seaborn",
 #     "python-circos",
+#     "requests>=2.28",
 # ]
 # ///
 """Circos-style synteny plot from a FastGA PAF alignment."""

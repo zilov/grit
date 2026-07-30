@@ -30,6 +30,12 @@ _REPO_ROOT = Path(__file__).parent.parent.parent.parent
 # Path to the bundled busco-synteny script (relative to repo root)
 _BUSCO_SYNTENY_SCRIPT = _REPO_ROOT / "scripts" / "busco-synteny.sh"
 
+# Downloadable outputs, picked up by the bsub -Ep epilogue (grit _state-update)
+# and surfaced as an scp tip in `grit status` — see build_scp_tip().
+_OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
+    ("png", "*.png", []),
+]
+
 
 # ---------------------------------------------------------------------------
 # Public step functions

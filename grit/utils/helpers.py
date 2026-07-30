@@ -181,6 +181,30 @@ def build_bsub_opts(
     return " ".join(parts)
 
 
+def build_scp_tip(farm_host: str, tol_id: str, files: list[str], label: str) -> str | None:
+    """
+    Build a print_tip string with scp commands to download *files* to the
+    curator's local machine, or None if *files* is empty.
+
+    Args:
+        farm_host: Farm host to scp from (e.g. ``ctx.farm_host``).
+        tol_id:    ToL ID, used to build the local destination directory
+                   (``~/curations/work/{tol_id}``).
+        files:     Absolute remote file paths to download.
+        label:     Short description of what's being downloaded, e.g.
+                   ``"FastGA results"`` or ``"busco-synteny plot"``.
+
+    Returns:
+        A ``"Download {label}:\\n[bold cyan]scp ...[/bold cyan]"`` string, or
+        None if *files* is empty (nothing to print a tip for).
+    """
+    if not files:
+        return None
+    local_dir = f"~/curations/work/{tol_id}"
+    cmds = " && \\\n".join(f"scp {farm_host}:{f} {local_dir}" for f in files)
+    return f"Download {label}:\n[bold cyan]{cmds}[/bold cyan]"
+
+
 def agp_newer_than_curated_fa(workdir: Path, tol_id: str, pta_dir: Path | None) -> bool:
     """Return True if the AGP in workdir is newer than the curated FASTA in pta_dir."""
     curated_fas = list(pta_dir.glob(f"{tol_id}*.curated.fa")) if pta_dir else []
@@ -557,6 +581,9 @@ def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
         "rename_and_orient_hap2": ("grit.steps.optional.rename_and_orient", "_OUTPUT_SPECS_HAP2"),
         "hic_remapping": ("grit.steps.post_curation.hic_remapping", "_OUTPUT_SPECS"),
         "hic_remapping_hap2": ("grit.steps.post_curation.hic_remapping", "_OUTPUT_SPECS_HAP2"),
+        "fastga": ("grit.steps.optional.fastga", "_OUTPUT_SPECS"),
+        "busco_synteny": ("grit.steps.optional.busco_synteny", "_OUTPUT_SPECS"),
+        "fastga_synteny": ("grit.steps.optional.fastga_synteny", "_OUTPUT_SPECS"),
     }
     if step not in _MAP:
         return []

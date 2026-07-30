@@ -32,6 +32,12 @@ _FASTGA_SYNTENY_SCRIPT = _REPO_ROOT / "scripts" / "fastga_synteny_format_and_plo
 
 DEFAULT_MIN_ALIGN_LEN = 10_000
 
+# Downloadable outputs, picked up by the bsub -Ep epilogue (grit _state-update)
+# and surfaced as an scp tip in `grit status` — see build_scp_tip().
+_OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
+    ("png", "*.png", []),
+]
+
 
 # ---------------------------------------------------------------------------
 # Public step functions

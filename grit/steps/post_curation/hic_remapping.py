@@ -19,9 +19,11 @@ log = logging.getLogger(__name__)
 
 _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("hap1_pretext", "pretext_maps_processed/{tol_id}*hr.pretext", []),
+    ("hap1_normal_pretext", "pretext_maps_processed/{tol_id}*normal.pretext", []),
 ]
 _OUTPUT_SPECS_HAP2: list[tuple[str, str, list[str]]] = [
     ("hap2_pretext", "pretext_maps_processed/{tol_id}*hr.pretext", []),
+    ("hap2_normal_pretext", "pretext_maps_processed/{tol_id}*normal.pretext", []),
 ]
 
 # ---------------------------------------------------------------------------
