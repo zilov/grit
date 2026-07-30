@@ -112,12 +112,13 @@ from grit.steps.optional.blast_contaminants import blast_contaminants_cmd  # noq
 from grit.steps.optional.busco_curated import busco_curated_cmd  # noqa: E402
 from grit.steps.optional.busco_synteny import busco_synteny_cmd  # noqa: E402
 from grit.steps.optional.fastga import fastga_cmd  # noqa: E402
+from grit.steps.optional.fastga_synteny import fastga_synteny_cmd  # noqa: E402
 from grit.steps.optional.rename_and_orient import rename_and_orient_cmd  # noqa: E402
 from grit.steps.post_curation.finalize_qc import finalize_qc_cmd  # noqa: E402
 from grit.steps.post_curation.haplotig_files import haplotig_files_cmd  # noqa: E402
-from grit.steps.post_curation.post_processing import post_processing_cmd, pp_cmd  # noqa: E402
 from grit.steps.post_curation.hic_remapping import hic_remapping_cmd  # noqa: E402
 from grit.steps.post_curation.post_curation import post_curation_cmd  # noqa: E402
+from grit.steps.post_curation.post_processing import post_processing_cmd, pp_cmd  # noqa: E402
 from grit.steps.post_curation.pretext_to_asm import pretext_to_asm_cmd  # noqa: E402
 from grit.steps.post_curation.qv import qv_cmd  # noqa: E402
 from grit.steps.post_curation.validate_files import validate_files_cmd  # noqa: E402
@@ -205,6 +206,7 @@ cli.add_command(blast_contaminants_cmd)
 cli.add_command(busco_curated_cmd)
 cli.add_command(busco_synteny_cmd)
 cli.add_command(fastga_cmd)
+cli.add_command(fastga_synteny_cmd)
 cli.add_command(rename_and_orient_cmd)
 
 

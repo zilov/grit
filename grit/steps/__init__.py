@@ -3,6 +3,7 @@ from grit.steps.optional.blast_contaminants import run_blast_contaminants as run
 from grit.steps.optional.busco_curated import run_busco_curated as run_busco_curated
 from grit.steps.optional.busco_synteny import run_busco_synteny as run_busco_synteny
 from grit.steps.optional.fastga import run_fastga as run_fastga
+from grit.steps.optional.fastga_synteny import run_fastga_synteny as run_fastga_synteny
 from grit.steps.optional.rename_and_orient import run_rename_and_orient as run_rename_and_orient
 from grit.steps.post_curation.finalize_qc import finalize_for_qc as finalize_for_qc
 from grit.steps.post_curation.haplotig_files import run_haplotig_files as run_haplotig_files
