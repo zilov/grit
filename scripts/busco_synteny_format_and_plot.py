@@ -14,6 +14,7 @@ import random
 import re
 import shutil
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 import pycircos
@@ -197,8 +198,11 @@ for i, row in c.iterrows():
     circle.add_garc(arc)
 
 
+ref_name = Path(args.ref).stem
+query_name = Path(args.query).stem
+
 circle.set_garcs()
-circle.ax.set_title(f'{args.ref}_vs_{args.query}', pad = 40)
+circle.ax.set_title(f'{ref_name}_vs_{query_name}', pad = 40)
 
 for i, row in l.iterrows():
     source = (row['chr1'], row['start1'], row['end1'], 920)
@@ -210,7 +214,7 @@ for i, row in l.iterrows():
     )
 
 
-circle.figure.savefig(f"{base_path}/{args.ref}_vs_{args.query}.{current_time}.png", dpi=300, bbox_inches='tight' , pad_inches=0.4)
+circle.figure.savefig(f"{base_path}/{ref_name}_vs_{query_name}.{current_time}.png", dpi=300, bbox_inches='tight' , pad_inches=0.4)
 
 
 ####### TIDY DIRECTORY  #########
