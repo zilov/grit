@@ -22,11 +22,15 @@ from grit.utils.output import (
 
 log = logging.getLogger(__name__)
 
+_REPO_ROOT = Path(__file__).parent.parent.parent.parent
+_PAF_TOP_TARGETS_SCRIPT = _REPO_ROOT / "scripts" / "paf_top_targets_add_top_longest.py"
+
 # Downloadable outputs, picked up by the bsub -Ep epilogue (grit _state-update)
 # and surfaced as an scp tip in `grit status` — see build_scp_tip().
 _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("idx", "*.idx", []),
     ("paf", "*FastGA.paf", []),
+    ("top_targets_summary", "*.top_targets_summary.txt", []),
 ]
 
 
@@ -55,10 +59,14 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
                    /software/grit/projects/vgp_curation_scripts/FastGA_dot_dgenies.sh \
                    {ref_reheader} {hap1_fa} {run_prefix} {outdir}
 
-        4. Print command and submit via subprocess.
+        4. Once the PAF is written, run ``paf_top_targets_add_top_longest.py``
+           over it (all query contigs, ``--top_longest``) and redirect its
+           report to ``{run_prefix}.top_targets_summary.txt`` in ``run_dir``.
+        5. Print command and submit via subprocess.
 
-    Downloadable outputs (idx/paf) are surfaced later as an scp tip in
-    ``grit status``, once the job's bsub epilogue records them.
+    Downloadable outputs (idx/paf) and the top-targets summary are surfaced
+    later — as an scp tip / a ``less`` tip respectively — in ``grit status``,
+    once the job's bsub epilogue records them.
 
     Prints:
         Step header, bsub command.
@@ -91,10 +99,13 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     # Each run gets its own tracker run_dir so multiple fastga runs don't overwrite each other
     run_dir = ctx.tracker.start("fastga", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else ctx.workdir / "fastga" / "untracked"
     fastga_script = "/software/grit/projects/vgp_curation_scripts/FastGA_dot_dgenies.sh"
+    summary_file = run_dir / f"{run_prefix}.top_targets_summary.txt"
     inner_cmd = (
         f"cd {run_dir} && "
         f"{module_cmd('GRIT')} && "
-        f"{fastga_script} {ref_reheader} {hap1_fa} {run_prefix} {run_dir}"
+        f"{fastga_script} {ref_reheader} {hap1_fa} {run_prefix} {run_dir} && "
+        f"paf_file=$(ls {run_dir}/*FastGA.paf | head -n 1) && "
+        f'python3 {_PAF_TOP_TARGETS_SCRIPT} "$paf_file" --top_longest > {summary_file}'
     )
     bsub_opts = build_bsub_opts(
         group="team135",

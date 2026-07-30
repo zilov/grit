@@ -223,6 +223,27 @@ def _print_scp_tips(step_latest: dict[str, dict], farm_host: str, tol_id: str) -
             print_tip(tip)
 
 
+# Steps whose recorded `outputs` hold a specific text file worth reading
+# directly on the farm (via `less`) rather than downloading.
+_LESS_TIP_STEPS = [
+    ("fastga", "top_targets_summary", "top alignment targets"),
+]
+
+
+def _print_less_tips(step_latest: dict[str, dict]) -> None:
+    """Print a `less`-on-the-farm tip for each successful step in `_LESS_TIP_STEPS`."""
+    from grit.utils.helpers import build_less_tip
+
+    for step, output_key, label in _LESS_TIP_STEPS:
+        entry = step_latest.get(step)
+        if not entry or entry.get("status") != "success":
+            continue
+        file = (entry.get("outputs") or {}).get(output_key)
+        tip = build_less_tip(file, label)
+        if tip:
+            print_tip(tip)
+
+
 def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     """Print per-step run history and curation results for a single ticket."""
     from grit.core.run_tracker import RunTracker
@@ -364,6 +385,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     farm_host = user_config.get("farm_host", "<farm_host>")
 
     _print_scp_tips(step_latest, farm_host, tol_id)
+    _print_less_tips(step_latest)
 
     print_tip(
         f"To copy AGP from your local machine:\n"
