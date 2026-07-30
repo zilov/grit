@@ -1,6 +1,7 @@
 """Tests for find_reference step."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+from pathlib import Path
 
 import pytest
 
@@ -70,3 +71,28 @@ def test_download_path_unaffected_when_no_local_path(mock_run, mock_reheader_dow
     cmd = mock_run.call_args[0][0]
     assert "get_nearest_comparator.rb" in cmd
     mock_reheader_downloaded.assert_called_once()
+
+
+@patch("grit.steps.pre_curation.find_reference._run")
+def test_local_missing_file_with_tracker_marks_failed(mock_run, mock_ctx, tmp_path):
+    """Regression test: tracker should mark run as 'failed' when --local file doesn't exist."""
+    mock_ctx.workdir = tmp_path / "workdir"
+    mock_ctx.print_only = False
+
+    # Set up a mock tracker
+    mock_tracker = MagicMock()
+    mock_run_dir = tmp_path / "find_reference" / "run"
+    mock_tracker.start.return_value = mock_run_dir
+    mock_ctx.tracker = mock_tracker
+
+    with pytest.raises(FileNotFoundError):
+        find_closest_reference(mock_ctx, local_path=str(tmp_path / "does_not_exist.fa"))
+
+    # Verify tracker.start was called
+    mock_tracker.start.assert_called_once()
+
+    # Verify tracker.finish was called with "failed" status
+    mock_tracker.finish.assert_called_once_with("find_reference", mock_run_dir, "failed")
+
+    # Verify _run was not called (file check failed before attempting ln -s)
+    mock_run.assert_not_called()

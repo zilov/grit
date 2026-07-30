@@ -119,11 +119,11 @@ def find_closest_reference(
                 number,
             )
         local = Path(local_path).expanduser()
-        if not ctx.print_only and not local.exists():
-            raise FileNotFoundError(f"Local reference not found: {local}")
         log.info("Using local reference: %s", local)
 
         try:
+            if not ctx.print_only and not local.exists():
+                raise FileNotFoundError(f"Local reference not found: {local}")
             link_path = run_dir / local.name
             _run(f"mkdir -p {run_dir} && ln -s {local.resolve()} {link_path}", ctx.print_only)
             reheader_reference(ctx, link_path, remove_raw=True)
