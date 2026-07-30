@@ -65,6 +65,20 @@ External config: `~/.grit_curation_config.yaml` (not committed). In tests / CI u
 - **Assembly type detection** — `_detect_assembly_type(yaml_data)` maps YAML keys to `(assembly_type, hap1_prefix, hap2_prefix)`: `hap1/hap2`, `primary/alternate`
 - **`GritJiraIssue`** is a shared server library injected via `sys.path` (path in user config), not a pip dependency
 
+## Planning / design docs
+
+Design docs and implementation plans for non-trivial changes live in
+`TODO/<number>_<slug>.md` (next number = highest existing + 1), with
+`## Problem` / `## Design` sections — see `TODO/38_busco_shared_step.md` for
+the reference format. Small one-off fixes go in `TODO/tiny.md` instead of
+getting their own file. Move a file to `TODO/done/` once implemented. Do not
+use `docs/superpowers/specs/`.
+
+When a finished task changes the architecture (new pattern, new shared
+helper, a convention this file documents becoming outdated), update this
+CLAUDE.md as part of that same task, not later — it has drifted out of date
+before from changes that weren't reflected back here.
+
 ## Dev
 
 ```bash
