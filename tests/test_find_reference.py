@@ -7,28 +7,53 @@ import pytest
 from grit.steps.pre_curation.find_reference import find_closest_reference
 
 
-@patch("grit.steps.pre_curation.find_reference.reheader_reference")
 @patch("grit.steps.pre_curation.find_reference._run")
-def test_local_symlinks_and_reheaders(mock_run, mock_reheader, mock_ctx, tmp_path):
+def test_local_plain_fasta_reheadered_straight_into_run_dir(mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path / "workdir"
     mock_ctx.print_only = False
 
-    local_ref = tmp_path / "my_reference.fa"
+    local_ref = tmp_path / "somewhere_else" / "my_reference.fa"
+    local_ref.parent.mkdir(parents=True)
     local_ref.write_text(">chr1\nACGT\n")
 
     find_closest_reference(mock_ctx, local_path=str(local_ref))
 
     mock_run.assert_called_once()
     cmd = mock_run.call_args[0][0]
-    assert "ln -s" in cmd
-    assert str(local_ref) in cmd
+    assert "ln -s" not in cmd
+    assert "cp " not in cmd
+    assert "gunzip" not in cmd
+    assert f"reheader {local_ref}" in cmd
+    run_dir = mock_ctx.workdir / "find_reference" / "untracked"
+    assert str(run_dir / "my_reference_reheader.fna") in cmd
+    # original file untouched
+    assert local_ref.exists()
+
+
+@patch("grit.steps.pre_curation.find_reference._run")
+def test_local_gzipped_fasta_decompressed_into_run_dir(mock_run, mock_ctx, tmp_path):
+    mock_ctx.workdir = tmp_path / "workdir"
+    mock_ctx.print_only = False
+
+    local_ref = tmp_path / "somewhere_else" / "my_reference.fa.gz"
+    local_ref.parent.mkdir(parents=True)
+    local_ref.write_bytes(b"fake-gz-content")
+
+    find_closest_reference(mock_ctx, local_path=str(local_ref))
+
+    mock_run.assert_called_once()
+    cmd = mock_run.call_args[0][0]
+    assert "ln -s" not in cmd
     assert "cp " not in cmd
 
-    mock_reheader.assert_called_once()
-    reheader_args, reheader_kwargs = mock_reheader.call_args
-    assert reheader_kwargs.get("remove_raw") is True
-    link_path = reheader_args[1]
-    assert link_path.name == "my_reference.fa"
+    run_dir = mock_ctx.workdir / "find_reference" / "untracked"
+    decompressed = run_dir / "my_reference.fa"
+    ref_reheader = run_dir / "my_reference_reheader.fna"
+    assert f"gunzip -c {local_ref} > {decompressed}" in cmd
+    assert f"reheader {decompressed} > {ref_reheader}" in cmd
+    assert f"rm {decompressed}" in cmd
+    # original file untouched
+    assert local_ref.exists()
 
 
 @patch("grit.steps.pre_curation.find_reference._run")
@@ -42,9 +67,8 @@ def test_local_missing_file_raises(mock_run, mock_ctx, tmp_path):
     mock_run.assert_not_called()
 
 
-@patch("grit.steps.pre_curation.find_reference.reheader_reference")
 @patch("grit.steps.pre_curation.find_reference._run")
-def test_local_ignores_number_with_warning(mock_run, mock_reheader, mock_ctx, tmp_path, caplog):
+def test_local_ignores_number_with_warning(mock_run, mock_ctx, tmp_path, caplog):
     mock_ctx.workdir = tmp_path / "workdir"
     mock_ctx.print_only = False
 
@@ -55,7 +79,7 @@ def test_local_ignores_number_with_warning(mock_run, mock_reheader, mock_ctx, tm
         find_closest_reference(mock_ctx, number=3, local_path=str(local_ref))
 
     assert "--number" in caplog.text
-    mock_run.assert_called_once()  # only the ln -s call, no download loop
+    mock_run.assert_called_once()  # only the local prep call, no download loop
 
 
 @patch("grit.steps.pre_curation.find_reference._reheader_downloaded_references")
@@ -74,13 +98,12 @@ def test_download_path_unaffected_when_no_local_path(
     mock_reheader_downloaded.assert_called_once()
 
 
-@patch("grit.steps.pre_curation.find_reference.reheader_reference")
 @patch("grit.steps.pre_curation.find_reference._run")
-def test_local_already_in_run_dir_skips_symlink(mock_run, mock_reheader, mock_ctx, tmp_path):
+def test_local_already_inside_run_dir_still_works(mock_run, mock_ctx, tmp_path):
     """
-    Regression test: if --local already points at a file inside the step's
-    own run_dir, `ln -s <path> <same path>` would create a self-referential
-    symlink and blow up gunzip with "Too many levels of symbolic links".
+    A local reference that already happens to live inside the step's own
+    run_dir must still be prepped correctly (no self-referential symlink
+    trap now that prep never symlinks/copies the source at all).
     """
     mock_ctx.workdir = tmp_path / "workdir"
     mock_ctx.print_only = False
@@ -92,12 +115,12 @@ def test_local_already_in_run_dir_skips_symlink(mock_run, mock_reheader, mock_ct
 
     find_closest_reference(mock_ctx, local_path=str(local_ref))
 
-    mock_run.assert_not_called()  # no ln -s — file is already in place
-    mock_reheader.assert_called_once()
-    reheader_args, reheader_kwargs = mock_reheader.call_args
-    assert reheader_kwargs.get("remove_raw") is True
-    prep_target = reheader_args[1]
-    assert prep_target == local_ref
+    mock_run.assert_called_once()
+    cmd = mock_run.call_args[0][0]
+    assert "ln -s" not in cmd
+    assert f"reheader {local_ref}" in cmd
+    assert str(run_dir / "already_here_reheader.fna") in cmd
+    assert local_ref.exists()  # original untouched
 
 
 @patch("grit.steps.pre_curation.find_reference._run")
@@ -121,5 +144,5 @@ def test_local_missing_file_with_tracker_marks_failed(mock_run, mock_ctx, tmp_pa
     # Verify tracker.finish was called with "failed" status
     mock_tracker.finish.assert_called_once_with("find_reference", mock_run_dir, "failed")
 
-    # Verify _run was not called (file check failed before attempting ln -s)
+    # Verify _run was not called (file check failed before attempting any prep)
     mock_run.assert_not_called()

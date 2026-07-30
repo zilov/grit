@@ -58,6 +58,40 @@ def reheader_reference(ctx: CurationContext, raw: Path, *, remove_raw: bool = Fa
     return ref_reheader
 
 
+def _prep_local_reference(ctx: CurationContext, local: Path, run_dir: Path) -> Path:
+    """
+    Prep a user-supplied local reference FASTA into ``run_dir`` without ever
+    touching the original file — no symlink, no in-place mutation.
+
+    Plain FASTA: ``reheader`` reads directly from ``local`` and writes
+    straight to ``run_dir``.
+    Gzipped FASTA: decompressed via ``gunzip -c`` (stream to stdout, source
+    untouched) into a temporary copy inside ``run_dir``, reheadered from
+    there, then the temporary decompressed copy is removed — only
+    ``{prefix}_reheader.fna`` remains in ``run_dir``.
+
+    Skips the work if ``{prefix}_reheader.fna`` already exists.
+    """
+    ref_prefix = local.stem.split(".")[0].removesuffix("_reheader")
+    ref_reheader = run_dir / f"{ref_prefix}_reheader.fna"
+    if ref_reheader.exists():
+        log.info("Reheadered reference already exists — skipping prep: %s", ref_reheader)
+        return ref_reheader
+
+    if local.suffix == ".gz":
+        decompressed = run_dir / local.with_suffix("").name
+        cmd = (
+            f"mkdir -p {run_dir} && "
+            f"gunzip -c {local} > {decompressed} && "
+            f"reheader {decompressed} > {ref_reheader} && "
+            f"rm {decompressed}"
+        )
+    else:
+        cmd = f"mkdir -p {run_dir} && reheader {local} > {ref_reheader}"
+    _run(f"{module_cmd('GRIT')} && {cmd}", ctx.print_only)
+    return ref_reheader
+
+
 def _reheader_downloaded_references(ctx: CurationContext, run_dir: Path) -> None:
     """
     Reheader every reference FASTA get_nearest_comparator.rb just downloaded into
@@ -98,9 +132,9 @@ def find_closest_reference(
         /software/grit/projects/vgp_curation_scripts/get_nearest_comparator.rb \\
             -s "{ctx.species}" -d -n {number}
 
-    Local path: symlinks ``local_path`` into the run_dir and reheaders it via
-    ``reheader_reference(..., remove_raw=True)`` — the symlink is removed
-    afterwards, the original file is never touched.
+    Local path: preps ``local_path`` straight into the run_dir via
+    ``_prep_local_reference()`` — gunzipped (if needed) and reheadered there
+    without ever symlinking, copying, or mutating the original file.
 
     Prints:
         Step header, command executed, path to reference directory.
@@ -128,19 +162,7 @@ def find_closest_reference(
         try:
             if not ctx.print_only and not local.exists():
                 raise FileNotFoundError(f"Local reference not found: {local}")
-            link_path = run_dir / local.name
-            if local.resolve() == link_path.resolve():
-                # Local reference already lives in run_dir (e.g. staged there
-                # ahead of time) — prep it in place, no symlink needed.
-                # Symlinking a path onto itself would create a self-loop and
-                # blow up gunzip with "Too many levels of symbolic links".
-                prep_target = local
-            else:
-                _run(
-                    f"mkdir -p {run_dir} && ln -s {local.resolve()} {link_path}", ctx.print_only
-                )
-                prep_target = link_path
-            reheader_reference(ctx, prep_target, remove_raw=True)
+            _prep_local_reference(ctx, local, run_dir)
             if ctx.tracker and run_dir:
                 ctx.tracker.finish("find_reference", run_dir, "success")
         except Exception:
