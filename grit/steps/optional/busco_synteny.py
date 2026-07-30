@@ -1,6 +1,5 @@
 """Run BUSCO synteny analysis."""
 
-import glob
 import logging
 from pathlib import Path
 
@@ -12,7 +11,7 @@ from grit.utils.helpers import (
     _state_update_epilogue,
     _submit_bsub,
     build_bsub_opts,
-    find_latest_dir,
+    find_canonical_fa,
     find_reheadered_reference,
 )
 from grit.utils.output import (
@@ -73,16 +72,7 @@ def run_busco_synteny(
         log.info("Reference FASTA: %s", ref_reheader)
 
     # --- find query fasta (curated hap1) ---
-    # haplotig-files writes *.curated.fa into the pretext_to_asm run dir, not workdir root
-    if ctx.print_only:
-        query_fa = ctx.workdir / f"{ctx.tol_id}.{ctx.hap1_prefix}.primary.curated.fa"
-    else:
-        base_dir = find_latest_dir(ctx, "pretext_to_asm")
-        query_pattern = str(base_dir / f"{ctx.tol_id}*{ctx.hap1_prefix}*.curated.fa")
-        query_matches = glob.glob(query_pattern)
-        if not query_matches:
-            raise FileNotFoundError(f"No curated hap1 FASTA found: {query_pattern}")
-        query_fa = Path(sorted(query_matches)[-1])
+    query_fa = find_canonical_fa(ctx, ctx.hap1_prefix)
     log.info("Query FASTA: %s", query_fa)
 
     # --- submit BUSCO synteny job ---
