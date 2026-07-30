@@ -42,6 +42,18 @@ STEP_MANIFESTS: dict[str, dict] = {
         "dir": "run_dir",
         "files": ["pretext_maps_processed/{tol_id}*hr.pretext"],
     },
+    "fastga": {
+        "dir": "run_dir",
+        "files": ["*.idx", "*FastGA.paf"],
+    },
+    "busco_synteny": {
+        "dir": "run_dir",
+        "files": ["*.png"],
+    },
+    "fastga_synteny": {
+        "dir": "run_dir",
+        "files": ["*.png"],
+    },
     "qv": {
         "dir": "run_dir",
         "files": [],  # output goes to assembly_curated_dir; just track exit code

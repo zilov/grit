@@ -11,7 +11,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, find_canonical_fa, find_latest_dir
+from grit.utils.helpers import _run, find_canonical_fa
 from grit.utils.modules import module_cmd
 from grit.utils.output import console, print_done, print_step_header, print_tip
 
@@ -45,7 +45,8 @@ def _submit_hic_remapping(
         prev_dir = ctx.tracker.latest_run_dir(step_name)
         hr_pretexts = (
             list(prev_dir.glob(f"pretext_maps_processed/{ctx.tol_id}*hr.pretext"))
-            if prev_dir else []
+            if prev_dir
+            else []
         )
         if hr_pretexts:
             pretext_mtime = min(f.stat().st_mtime for f in hr_pretexts)
@@ -68,12 +69,24 @@ def _submit_hic_remapping(
                 log.info("HiC remapping already done — skipping: %s", prev_dir)
                 last = ctx.tracker.history(step_name)
                 if last and last[-1].get("status") == "started":
-                    ctx.tracker.finish(step_name, prev_dir, "success")
+                    from grit.utils.helpers import _get_step_specs, collect_outputs
+
+                    specs = _get_step_specs(step_name)
+                    outputs = (
+                        collect_outputs(
+                            specs, prev_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
+                        )
+                        if specs
+                        else None
+                    )
+                    ctx.tracker.finish(step_name, prev_dir, "success", outputs=outputs or None)
                 print_done(f"Already done → {prev_dir}")
                 return
 
     run_dir = (
-        ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, suffix=hap_prefix, untracked=ctx.untracked)
+        ctx.tracker.start(
+            step_name, ctx.ticket_id, ctx.tol_id, suffix=hap_prefix, untracked=ctx.untracked
+        )
         if ctx.tracker
         else ctx.workdir / step_name / "untracked"
     )
@@ -112,8 +125,7 @@ def _submit_hic_remapping(
 
     remapped_pattern = str(run_dir / "pretext_maps_processed" / f"{sample}*normal.pretext")
     scp_cmd = (
-        f"scp {ctx.farm_host}:{remapped_pattern}"
-        f" ~/curations/{ctx.tol_id}/{sample}_remapped.pretext"
+        f"scp {ctx.farm_host}:{remapped_pattern} ~/curations/{ctx.tol_id}/{sample}_remapped.pretext"
     )
     console.print("\n[bold]After remapping, copy the map to your local machine:[/bold]")
     console.print(f"  [green]{scp_cmd}[/green]")
@@ -173,16 +185,37 @@ def run_hic_remapping(
 
 
 @click.command("hic-remapping", cls=GritCommand)
-@click.option("--hap2", "run_hap2", is_flag=True, default=False,
-              help="Also submit HiC remapping for hap2.")
-@click.option("--hic-dir", "hic_dir", type=click.Path(), default=None,
-              help="Override HiC reads directory from ticket YAML.")
-@click.option("--hifi-dir", "hifi_dir", type=click.Path(), default=None,
-              help="Override HiFi reads directory from ticket YAML.")
-@click.option("--ont-dir", "ont_dir", type=click.Path(), default=None,
-              help="Override ONT reads directory from ticket YAML (sets --read_type ont).")
-@click.option("--assembly", "assembly", type=click.Path(), default=None,
-              help="Use this FASTA instead of the canonical assembly resolved from workdir.")
+@click.option(
+    "--hap2", "run_hap2", is_flag=True, default=False, help="Also submit HiC remapping for hap2."
+)
+@click.option(
+    "--hic-dir",
+    "hic_dir",
+    type=click.Path(),
+    default=None,
+    help="Override HiC reads directory from ticket YAML.",
+)
+@click.option(
+    "--hifi-dir",
+    "hifi_dir",
+    type=click.Path(),
+    default=None,
+    help="Override HiFi reads directory from ticket YAML.",
+)
+@click.option(
+    "--ont-dir",
+    "ont_dir",
+    type=click.Path(),
+    default=None,
+    help="Override ONT reads directory from ticket YAML (sets --read_type ont).",
+)
+@click.option(
+    "--assembly",
+    "assembly",
+    type=click.Path(),
+    default=None,
+    help="Use this FASTA instead of the canonical assembly resolved from workdir.",
+)
 @click.pass_context
 def hic_remapping_cmd(ctx, run_hap2, hic_dir, hifi_dir, ont_dir, assembly):
     """Submit HiC remapping pipeline."""
