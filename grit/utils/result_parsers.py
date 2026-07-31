@@ -51,8 +51,9 @@ def parse_chromosome_list(path: Path) -> tuple[int, list[str]]:
         parts = line.split(",")
         if len(parts) < 2:
             continue
+        scaffold_name = parts[0].strip()
         chrom_id = parts[1].strip()
-        if "unloc" in chrom_id.lower():
+        if "unloc" in scaffold_name.lower():
             continue
         if re.search(r'[XYZW]', chrom_id, re.IGNORECASE):
             sex_ids.append(chrom_id.strip())
@@ -70,6 +71,11 @@ def _build_allosome_string(sex_ids: list[str]) -> str:
     Single sex chrom found → append "O" (e.g. "Z" → "ZO").
     Multiple → sort Z/X before W/Y, then join (e.g. ["W", "Z"] → "ZW").
     """
+    seen: dict[str, str] = {}
+    for s in sex_ids:
+        seen.setdefault(s.upper(), s)
+    sex_ids = list(seen.values())
+
     if not sex_ids:
         return ""
     if len(sex_ids) == 1:
