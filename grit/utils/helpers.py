@@ -411,7 +411,9 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     Priority:
       1. Tracker outputs — rename_and_orient → rename_and_orient_hap2 → pretext_to_asm
       2. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.chromosome.list.csv
-      3. ``pretext_to_asm`` output
+      3. ``pretext_to_asm`` output — {tol_id}.{hap_prefix}.*.chromosome.list.csv
+      4. ``pretext_to_asm`` no-hap-prefix format (single hap / merged) —
+         {tol_id}.{version}.primary.chromosome.list.csv
 
     Dot-delimited token matching avoids "primary" prefix colliding with the
     ".primary." suffix that appears in all chromosome list filenames.
@@ -447,6 +449,12 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     matches = _search_dir(pta_dir, hap_prefix)
     if not matches and hap_prefix in _PTA_ALIASES:
         matches = _search_dir(pta_dir, _PTA_ALIASES[hap_prefix])
+    # No-hap-prefix format: {tol_id}.{version}.primary.chromosome.list.csv (single hap / merged)
+    if not matches:
+        matches = [
+            f for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.*.primary.chromosome.list.csv"))
+            if "hap1" not in Path(f).name and "hap2" not in Path(f).name
+        ]
     if not matches:
         raise FileNotFoundError(
             f"No chromosome list for {hap_prefix!r} found in rename_and_orient or {pta_dir}."
