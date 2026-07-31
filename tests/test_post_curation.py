@@ -735,7 +735,7 @@ def test_finalize_for_qc_primary_alternate_assembly_single_hap_output(
     mock_find_fa.return_value = hap1_fa
     mock_find_csv.return_value = chr_list
     mock_find_haplotigs.return_value = haplotig
-    mock_glob.side_effect = [[], []]  # nfs, no remapped pretext
+    mock_glob.side_effect = [[], [], []]  # yaml/pta mismatch check (hap1), nfs, no remapped pretext
     mock_run.return_value = ""
 
     finalize_for_qc(mock_ctx)
@@ -753,3 +753,43 @@ def test_finalize_for_qc_primary_alternate_assembly_single_hap_output(
     assert mock_find_fa.call_count == 1
     assert mock_find_haplotigs.call_count == 1
     assert mock_find_csv.call_count == 1
+
+
+@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_warns_on_yaml_pta_mismatch(
+    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_bsub,
+    mock_ctx, tmp_path, caplog,
+):
+    """yaml declares primary/alternate but pretext-to-asm output has hap1+hap2 files."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "ilScoBasi3"
+    mock_ctx.release_version = 1
+    mock_ctx.hap1_prefix = "primary"
+    mock_ctx.hap2_prefix = "alternate"
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "ilScoBasi3.1"
+    mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+
+    hap1_fa = tmp_path / "ilScoBasi3.hap1.1.primary.curated.fa"
+    chr_list = tmp_path / "ilScoBasi3.hap1.1.primary.chromosome.list.csv"
+    haplotig = tmp_path / "ilScoBasi3.1.haplotigs.fa"
+
+    mock_find_fa.return_value = hap1_fa
+    mock_find_csv.return_value = chr_list
+    mock_find_haplotigs.return_value = haplotig
+    mock_glob.side_effect = [
+        [str(hap1_fa)],  # yaml/pta mismatch check: hap1 curated fa present
+        ["ilScoBasi3.hap2.1.primary.curated.fa"],  # yaml/pta mismatch check: hap2 too
+        [],  # nfs
+        [],  # no remapped pretext
+    ]
+    mock_run.return_value = ""
+
+    with caplog.at_level("WARNING"):
+        finalize_for_qc(mock_ctx)
+
+    assert any("assembly types don't match" in r.message for r in caplog.records)
