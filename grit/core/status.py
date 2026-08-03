@@ -200,25 +200,42 @@ def _auto_step_outputs(
 # Steps whose recorded `outputs` (populated by the bsub -Ep epilogue, or by the
 # bjobs-polling fallback in show_ticket_history for steps that don't use one)
 # are worth offering to scp to the curator's local machine.
+#
+# `key_filter` restricts which output keys are offered — hic_remapping's
+# specs include both the hr.pretext (curation input, stays on the farm) and
+# normal.pretext (the one to download and view), so only the latter should
+# be offered here.
 _SCP_TIP_STEPS = [
-    ("fastga", "FastGA results"),
-    ("busco_synteny", "busco-synteny plot"),
-    ("fastga_synteny", "fastga-synteny plot"),
-    ("hic_remapping", "remapped pretext map"),
-    ("hic_remapping_hap2", "remapped hap2 pretext map"),
+    ("fastga", "FastGA results", None),
+    ("busco_synteny", "busco-synteny plot", None),
+    ("fastga_synteny", "fastga-synteny plot", None),
+    ("hic_remapping", "remapped pretext map", ["hap1_normal_pretext"]),
+    ("hic_remapping_hap2", "remapped hap2 pretext map", ["hap2_normal_pretext"]),
 ]
+
+# Steps whose downloaded file should be renamed on copy rather than keeping
+# its remote basename (e.g. "<tol_id>.hap1_normal.pretext" -> "<tol_id>.hap1_remapped.pretext").
+_SCP_TIP_RENAME_STEPS = {"hic_remapping", "hic_remapping_hap2"}
 
 
 def _print_scp_tips(step_latest: dict[str, dict], farm_host: str, tol_id: str) -> None:
     """Print an scp-download tip for each successful step in `_SCP_TIP_STEPS`."""
     from grit.utils.helpers import build_scp_tip
 
-    for step, label in _SCP_TIP_STEPS:
+    for step, label, key_filter in _SCP_TIP_STEPS:
         entry = step_latest.get(step)
         if not entry or entry.get("status") != "success":
             continue
-        files = sorted((entry.get("outputs") or {}).values())
-        tip = build_scp_tip(farm_host, tol_id, files, label)
+        outputs = entry.get("outputs") or {}
+        if key_filter is not None:
+            outputs = {k: v for k, v in outputs.items() if k in key_filter}
+        files = sorted(outputs.values())
+        dest_names = None
+        if step in _SCP_TIP_RENAME_STEPS:
+            dest_names = [
+                Path(f).name.replace("_normal.pretext", "_remapped.pretext") for f in files
+            ]
+        tip = build_scp_tip(farm_host, tol_id, files, label, dest_names=dest_names)
         if tip:
             print_tip(tip)
 

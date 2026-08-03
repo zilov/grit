@@ -181,18 +181,29 @@ def build_bsub_opts(
     return " ".join(parts)
 
 
-def build_scp_tip(farm_host: str, tol_id: str, files: list[str], label: str) -> str | None:
+def build_scp_tip(
+    farm_host: str,
+    tol_id: str,
+    files: list[str],
+    label: str,
+    dest_names: list[str] | None = None,
+) -> str | None:
     """
     Build a print_tip string with scp commands to download *files* to the
     curator's local machine, or None if *files* is empty.
 
     Args:
-        farm_host: Farm host to scp from (e.g. ``ctx.farm_host``).
-        tol_id:    ToL ID, used to build the local destination directory
-                   (``~/curations/work/{tol_id}``).
-        files:     Absolute remote file paths to download.
-        label:     Short description of what's being downloaded, e.g.
-                   ``"FastGA results"`` or ``"busco-synteny plot"``.
+        farm_host:  Farm host to scp from (e.g. ``ctx.farm_host``).
+        tol_id:     ToL ID, used to build the local destination directory
+                    (``~/curations/work/{tol_id}``).
+        files:      Absolute remote file paths to download.
+        label:      Short description of what's being downloaded, e.g.
+                    ``"FastGA results"`` or ``"busco-synteny plot"``.
+        dest_names: Optional per-file destination filenames (same order as
+                    *files*) — copies each file into the destination
+                    directory under this name instead of its remote
+                    basename. Used to rename remapped pretext maps on
+                    download.
 
     Returns:
         A ``"Download {label}:\\n[bold cyan]scp ...[/bold cyan]"`` string, or
@@ -201,7 +212,12 @@ def build_scp_tip(farm_host: str, tol_id: str, files: list[str], label: str) -> 
     if not files:
         return None
     local_dir = f"~/curations/work/{tol_id}"
-    cmds = " && \\\n".join(f"scp {farm_host}:{f} {local_dir}" for f in files)
+    if dest_names:
+        cmds = " && \\\n".join(
+            f"scp {farm_host}:{f} {local_dir}/{d}" for f, d in zip(files, dest_names)
+        )
+    else:
+        cmds = " && \\\n".join(f"scp {farm_host}:{f} {local_dir}" for f in files)
     return f"Download {label}:\n[bold cyan]{cmds}[/bold cyan]"
 
 
