@@ -37,12 +37,11 @@ class CurationResults:
 # ---------------------------------------------------------------------------
 
 def parse_chromosome_list(path: Path) -> tuple[int, list[str]]:
-    """Return (autosome_count, [sex_chrom_ids]) from one haplotype CSV.
-
-    Unlocalized scaffolds (e.g. "Z_unloc10") are excluded from both counts.
-    sex_chrom_ids are the raw chromosome IDs (e.g. "Z", "W", "Z1", "W1").
-    """
+    """Return (autosome_count, [sex_chrom_ids]) from one haplotype CSV, deduped
+    within the file. Unlocalized scaffolds (marker on either the scaffold name
+    or the chromosome label) are excluded from both counts."""
     autosomes = 0
+    seen_sex_ids: set[str] = set()
     sex_ids = []
     for line in path.read_text().splitlines():
         line = line.strip()
@@ -53,10 +52,12 @@ def parse_chromosome_list(path: Path) -> tuple[int, list[str]]:
             continue
         scaffold_name = parts[0].strip()
         chrom_id = parts[1].strip()
-        if "unloc" in scaffold_name.lower():
+        if "unloc" in scaffold_name.lower() or "unloc" in chrom_id.lower():
             continue
         if re.search(r'[XYZW]', chrom_id, re.IGNORECASE):
-            sex_ids.append(chrom_id.strip())
+            if chrom_id not in seen_sex_ids:
+                seen_sex_ids.add(chrom_id)
+                sex_ids.append(chrom_id)
         else:
             autosomes += 1
     return autosomes, sex_ids
@@ -66,16 +67,12 @@ _SEX_SORT_ORDER = {"Z": 0, "X": 0, "W": 1, "Y": 1}
 
 
 def _build_allosome_string(sex_ids: list[str]) -> str:
-    """Build canonical allosome string from sex chrom IDs across all haplotypes.
+    """Build canonical allosome string from sex chrom IDs across all haplotypes
+    (not deduped — e.g. ["Z", "Z"] is a real ZZ pair, one per haplotype).
 
     Single sex chrom found → append "O" (e.g. "Z" → "ZO").
-    Multiple → sort Z/X before W/Y, then join (e.g. ["W", "Z"] → "ZW").
+    Multiple → sort Z/X before W/Y, then join (e.g. ["W", "Z"] → "ZW", ["Z", "Z"] → "ZZ").
     """
-    seen: dict[str, str] = {}
-    for s in sex_ids:
-        seen.setdefault(s.upper(), s)
-    sex_ids = list(seen.values())
-
     if not sex_ids:
         return ""
     if len(sex_ids) == 1:

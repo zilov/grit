@@ -2,7 +2,12 @@
 
 from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
-from grit.utils.result_parsers import collect_curation_results, parse_pta_log
+from grit.utils.result_parsers import (
+    _build_allosome_string,
+    collect_curation_results,
+    parse_chromosome_list,
+    parse_pta_log,
+)
 
 
 def test_parse_pta_log_plural(tmp_path):
@@ -28,6 +33,51 @@ def test_parse_pta_log_not_found(tmp_path):
     log = tmp_path / "pta.log"
     log.write_text("nothing relevant here\n")
     assert parse_pta_log(log) is None
+
+
+def test_build_allosome_string_zz_male_across_two_haplotypes_stays_zz():
+    """Z appearing once in hap1 and once in hap2 (ZZ male) must not collapse to 'ZO'."""
+    assert _build_allosome_string(["Z", "Z"]) == "ZZ"
+
+
+def test_build_allosome_string_single_z_is_zo():
+    assert _build_allosome_string(["Z"]) == "ZO"
+
+
+def test_build_allosome_string_zw_pair():
+    assert _build_allosome_string(["W", "Z"]) == "ZW"
+
+
+def test_parse_chromosome_list_dedupes_within_same_file(tmp_path):
+    """Duplicate sex-chrom rows within one hap CSV (e.g. leftover unloc fragments
+    not caught by the scaffold-name filter) should be deduped."""
+    csv = tmp_path / "hap1.chromosome.list.csv"
+    csv.write_text("scaffold_1,Z\nscaffold_2,Z\nscaffold_3,1\n")
+    autosomes, sex_ids = parse_chromosome_list(csv)
+    assert autosomes == 1
+    assert sex_ids == ["Z"]
+
+
+def test_parse_chromosome_list_excludes_unloc_marker_on_scaffold_name(tmp_path):
+    """unloc marker on the auto-generated scaffold name (column 0)."""
+    csv = tmp_path / "hap1.chromosome.list.csv"
+    csv.write_text("SUPER_1,1\nSUPER_Z,Z\nSUPER_Z_unloc_1,Z\nSUPER_Z_unloc_2,Z\n")
+    autosomes, sex_ids = parse_chromosome_list(csv)
+    assert autosomes == 1
+    assert sex_ids == ["Z"]
+
+
+def test_parse_chromosome_list_excludes_unloc_marker_on_chrom_label(tmp_path):
+    """unloc marker on the curator-typed chromosome label (column 1), e.g. "Zunloc10" —
+    the naming convention 03a0914 fixed for and a8d21db later regressed by only
+    checking the scaffold name."""
+    csv = tmp_path / "hap1.chromosome.list.csv"
+    csv.write_text(
+        "scaffold_1,1\nscaffold_2,Z\nscaffold_3,Zunloc10\nscaffold_4,Zunloc11\n"
+    )
+    autosomes, sex_ids = parse_chromosome_list(csv)
+    assert autosomes == 1
+    assert sex_ids == ["Z"]
 
 
 def _make_tracker(tmp_path, tol_id="sDipInt39"):
@@ -57,6 +107,20 @@ def test_collect_curation_results_prefers_tracker_output_over_curated_dir_glob(t
 
     result = collect_curation_results(tracker, workdir, "sDipInt39", curated_dir=curated_dir)
     assert result.qv_text == "qv\t60.0"
+
+
+def test_collect_curation_results_zz_male_across_haps_reports_zz(tmp_path):
+    tracker, workdir = _make_tracker(tmp_path)
+
+    (workdir / "sDipInt39.hap1.primary.chromosome.list.csv").write_text(
+        "scaffold_1,1\nscaffold_2,Z\n"
+    )
+    (workdir / "sDipInt39.hap2.primary.chromosome.list.csv").write_text(
+        "scaffold_1,1\nscaffold_2,Z\n"
+    )
+
+    result = collect_curation_results(tracker, workdir, "sDipInt39")
+    assert result.allosomes == "ZZ"
 
 
 def test_collect_curation_results_falls_back_to_curated_dir_glob(tmp_path):
