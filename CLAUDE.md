@@ -61,6 +61,10 @@ External config: `~/.grit_curation_config.yaml` (not committed). In tests / CI u
 - **`print_only` everywhere** — every step respects `ctx.print_only`; `_run()` enforces it
 - **`require_workdir(ctx)`** — guards steps that need an existing workdir; skipped in print_only mode
 - **`log.*` not `print()`** — use Python `logging`; `RichHandler` formats output
+- **Minimal docstrings** — one line stating what the function returns/does, only
+  what's necessary and sufficient. No multi-paragraph docstrings, no restating
+  the implementation, no historical context about bugs/commits that motivated
+  it (that belongs in the commit message, not the code)
 - **`console.print()`** for structured step output (headers, tips, done messages) via `grit/utils/output.py`
 - **Assembly type detection** — `_detect_assembly_type(yaml_data)` maps YAML keys to `(assembly_type, hap1_prefix, hap2_prefix)`: `hap1/hap2`, `primary/alternate`
 - **`GritJiraIssue`** is a shared server library injected via `sys.path` (path in user config), not a pip dependency
