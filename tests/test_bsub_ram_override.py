@@ -19,8 +19,8 @@ def test_fastga_default_memory(mock_find_fa, mock_bsub, mock_ctx, tmp_path):
 
     run_fastga(mock_ctx, reference_path=str(tmp_path / "ref.fna"))
 
-    bsub_opts = mock_bsub.call_args[0][1]
-    assert "-M 24000" in bsub_opts
+    align_bsub_opts = mock_bsub.call_args_list[0][0][1]
+    assert "-M 24000" in align_bsub_opts
 
 
 @patch("grit.steps.optional.fastga._submit_bsub")
@@ -34,8 +34,8 @@ def test_fastga_bsub_ram_override(mock_find_fa, mock_bsub, mock_ctx, tmp_path):
 
     run_fastga(mock_ctx, reference_path=str(tmp_path / "ref.fna"))
 
-    bsub_opts = mock_bsub.call_args[0][1]
-    assert "-M 64000" in bsub_opts
+    align_bsub_opts = mock_bsub.call_args_list[0][0][1]
+    assert "-M 64000" in align_bsub_opts
 
 
 @patch("grit.steps.optional.busco_synteny._submit_bsub")

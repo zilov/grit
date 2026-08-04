@@ -40,37 +40,7 @@ _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
 
 
 def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
-    """
-    Runs a FastGA dot-plot comparison of the curated assembly vs. a reference.
-
-    Notebook source: ``run_fastga()`` and ``scp_fastga()`` functions.
-
-    Steps:
-        1. Determine the primary curated hap1 FASTA in ``ctx.workdir``.
-        2. If reference is gzipped and not yet decompressed/reheadered::
-
-               ml grit && gunzip {ref} && \
-               reheader {ref.replace('.gz', '')} > {ref_reheader}
-
-        3. Build bsub command::
-
-               bsub -G team135 -n 8 -e e_fastga -o o_fastga \
-                   -M 24000 -R'...' \
-                   /software/grit/projects/vgp_curation_scripts/FastGA_dot_dgenies.sh \
-                   {ref_reheader} {hap1_fa} {run_prefix} {outdir}
-
-        4. Once the PAF is written, run ``paf_top_targets_add_top_longest.py``
-           over it (all query contigs, ``--top_longest``) and redirect its
-           report to ``{run_prefix}.top_targets_summary.txt`` in ``run_dir``.
-        5. Print command and submit via subprocess.
-
-    Downloadable outputs (idx/paf) and the top-targets summary are surfaced
-    later — as an scp tip / a ``less`` tip respectively — in ``grit status``,
-    once the job's bsub epilogue records them.
-
-    Prints:
-        Step header, bsub command.
-    """
+    """Submits the FastGA dot-plot alignment and a dependent top-targets summary job."""
     log.info("fastga | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run FastGA")
 
@@ -95,19 +65,20 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     assembly_prefix = hap1_fa.stem.split(".")[0]
     run_prefix = f"{ref_prefix}_vs_{assembly_prefix}"
 
-    # --- submit bsub job ---
-    # Each run gets its own tracker run_dir so multiple fastga runs don't overwrite each other
+    # --- submit bsub jobs ---
+    # Each run gets its own tracker run_dir so multiple fastga runs don't overwrite each other.
+    # Alignment and summary run as two chained bsub jobs so LSF's own scheduling gap
+    # (not a same-process `ls`) is what waits for the PAF file to land.
     run_dir = ctx.tracker.start("fastga", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else ctx.workdir / "fastga" / "untracked"
     fastga_script = "/software/grit/projects/vgp_curation_scripts/FastGA_dot_dgenies.sh"
     summary_file = run_dir / f"{run_prefix}.top_targets_summary.txt"
-    inner_cmd = (
+
+    align_cmd = (
         f"cd {run_dir} && "
         f"{module_cmd('GRIT')} && "
-        f"{fastga_script} {ref_reheader} {hap1_fa} {run_prefix} {run_dir} && "
-        f"paf_file=$(ls {run_dir}/*FastGA.paf | head -n 1) && "
-        f'python3 {_PAF_TOP_TARGETS_SCRIPT} "$paf_file" --top_longest > {summary_file}'
+        f"{fastga_script} {ref_reheader} {hap1_fa} {run_prefix} {run_dir}"
     )
-    bsub_opts = build_bsub_opts(
+    align_bsub_opts = build_bsub_opts(
         group="team135",
         cores=8,
         memory_mb=ctx.bsub_ram or 24000,
@@ -115,9 +86,30 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
         error="e_fastga",
         run_dir=run_dir,
     )
+
+    summary_cmd = (
+        f"cd {run_dir} && "
+        f"paf_file=$(ls {run_dir}/*FastGA.paf 2>/dev/null | head -n 1) && "
+        f'if [ -z "$paf_file" ]; then '
+        f'echo "No FastGA.paf found in {run_dir}" >&2; '
+        f"exit 1; fi && "
+        f'python3 {_PAF_TOP_TARGETS_SCRIPT} "$paf_file" --top_longest > {summary_file}'
+    )
+    summary_bsub_opts = build_bsub_opts(
+        group="team135",
+        memory_mb=2000,
+        output="o_fastga_summary",
+        error="e_fastga_summary",
+        run_dir=run_dir,
+    )
     epilogue = _state_update_epilogue(ctx.workdir, "fastga", run_dir) if run_dir else None
+
     try:
-        job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
+        align_job_id = _submit_bsub(align_cmd, align_bsub_opts, ctx.print_only)
+        if align_job_id and not ctx.print_only:
+            # "ended" not "done" — runs even if alignment failed, so its own epilogue reports that.
+            summary_bsub_opts += f" -w 'ended({align_job_id})'"
+        job_id = _submit_bsub(summary_cmd, summary_bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
         if ctx.tracker and run_dir and job_id:
             ctx.tracker.record_job("fastga", run_dir, job_id)
     except Exception:
