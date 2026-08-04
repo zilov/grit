@@ -90,6 +90,17 @@ def test_build_context_no_teloseq_by_default(mock_ctx):
     assert mock_ctx.teloseq == ""
 
 
+def test_build_context_bsub_ram_defaults_to_none(mock_ctx):
+    assert mock_ctx.bsub_ram is None
+
+
+def test_build_context_bsub_ram_override():
+    ctx = CurationContext.from_ticket(
+        "RC-1234", TEST_USER_CONFIG, yaml_override=TEST_YAML_PRIMARY, bsub_ram=64000
+    )
+    assert ctx.bsub_ram == 64000
+
+
 # --- build_context (primary) ---
 
 

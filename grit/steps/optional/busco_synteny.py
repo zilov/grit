@@ -93,7 +93,7 @@ def run_busco_synteny(
     )
     bsub_opts = build_bsub_opts(
         cores=32,
-        memory_mb=50000,
+        memory_mb=ctx.bsub_ram or 50000,
         output="o_busco_synt",
         run_dir=run_dir,
     )
@@ -110,7 +110,7 @@ def run_busco_synteny(
 # ---------------------------------------------------------------------------
 
 
-@click.command("busco-synteny", cls=GritCommand)
+@click.command("busco-synteny", cls=GritCommand, bsub_ram_default=50000)
 @click.option("--lineage", required=True, help="BUSCO lineage name (e.g. insecta_odb10).")
 @click.option(
     "--reference",

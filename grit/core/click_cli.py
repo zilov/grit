@@ -41,6 +41,7 @@ class GlobalState:
         print_only: bool = False,
         logging_level: str = "INFO",
         untracked: bool = False,
+        bsub_ram: int | None = None,
     ):
         self.verbose = verbose
         self.config_path = config_path or Path.home() / ".grit_curation_config.yaml"
@@ -49,6 +50,7 @@ class GlobalState:
         self.print_only = print_only
         self.logging_level = logging_level
         self.untracked = untracked
+        self.bsub_ram = bsub_ram
 
 
 @click.group()
@@ -104,6 +106,7 @@ def build_context(state: GlobalState) -> CurationContext:
         yaml_override=yaml_override,
         print_only=state.print_only,
         untracked=getattr(state, "untracked", False),
+        bsub_ram=getattr(state, "bsub_ram", None),
     )
 
 

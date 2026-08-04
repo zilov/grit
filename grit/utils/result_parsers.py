@@ -114,6 +114,33 @@ def parse_sex_matcher(path: Path, n: int = 5) -> list[tuple[str, str]]:
     return results
 
 
+def parse_lsf_exit_reason(log_path: Path) -> str | None:
+    """Return the LSF ``TERM_*`` termination reason from a bsub log file, or None.
+
+    LSF appends a line like ``TERM_MEMLIMIT: job killed after reaching LSF
+    memory usage limit.`` to the job's stdout/stderr log when it kills a job.
+    """
+    if not log_path.exists():
+        return None
+    m = re.search(r"\b(TERM_\w+):", log_path.read_text())
+    return m.group(1) if m else None
+
+
+def find_lsf_log(run_dir: Path) -> Path | None:
+    """Return the most likely bsub log file in *run_dir*, or None if not found.
+
+    Prefers stderr-style files (``e_*``, ``*.err``) since LSF's TERM_ message
+    is always written there; falls back to stdout-style files.
+    """
+    if not run_dir.is_dir():
+        return None
+    for pattern in ("e_*", "*.err", "o_*", "*.out", "*.log"):
+        matches = sorted(run_dir.glob(pattern))
+        if matches:
+            return matches[0]
+    return None
+
+
 def read_tabular(path: Path) -> str:
     """Return file content with whitespace-only lines stripped."""
     return "\n".join(

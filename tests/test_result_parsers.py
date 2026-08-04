@@ -5,7 +5,9 @@ from grit.core.run_tracker import RunTracker
 from grit.utils.result_parsers import (
     _build_allosome_string,
     collect_curation_results,
+    find_lsf_log,
     parse_chromosome_list,
+    parse_lsf_exit_reason,
     parse_pta_log,
 )
 
@@ -78,6 +80,57 @@ def test_parse_chromosome_list_excludes_unloc_marker_on_chrom_label(tmp_path):
     autosomes, sex_ids = parse_chromosome_list(csv)
     assert autosomes == 1
     assert sex_ids == ["Z"]
+
+
+# --- parse_lsf_exit_reason ---
+
+
+def test_parse_lsf_exit_reason_memlimit(tmp_path):
+    log = tmp_path / "e_fastga"
+    log.write_text(
+        "some job output\n"
+        "TERM_MEMLIMIT: job killed after reaching LSF memory usage limit.\n"
+        "Exited with exit code 143.\n"
+    )
+    assert parse_lsf_exit_reason(log) == "TERM_MEMLIMIT"
+
+
+def test_parse_lsf_exit_reason_runlimit(tmp_path):
+    log = tmp_path / "e_fastga"
+    log.write_text("TERM_RUNLIMIT: job killed after reaching LSF run time limit.\n")
+    assert parse_lsf_exit_reason(log) == "TERM_RUNLIMIT"
+
+
+def test_parse_lsf_exit_reason_no_match(tmp_path):
+    log = tmp_path / "e_fastga"
+    log.write_text("Successfully completed.\n")
+    assert parse_lsf_exit_reason(log) is None
+
+
+def test_parse_lsf_exit_reason_missing_file(tmp_path):
+    assert parse_lsf_exit_reason(tmp_path / "does_not_exist.log") is None
+
+
+# --- find_lsf_log ---
+
+
+def test_find_lsf_log_prefers_error_file(tmp_path):
+    (tmp_path / "o_fastga").write_text("out")
+    (tmp_path / "e_fastga").write_text("err")
+    assert find_lsf_log(tmp_path) == tmp_path / "e_fastga"
+
+
+def test_find_lsf_log_falls_back_to_output_file(tmp_path):
+    (tmp_path / "o_fastga").write_text("out")
+    assert find_lsf_log(tmp_path) == tmp_path / "o_fastga"
+
+
+def test_find_lsf_log_returns_none_when_no_candidates(tmp_path):
+    assert find_lsf_log(tmp_path) is None
+
+
+def test_find_lsf_log_returns_none_for_missing_dir(tmp_path):
+    assert find_lsf_log(tmp_path / "missing") is None
 
 
 def _make_tracker(tmp_path, tol_id="sDipInt39"):

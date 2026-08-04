@@ -105,7 +105,7 @@ def run_sex_matcher(ctx: CurationContext) -> None:
         log.info("ln -s %s/original.fa %s/original.fa", ctx.workdir, work_dir)
 
     bsub_opts = build_bsub_opts(
-        memory_mb=80000,
+        memory_mb=ctx.bsub_ram or 80000,
         cores=32,
         group="team135",
         output=str(work_dir / "sex_matcher.out"),
@@ -153,7 +153,7 @@ def _print_sex_summary(busco_table_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@click.command("sex-matcher", cls=GritCommand)
+@click.command("sex-matcher", cls=GritCommand, bsub_ram_default=80000)
 @click.pass_context
 def sex_matcher_cmd(ctx):
     """Run sex-matcher for insect curation."""
