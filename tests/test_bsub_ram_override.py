@@ -50,7 +50,7 @@ def test_busco_synteny_default_memory(mock_find_ref, mock_find_fa, mock_bsub, mo
     run_busco_synteny(mock_ctx, "insecta_odb10")
 
     bsub_opts = mock_bsub.call_args[0][1]
-    assert "-M 50000" in bsub_opts
+    assert "-M 70000" in bsub_opts
 
 
 @patch("grit.steps.optional.busco_synteny._submit_bsub")

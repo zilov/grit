@@ -55,7 +55,7 @@ def run_busco_synteny(
         3. Submit BUSCO synteny job via bsub.
 
     Command structure:
-        bsub -n 32 -o o_busco_synt -M 50G -R'select[mem>50G] rusage[mem=50G] span[hosts=1]' \\
+        bsub -n 32 -o o_busco_synt -M 70G -R'select[mem>70G] rusage[mem=70G] span[hosts=1]' \\
             busco_synteny.sh -r <ref_fasta> -q <query_fasta> -l <lineage>
 
     Prints:
@@ -93,7 +93,7 @@ def run_busco_synteny(
     )
     bsub_opts = build_bsub_opts(
         cores=32,
-        memory_mb=ctx.bsub_ram or 50000,
+        memory_mb=ctx.bsub_ram or 70000,
         output="o_busco_synt",
         run_dir=run_dir,
     )
@@ -110,7 +110,7 @@ def run_busco_synteny(
 # ---------------------------------------------------------------------------
 
 
-@click.command("busco-synteny", cls=GritCommand, bsub_ram_default=50000)
+@click.command("busco-synteny", cls=GritCommand, bsub_ram_default=70000)
 @click.option("--lineage", required=True, help="BUSCO lineage name (e.g. insecta_odb10).")
 @click.option(
     "--reference",
