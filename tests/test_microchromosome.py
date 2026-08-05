@@ -13,16 +13,23 @@ from grit.steps.pre_curation.microchromosome_second_shot import run_microchromos
 
 
 @patch("grit.steps.pre_curation.microchromosome_second_shot._run")
-def test_run_microchromosome_second_shot_hap1_only(mock_run, mock_ctx, tmp_path):
-    mock_ctx.workdir = tmp_path
-    mock_ctx.tol_id = "bColMon1"
-    mock_ctx.hap1_prefix = "hap1"
-    mock_ctx.hap2_prefix = "hap2"
-    mock_ctx.print_only = False
+@patch("grit.steps.pre_curation.microchromosome_second_shot.find_canonical_chr_list")
+@patch("grit.steps.pre_curation.microchromosome_second_shot.find_canonical_fa")
+def test_run_microchromosome_second_shot_single_hap(
+    mock_find_fa, mock_find_chr, mock_run, mock_ctx_primary, tmp_path
+):
+    """primary/alternate (single-hap) tickets never process a hap2."""
+    mock_ctx_primary.workdir = tmp_path
+    mock_ctx_primary.tol_id = "bColMon1"
+    mock_ctx_primary.print_only = False
 
-    run_microchromosome_second_shot(mock_ctx)
+    mock_find_fa.return_value = tmp_path / "bColMon1.1.primary.curated.fa"
+    mock_find_chr.return_value = tmp_path / "bColMon1.1.primary.chromosome.list.csv"
+
+    run_microchromosome_second_shot(mock_ctx_primary)
 
     mock_run.assert_called_once()
+    mock_find_fa.assert_called_once_with(mock_ctx_primary, "primary")
     cmd = mock_run.call_args[0][0]
     assert "microchr_second_shot_curation.py" in cmd
     assert "-hap1" in cmd
@@ -31,24 +38,42 @@ def test_run_microchromosome_second_shot_hap1_only(mock_run, mock_ctx, tmp_path)
 
 
 @patch("grit.steps.pre_curation.microchromosome_second_shot._run")
-def test_run_microchromosome_second_shot_hap1_and_hap2(mock_run, mock_ctx, tmp_path):
+@patch("grit.steps.pre_curation.microchromosome_second_shot.find_canonical_chr_list")
+@patch("grit.steps.pre_curation.microchromosome_second_shot.find_canonical_fa")
+def test_run_microchromosome_second_shot_hap1_and_hap2(
+    mock_find_fa, mock_find_chr, mock_run, mock_ctx, tmp_path
+):
+    """hap1/hap2 tickets always process both haplotypes — no --hap2 flag needed,
+    unlike rename-and-orient (the script takes both in a single invocation)."""
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "bColMon1"
     mock_ctx.hap1_prefix = "hap1"
     mock_ctx.hap2_prefix = "hap2"
     mock_ctx.print_only = False
 
-    (tmp_path / "bColMon1.hap1.primary.curated.fa").write_text(">seq\n")
-    (tmp_path / "bColMon1.hap1.primary.chromosome.list.csv").write_text("")
-    (tmp_path / "bColMon1.hap2.primary.curated.fa").write_text(">seq\n")
-    (tmp_path / "bColMon1.hap2.primary.chromosome.list.csv").write_text("")
+    hap1_fa = tmp_path / "bColMon1.hap1.1.curated.fa"
+    hap2_fa = tmp_path / "bColMon1.hap2.1.curated.fa"
+    mock_find_fa.side_effect = lambda ctx, hap: hap1_fa if hap == "hap1" else hap2_fa
+    mock_find_chr.side_effect = lambda ctx, hap: tmp_path / f"bColMon1.{hap}.chromosome.list.csv"
 
     run_microchromosome_second_shot(mock_ctx)
 
     cmd = mock_run.call_args[0][0]
     assert "-hap2" in cmd
-    assert "bColMon1.hap2.primary.curated.fa" in cmd
-    assert "bColMon1.hap1.primary.curated.fa" in cmd
+    assert str(hap1_fa) in cmd
+    assert str(hap2_fa) in cmd
+    assert f"-rt {mock_ctx.read_type}" in cmd
+
+
+@patch("grit.steps.pre_curation.microchromosome_second_shot.find_canonical_fa")
+def test_run_microchromosome_second_shot_raises_when_no_curated_fasta(mock_find_fa, mock_ctx):
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.print_only = False
+    mock_find_fa.side_effect = FileNotFoundError("No curated FASTA for 'hap1' found")
+
+    with pytest.raises(FileNotFoundError):
+        run_microchromosome_second_shot(mock_ctx)
 
 
 def test_second_shot_output_specs_include_merged_small_fa():

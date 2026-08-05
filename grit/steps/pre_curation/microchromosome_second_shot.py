@@ -1,13 +1,12 @@
 """Microchromosome second-shot curation: pre-curation step."""
 
-import glob
 import logging
 
 import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, collect_outputs
+from grit.utils.helpers import _run, collect_outputs, find_canonical_chr_list, find_canonical_fa
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -46,8 +45,8 @@ def run_microchromosome_second_shot(ctx: CurationContext) -> None:
     Notebook source: ``bird_curation()`` function.
 
     Steps:
-        1. Locate curated hap1 (and optionally hap2) FASTAs and chromosome
-           lists from ``ctx.workdir``.
+        1. Locate curated hap1 (and hap2, for dual-hap tickets) FASTAs and
+           chromosome lists via ``find_canonical_fa``/``find_canonical_chr_list``.
         2. Run ``microchr_second_shot_curation.py`` which splits the assembly
            into large (>20 Mbp) and small (≤20 Mbp) scaffolds and runs HiC
            remapping on the merged small scaffolds. The script blocks
@@ -63,29 +62,19 @@ def run_microchromosome_second_shot(ctx: CurationContext) -> None:
     log.info("microchromosome-second-shot | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Microchromosome second-shot curation")
 
-    # --- find curated fastas and chr lists in workdir ---
-    curated_fasta = glob.glob(str(ctx.workdir / f"{ctx.tol_id}*.primary.curated.fa"))
-    curated_chr_list = glob.glob(str(ctx.workdir / f"{ctx.tol_id}*.primary.chromosome.list.csv"))
-
-    hap1_fa_list = [x for x in curated_fasta if "hap1" in x or ctx.hap1_prefix in x]
-    hap2_fa_list = [x for x in curated_fasta if "hap2" in x or ctx.hap2_prefix in x]
-    hap1_chr_list = [x for x in curated_chr_list if "hap1" in x or ctx.hap1_prefix in x]
-    hap2_chr_list = [x for x in curated_chr_list if "hap2" in x or ctx.hap2_prefix in x]
-
-    hap1_fa = (
-        hap1_fa_list[0]
-        if hap1_fa_list
-        else str(ctx.workdir / f"{ctx.tol_id}.hap1.primary.curated.fa")
-    )
-    hap1_chr = (
-        hap1_chr_list[0]
-        if hap1_chr_list
-        else str(ctx.workdir / f"{ctx.tol_id}.hap1.primary.chromosome.list.csv")
-    )
-    has_hap2 = bool(hap2_fa_list)
-    hap2_fa = hap2_fa_list[0] if has_hap2 else ""
-    hap2_chr = hap2_chr_list[0] if hap2_chr_list else ""
-    hap2_argument = f"-hap2 {hap2_fa} -hap2_chr {hap2_chr}" if has_hap2 else ""
+    # --- find curated fastas and chr lists via the canonical lookup chain ---
+    # (rename_and_orient/blast_contaminants output preferred, pretext_to_asm fallback —
+    # same resolution fastga/rename-and-orient use, not a hand-rolled glob).
+    is_single_hap = ctx.hap1_prefix in ("primary", "paternal")
+    hap1_fa = find_canonical_fa(ctx, ctx.hap1_prefix)
+    hap1_chr = find_canonical_chr_list(ctx, ctx.hap1_prefix)
+    has_hap2 = not is_single_hap
+    if has_hap2:
+        hap2_fa = find_canonical_fa(ctx, ctx.hap2_prefix)
+        hap2_chr = find_canonical_chr_list(ctx, ctx.hap2_prefix)
+        hap2_argument = f"-hap2 {hap2_fa} -hap2_chr {hap2_chr}"
+    else:
+        hap2_argument = ""
 
     run_dir = (
         ctx.tracker.start(
@@ -99,7 +88,7 @@ def run_microchromosome_second_shot(ctx: CurationContext) -> None:
     second_shot_cmd = (
         f"{_SECOND_SHOT_SCRIPT} "
         f"-hap1 {hap1_fa} -hap1_chr {hap1_chr} {hap2_argument} "
-        f"-hic {ctx.hic_dir} -lr {ctx.long_reads_dir}/fasta "
+        f"-hic {ctx.hic_dir} -lr {ctx.long_reads_dir}/fasta -rt {ctx.read_type} "
         f"-o {run_dir}"
     )
     try:
