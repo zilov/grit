@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
 """
-Usage: python paf_top_targets.py <file.paf> [--top_longest]
+Usage: python paf_top_targets.py <file.paf> --top1-out <path> [--top_longest]
 
 For every query contig in the PAF, finds its top-10 reference targets by
-total non-overlapping alignment length (query coordinates).
+total non-overlapping alignment length (query coordinates); printed to stdout.
 
---top_longest  Also show the top-5 longest alignments per target.
+--top1-out PATH  Also write a simple super/top_longest_ref_chr/len table (one row
+                 per query: the target of its single longest alignment) to PATH.
+--top_longest    Also show the top-5 longest alignments per target (stdout).
 """
 
 import sys
 from collections import defaultdict
+
+
+def _arg_value(flag):
+    if flag not in sys.argv:
+        return None
+    return sys.argv[sys.argv.index(flag) + 1]
 
 
 def merge_intervals(intervals):
@@ -27,11 +35,12 @@ def merge_intervals(intervals):
 
 def main():
     if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <file.paf> [--top_longest]", file=sys.stderr)
+        print(f"Usage: {sys.argv[0]} <file.paf> --top1-out <path> [--top_longest]", file=sys.stderr)
         sys.exit(1)
 
     paf_path = sys.argv[1]
     top_longest = "--top_longest" in sys.argv[2:]
+    top1_out = _arg_value("--top1-out")
 
     query_order = []
     seen_queries = set()
@@ -73,12 +82,12 @@ def main():
         print(f"No alignments found in: {paf_path}", file=sys.stderr)
         sys.exit(0)
 
-    print("##TOP_LONGEST_TABLE##")
-    print("super\ttop_longest_ref_chr\tlen")
-    for query_name in query_order:
-        length, target = query_best_aln[query_name]
-        print(f"{query_name}\t{target}\t{length}")
-    print("##END_TOP_LONGEST_TABLE##")
+    if top1_out:
+        with open(top1_out, "w") as fh:
+            fh.write("super\ttop_longest_ref_chr\tlen\n")
+            for query_name in query_order:
+                length, target = query_best_aln[query_name]
+                fh.write(f"{query_name}\t{target}\t{length}\n")
 
     for query_name in query_order:
         coverage = {

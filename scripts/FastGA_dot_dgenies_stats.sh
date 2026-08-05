@@ -52,7 +52,7 @@ ALNtoPAF -m ${prefix}_FastGA.1aln > ${prefix}_FastGA.paf
 
 # Top-targets summary, generated right away since the raw PAF is on disk in this job
 echo "Generating top-targets summary..."
-python3 ${top_targets_script} ${prefix}_FastGA.paf --top_longest > ${prefix}.top_targets_summary.txt
+python3 ${top_targets_script} ${prefix}_FastGA.paf --top1-out ${prefix}.top1_targets.tsv --top_longest > ${prefix}.top_targets_summary.txt
 
 # Add NM tag to cigar string
 cut -f14 ${prefix}_FastGA.paf  | sed 's/df/NM/g' > tmp; cut -f1-14 ${prefix}_FastGA.paf  | paste - tmp > tmp2; cut -f15 ${prefix}_FastGA.paf  | paste tmp2 - > ${prefix}_FastGA_add_NM.paf

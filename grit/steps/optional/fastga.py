@@ -35,18 +35,19 @@ _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("idx", "*.idx", []),
     ("paf", "*FastGA.paf", []),
     ("top_targets_summary", "*.top_targets_summary.txt", []),
+    ("top1_targets", "*.top1_targets.tsv", []),
 ]
 
 
-def _parse_top_longest_table(summary_file: Path) -> list[tuple[str, str, str]]:
-    """Extract the super/top_longest_ref_chr/len rows between the TOP_LONGEST_TABLE markers."""
-    lines = summary_file.read_text().splitlines()
-    try:
-        start = lines.index("##TOP_LONGEST_TABLE##") + 2  # skip marker + header row
-        end = lines.index("##END_TOP_LONGEST_TABLE##")
-    except ValueError:
-        return []
-    return [tuple(line.split("\t")) for line in lines[start:end] if line.strip()]
+def _is_super(name: str) -> bool:
+    """True for curated chromosome-level scaffolds (SUPER_*), false for unloc/contig-level ones."""
+    return name.startswith("SUPER_")
+
+
+def _read_top1_table(top1_file: Path) -> list[tuple[str, str, str]]:
+    """Read the super/top_longest_ref_chr/len rows written by --top1-out (skips the header)."""
+    lines = top1_file.read_text().splitlines()[1:]
+    return [tuple(line.split("\t")) for line in lines if line.strip()]
 
 
 # ---------------------------------------------------------------------------
@@ -113,25 +114,25 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
 
 
 def run_fastga_stats(ctx: CurationContext) -> None:
-    """Prints the per-query top-longest reference target table from the latest fastga run."""
+    """Prints the top-longest reference target table for SUPER_* scaffolds from the latest run."""
     log.info("fastga-stats | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "FastGA top-longest targets")
 
     fastga_dir = find_latest_dir(ctx, "fastga")
-    matches = glob.glob(str(fastga_dir / "*.top_targets_summary.txt"))
+    matches = glob.glob(str(fastga_dir / "*.top1_targets.tsv"))
     if not matches:
         raise FileNotFoundError(
-            f"No top_targets_summary found in {fastga_dir}\n"
+            f"No top1_targets table found in {fastga_dir}\n"
             f"Run 'grit fastga -t {ctx.ticket_id}' first."
         )
-    summary_file = Path(sorted(matches)[-1])
+    top1_file = Path(sorted(matches)[-1])
 
-    rows = _parse_top_longest_table(summary_file)
+    rows = [row for row in _read_top1_table(top1_file) if _is_super(row[0])]
     if not rows:
-        log.warning("No TOP_LONGEST_TABLE section found in %s", summary_file)
+        log.warning("No SUPER_* rows found in %s", top1_file)
         return
 
-    table = Table(title="Top-longest reference target per query", header_style="bold cyan")
+    table = Table(title="Top-longest reference target per super scaffold", header_style="bold cyan")
     table.add_column("super")
     table.add_column("top_longest_ref_chr")
     table.add_column("len", justify="right")
