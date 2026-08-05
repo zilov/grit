@@ -211,3 +211,50 @@ def test_show_ticket_history_no_reason_when_no_log(tmp_path, capsys, monkeypatch
 
     out = capsys.readouterr().out
     assert "TERM_" not in out
+
+
+def _make_ticket(tmp_path, monkeypatch, tol_id, completed_steps=()):
+    registry_dir = tmp_path / ".grit_reg"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=registry_dir)
+    reg.add_ticket("RC-1234", tol_id, "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+    for step in completed_steps:
+        run_dir = tracker.start(step, "RC-1234", tol_id)
+        tracker.finish(step, run_dir, "success")
+    return reg
+
+
+def test_show_ticket_history_prints_microchromosome_tip_for_bird_tol_id(tmp_path, monkeypatch):
+    reg = _make_ticket(tmp_path, monkeypatch, "bColMon1")
+
+    with patch("grit.core.status.print_tip") as mock_print_tip:
+        show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    tips = [call.args[0] for call in mock_print_tip.call_args_list]
+    assert any("microchromosome-second-shot" in t for t in tips)
+
+
+def test_show_ticket_history_skips_microchromosome_tip_for_non_bird_tol_id(tmp_path, monkeypatch):
+    reg = _make_ticket(tmp_path, monkeypatch, "sDipInt39")
+
+    with patch("grit.core.status.print_tip") as mock_print_tip:
+        show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    tips = [call.args[0] for call in mock_print_tip.call_args_list]
+    assert not any("microchromosome-second-shot" in t for t in tips)
+
+
+def test_show_ticket_history_skips_microchromosome_tip_once_second_shot_ran(tmp_path, monkeypatch):
+    reg = _make_ticket(
+        tmp_path, monkeypatch, "bColMon1", completed_steps=["microchromosome_second_shot"]
+    )
+
+    with patch("grit.core.status.print_tip") as mock_print_tip:
+        show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    tips = [call.args[0] for call in mock_print_tip.call_args_list]
+    assert not any("microchromosome-second-shot" in t for t in tips)

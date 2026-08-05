@@ -448,5 +448,16 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             f"[bold cyan]grit finalize-qc -t {ticket_id}[/bold cyan]"
         )
 
+    if (
+        tol_id.startswith("b")
+        and "microchromosome_second_shot" not in step_latest
+        and "microchromosome_combine" not in step_latest
+    ):
+        print_tip(
+            f"Bird genome — if it needs second-shot microchromosome curation:\n"
+            f"[bold cyan]grit pretext-to-asm -t {ticket_id}[/bold cyan] then "
+            f"[bold cyan]grit microchromosome-second-shot -t {ticket_id}[/bold cyan]"
+        )
+
     if curated_dir and (curated_dir / "merquryk").exists():
         print_tip("Submission notes: https://gist.github.com/zilov/93b1e6c68a6e2553b7c12770d6a0a3ef")
