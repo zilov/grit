@@ -42,6 +42,18 @@ STEP_MANIFESTS: dict[str, dict] = {
         "dir": "run_dir",
         "files": ["pretext_maps_processed/{tol_id}*hr.pretext"],
     },
+    "microchromosome_second_shot": {
+        "dir": "run_dir",
+        "files": ["*_curated_small_merged.fa"],
+    },
+    "pretext_to_asm_micro": {
+        "dir": "run_dir",
+        "files": ["{tol_id}_small*.curated.fa"],
+    },
+    "microchromosome_combine": {
+        "dir": "run_dir",
+        "files": ["{tol_id}.hap1.fa"],
+    },
     "fastga": {
         "dir": "run_dir",
         "files": ["*.idx", "*FastGA.paf"],
@@ -74,10 +86,12 @@ STEP_TO_STATUS: dict[str, str] = {
     "sex_matcher": "in_curation",
     "add_gap_track": "in_curation",
     "add_telo_track": "in_curation",
-    "microchromosome": "in_curation",
+    "microchromosome_second_shot": "in_curation",
     "agp_copied": "post_curation",
     "find_reference": "post_curation",
     "pretext_to_asm": "post_curation",
+    "pretext_to_asm_micro": "post_curation",
+    "microchromosome_combine": "post_curation",
     "haplotig_files": "post_curation",
     "hic_remapping": "remapping",
     "qv": "ready_for_qc",

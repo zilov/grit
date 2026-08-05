@@ -120,6 +120,9 @@ from grit.steps.optional.rename_and_orient import rename_and_orient_cmd  # noqa:
 from grit.steps.post_curation.finalize_qc import finalize_qc_cmd  # noqa: E402
 from grit.steps.post_curation.haplotig_files import haplotig_files_cmd  # noqa: E402
 from grit.steps.post_curation.hic_remapping import hic_remapping_cmd  # noqa: E402
+from grit.steps.post_curation.microchromosome_combine import (  # noqa: E402
+    microchromosome_combine_cmd,
+)
 from grit.steps.post_curation.post_curation import post_curation_cmd  # noqa: E402
 from grit.steps.post_curation.post_processing import post_processing_cmd, pp_cmd  # noqa: E402
 from grit.steps.post_curation.pretext_to_asm import pretext_to_asm_cmd  # noqa: E402
@@ -131,9 +134,8 @@ from grit.steps.pre_curation.add_pretext_view_tracks import (  # noqa: E402
     add_telo_track_cmd,
 )
 from grit.steps.pre_curation.find_reference import find_reference_cmd  # noqa: E402
-from grit.steps.pre_curation.microchromosome import (  # noqa: E402
-    microchromosome_cmd,
-    microchromosome_post_cmd,
+from grit.steps.pre_curation.microchromosome_second_shot import (  # noqa: E402
+    microchromosome_second_shot_cmd,
 )
 from grit.steps.pre_curation.setup import setup_cmd  # noqa: E402
 from grit.steps.pre_curation.sex_matcher import sex_matcher_cmd  # noqa: E402
@@ -196,8 +198,8 @@ cli.add_command(add_bedgraph_track_cmd)
 cli.add_command(add_gap_track_cmd)
 cli.add_command(add_telo_track_cmd)
 cli.add_command(find_reference_cmd)
-cli.add_command(microchromosome_cmd)
-cli.add_command(microchromosome_post_cmd)
+cli.add_command(microchromosome_second_shot_cmd)
+cli.add_command(microchromosome_combine_cmd)
 cli.add_command(setup_cmd)
 cli.add_command(haplotig_files_cmd)
 cli.add_command(hic_remapping_cmd)

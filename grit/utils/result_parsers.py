@@ -198,6 +198,25 @@ def collect_curation_results(
             except Exception:
                 pass
 
+    # --- pretext_to_asm_micro log (birds microchromosome workflow) ---
+    # If the ticket went through microchromosome-second-shot/-combine, add its
+    # breaks/joins to the main round's totals so `grit status` reports one
+    # combined figure. Skipped entirely if the main parse above found nothing.
+    if r.breaks is not None and tracker:
+        pta_micro_dir = tracker.latest_run_dir("pretext_to_asm_micro")
+        if pta_micro_dir and pta_micro_dir.exists():
+            micro_log_files = list(pta_micro_dir.glob(f"{tol_id}*.log"))
+            if micro_log_files:
+                try:
+                    micro_parsed = parse_pta_log(micro_log_files[0])
+                    if micro_parsed:
+                        micro_cuts, micro_breaks, micro_joins = micro_parsed
+                        r.cuts += micro_cuts
+                        r.breaks += micro_breaks
+                        r.joins += micro_joins
+                except Exception:
+                    pass
+
     # --- sex matcher ---
     for d in [d for d in (sex_dir, workdir) if d and d.exists()]:
         best_files = list(d.glob("Best_match*"))

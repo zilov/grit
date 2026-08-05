@@ -188,3 +188,41 @@ def test_collect_curation_results_falls_back_to_curated_dir_glob(tmp_path):
     result = collect_curation_results(tracker, workdir, "sDipInt39", curated_dir=curated_dir)
     assert result.qv_text == "qv\t55.0"
     assert result.completeness_text == "completeness\t99.0"
+
+
+def test_collect_curation_results_sums_breaks_joins_with_micro_run(tmp_path):
+    """Tickets that went through the birds microchromosome workflow should get
+    one combined breaks/joins total across the main + micro pretext-to-asm runs."""
+    tracker, workdir = _make_tracker(tmp_path)
+
+    pta_dir = workdir / "pretext_to_asm" / "run1"
+    pta_dir.mkdir(parents=True)
+    (pta_dir / "sDipInt39.log").write_text(
+        "Curation made 3 cuts in contigs, 2 breaks at gaps and 11 joins\n"
+    )
+    tracker.finish("pretext_to_asm", pta_dir, "success")
+
+    micro_dir = workdir / "pretext_to_asm_micro" / "run1"
+    micro_dir.mkdir(parents=True)
+    (micro_dir / "sDipInt39.log").write_text(
+        "Curation made 1 cut in a contig, 1 break at a gap and 4 joins\n"
+    )
+    tracker.finish("pretext_to_asm_micro", micro_dir, "success")
+
+    result = collect_curation_results(tracker, workdir, "sDipInt39")
+    assert (result.cuts, result.breaks, result.joins) == (4, 3, 15)
+
+
+def test_collect_curation_results_ignores_micro_run_when_it_never_ran(tmp_path):
+    """No microchromosome workflow → totals unaffected, same as before this feature."""
+    tracker, workdir = _make_tracker(tmp_path)
+
+    pta_dir = workdir / "pretext_to_asm" / "run1"
+    pta_dir.mkdir(parents=True)
+    (pta_dir / "sDipInt39.log").write_text(
+        "Curation made 3 cuts in contigs, 2 breaks at gaps and 11 joins\n"
+    )
+    tracker.finish("pretext_to_asm", pta_dir, "success")
+
+    result = collect_curation_results(tracker, workdir, "sDipInt39")
+    assert (result.cuts, result.breaks, result.joins) == (3, 2, 11)

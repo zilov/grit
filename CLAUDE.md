@@ -24,8 +24,8 @@ ctx = CurationContext.from_yaml("RC-1234", yaml_data, user_config)
 
 ```
 grit/steps/
-├── pre_curation/    # setup, pretext tracks, sex-matcher, microchromosome, find-reference
-├── post_curation/   # pretext-to-asm, haplotig-files, hic-remapping, qv, validate, finalize-qc
+├── pre_curation/    # setup, pretext tracks, sex-matcher, microchromosome-second-shot, find-reference
+├── post_curation/   # pretext-to-asm, haplotig-files, hic-remapping, microchromosome-combine, qv, validate, finalize-qc
 └── optional/        # blast-contaminants, busco-curated, busco-synteny, fastga, rename-and-orient
 ```
 

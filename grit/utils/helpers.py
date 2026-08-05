@@ -308,7 +308,7 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
 
     Priority:
       1. Tracker outputs — rename_and_orient → rename_and_orient_hap2 →
-         blast_contaminants → pretext_to_asm
+         blast_contaminants → microchromosome_combine → pretext_to_asm
       2. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.fa
       3. ``pretext_to_asm`` output   — via find_curated_fa (excludes haplotig files)
 
@@ -322,7 +322,10 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     }
 
     if ctx.tracker:
-        for step in ("rename_and_orient", "rename_and_orient_hap2", "blast_contaminants", "pretext_to_asm"):
+        for step in (
+            "rename_and_orient", "rename_and_orient_hap2",
+            "blast_contaminants", "microchromosome_combine", "pretext_to_asm",
+        ):
             for k in (f"{hap_prefix}_fa", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_fa"):
                 val = ctx.tracker.get_output(step, k)
                 if val and Path(val).exists():
@@ -425,7 +428,8 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     Find the canonical chromosome list CSV for *hap_prefix*.
 
     Priority:
-      1. Tracker outputs — rename_and_orient → rename_and_orient_hap2 → pretext_to_asm
+      1. Tracker outputs — rename_and_orient → rename_and_orient_hap2 →
+         microchromosome_combine → pretext_to_asm
       2. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.chromosome.list.csv
       3. ``pretext_to_asm`` output — {tol_id}.{hap_prefix}.*.chromosome.list.csv
       4. ``pretext_to_asm`` no-hap-prefix format (single hap / merged) —
@@ -444,8 +448,13 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     }
 
     if ctx.tracker:
-        for step in ("rename_and_orient", "rename_and_orient_hap2", "pretext_to_asm"):
-            for k in (f"{hap_prefix}_chr_list", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_chr_list"):
+        for step in (
+            "rename_and_orient", "rename_and_orient_hap2",
+            "microchromosome_combine", "pretext_to_asm",
+        ):
+            for k in (
+                f"{hap_prefix}_chr_list", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_chr_list"
+            ):
                 val = ctx.tracker.get_output(step, k)
                 if val and Path(val).exists():
                     return Path(val)
@@ -628,6 +637,15 @@ def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
         "fastga": ("grit.steps.optional.fastga", "_OUTPUT_SPECS"),
         "busco_synteny": ("grit.steps.optional.busco_synteny", "_OUTPUT_SPECS"),
         "fastga_synteny": ("grit.steps.optional.fastga_synteny", "_OUTPUT_SPECS"),
+        "microchromosome_second_shot": (
+            "grit.steps.pre_curation.microchromosome_second_shot", "_OUTPUT_SPECS"
+        ),
+        "pretext_to_asm_micro": (
+            "grit.steps.post_curation.microchromosome_combine", "_MICRO_PTA_OUTPUT_SPECS"
+        ),
+        "microchromosome_combine": (
+            "grit.steps.post_curation.microchromosome_combine", "_OUTPUT_SPECS"
+        ),
     }
     if step not in _MAP:
         return []
