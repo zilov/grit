@@ -21,17 +21,11 @@ def test_run_fastga_inner_cmd_runs_top_targets_summary(
 
     run_fastga(mock_ctx)
 
-    assert mock_bsub.call_count == 2
-    align_cmd = mock_bsub.call_args_list[0][0][0]
-    summary_cmd = mock_bsub.call_args_list[1][0][0]
-    summary_opts = mock_bsub.call_args_list[1][0][1]
+    mock_bsub.assert_called_once()
+    inner_cmd = mock_bsub.call_args[0][0]
 
-    assert "FastGA_dot_dgenies.sh" in align_cmd
-    assert "paf_top_targets_add_top_longest.py" in summary_cmd
-    assert "--top_longest" in summary_cmd
-    assert ".top_targets_summary.txt" in summary_cmd
-    # summary job waits on the alignment job's LSF ID
-    assert "-w 'ended(12345)'" in summary_opts
+    assert "FastGA_dot_dgenies_stats.sh" in inner_cmd
+    assert "paf_top_targets_add_top_longest.py" in inner_cmd
 
 
 def test_fastga_output_specs_include_top_targets_summary():
