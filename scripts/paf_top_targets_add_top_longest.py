@@ -39,6 +39,8 @@ def main():
     pair_intervals = defaultdict(list)
     # (query, target) -> list of (length, q_start, q_end, t_start, t_end)
     pair_alns = defaultdict(list)
+    # query -> (length, target) of the single longest alignment seen for that query
+    query_best_aln = {}
 
     with open(paf_path) as fh:
         for line in fh:
@@ -64,9 +66,19 @@ def main():
             if top_longest:
                 pair_alns[(q_name, t_name)].append((length, q_start, q_end, t_start, t_end))
 
+            if length > query_best_aln.get(q_name, (-1, None))[0]:
+                query_best_aln[q_name] = (length, t_name)
+
     if not query_order:
         print(f"No alignments found in: {paf_path}", file=sys.stderr)
         sys.exit(0)
+
+    print("##TOP_LONGEST_TABLE##")
+    print("super\ttop_longest_ref_chr\tlen")
+    for query_name in query_order:
+        length, target = query_best_aln[query_name]
+        print(f"{query_name}\t{target}\t{length}")
+    print("##END_TOP_LONGEST_TABLE##")
 
     for query_name in query_order:
         coverage = {

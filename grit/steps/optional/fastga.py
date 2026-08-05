@@ -1,9 +1,11 @@
 """Run FastGA dot-plot comparison."""
 
+import glob
 import logging
 from pathlib import Path
 
 import rich_click as click
+from rich.table import Table
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
@@ -12,10 +14,12 @@ from grit.utils.helpers import (
     _submit_bsub,
     build_bsub_opts,
     find_canonical_fa,
+    find_latest_dir,
     find_reheadered_reference,
 )
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
+    console,
     print_done,
     print_step_header,
 )
@@ -32,6 +36,17 @@ _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("paf", "*FastGA.paf", []),
     ("top_targets_summary", "*.top_targets_summary.txt", []),
 ]
+
+
+def _parse_top_longest_table(summary_file: Path) -> list[tuple[str, str, str]]:
+    """Extract the super/top_longest_ref_chr/len rows between the TOP_LONGEST_TABLE markers."""
+    lines = summary_file.read_text().splitlines()
+    try:
+        start = lines.index("##TOP_LONGEST_TABLE##") + 2  # skip marker + header row
+        end = lines.index("##END_TOP_LONGEST_TABLE##")
+    except ValueError:
+        return []
+    return [tuple(line.split("\t")) for line in lines[start:end] if line.strip()]
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +112,34 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     print_done("FastGA submitted.")
 
 
+def run_fastga_stats(ctx: CurationContext) -> None:
+    """Prints the per-query top-longest reference target table from the latest fastga run."""
+    log.info("fastga-stats | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
+    print_step_header(ctx.ticket_id, ctx.tol_id, "FastGA top-longest targets")
+
+    fastga_dir = find_latest_dir(ctx, "fastga")
+    matches = glob.glob(str(fastga_dir / "*.top_targets_summary.txt"))
+    if not matches:
+        raise FileNotFoundError(
+            f"No top_targets_summary found in {fastga_dir}\n"
+            f"Run 'grit fastga -t {ctx.ticket_id}' first."
+        )
+    summary_file = Path(sorted(matches)[-1])
+
+    rows = _parse_top_longest_table(summary_file)
+    if not rows:
+        log.warning("No TOP_LONGEST_TABLE section found in %s", summary_file)
+        return
+
+    table = Table(title="Top-longest reference target per query", header_style="bold cyan")
+    table.add_column("super")
+    table.add_column("top_longest_ref_chr")
+    table.add_column("len", justify="right")
+    for super_name, ref_chr, length in rows:
+        table.add_row(super_name, ref_chr, f"{int(length):,}")
+    console.print(table)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -114,4 +157,18 @@ def fastga_cmd(ctx, reference):
         run_fastga(curation_ctx, reference_path=reference)
     except Exception:
         log.exception("fastga failed")
+        raise SystemExit(1)
+
+
+@click.command("fastga-stats", cls=GritCommand)
+@click.pass_context
+def fastga_stats_cmd(ctx):
+    """Print the per-query top-longest reference target table from the latest fastga run."""
+    from grit.core.click_cli import build_context
+
+    curation_ctx = build_context(ctx.obj)
+    try:
+        run_fastga_stats(curation_ctx)
+    except Exception:
+        log.exception("fastga-stats failed")
         raise SystemExit(1)
