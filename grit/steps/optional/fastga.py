@@ -88,7 +88,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     inner_cmd = (
         f"cd {run_dir} && "
         f"{module_cmd('GRIT')} && "
-        f"{fastga_script} {ref_reheader} {hap1_fa} {run_prefix} {run_dir} {_PAF_TOP_TARGETS_SCRIPT}"
+        f"bash {fastga_script} {ref_reheader} {hap1_fa} {run_prefix} {run_dir} {_PAF_TOP_TARGETS_SCRIPT}"
     )
     bsub_opts = build_bsub_opts(
         group="team135",
