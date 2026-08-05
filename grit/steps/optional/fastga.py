@@ -87,14 +87,15 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
         run_dir=run_dir,
     )
 
-    # Keep exactly one inner "..." pair (around $paf_file) — _submit_bsub wraps the
-    # whole command in its own outer "...", and bash toggles quote state per-char
-    # rather than nesting, so any extra double-quoted literal text here would land
-    # unquoted at the top level and get word-split into separate bsub arguments.
+    # POSIX `[ ]` (not bash's `[[ ]]` — compute nodes may run this via plain sh) around
+    # bare "$paf_file" refs, message in single quotes — _submit_bsub wraps the whole
+    # command in its own outer "...", and bash toggles quote state per-char rather than
+    # nesting, so any double-quoted literal text spanning an odd number of quotes here
+    # would land unquoted at the top level and get word-split into separate bsub args.
     summary_cmd = (
         f"cd {run_dir} && "
         f"paf_file=$(ls {run_dir}/*FastGA.paf 2>/dev/null | head -n 1) && "
-        f"if [[ -z $paf_file ]]; then "
+        f'if [ -z "$paf_file" ]; then '
         f"echo 'No FastGA.paf found in {run_dir}' >&2; "
         f"exit 1; fi && "
         f'python3 {_PAF_TOP_TARGETS_SCRIPT} "$paf_file" --top_longest > {summary_file}'
