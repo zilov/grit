@@ -14,6 +14,7 @@ from grit.utils.helpers import (
     find_canonical_fa,
     find_reheadered_reference,
 )
+from grit.utils.modules import module_cmd
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -89,6 +90,7 @@ def run_busco_synteny(
         else ctx.workdir / "busco_synteny" / "untracked"
     )
     inner_cmd = (
+        f"{module_cmd('GRIT')} && "
         f"bash {_BUSCO_SYNTENY_SCRIPT} -r {ref_reheader} -q {query_fa} -l {lineage} -p {run_dir}"
     )
     bsub_opts = build_bsub_opts(
