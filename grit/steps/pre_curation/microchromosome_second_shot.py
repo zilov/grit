@@ -89,6 +89,7 @@ def run_microchromosome_second_shot(ctx: CurationContext) -> None:
 
     # --- run second-shot script (splits assembly + HiC remapping on smalls) ---
     second_shot_cmd = (
+        f"cd {run_dir} && "
         f"{_SECOND_SHOT_SCRIPT} "
         f"-hap1 {hap1_fa} -hap1_chr {hap1_chr} {hap2_argument} "
         f"-hic {ctx.hic_dir} -lr {ctx.long_reads_dir}/fasta -rt {ctx.read_type} "
