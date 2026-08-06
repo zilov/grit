@@ -14,8 +14,11 @@ from grit.utils.output import (
 
 log = logging.getLogger(__name__)
 
+# TEMP: pointing at dz11's branch checkout while add-hap-suffix-handling is
+# unmerged — revert to /software/grit/projects/vgp_curation_scripts/... once
+# that branch lands.
 _SECOND_SHOT_SCRIPT = (
-    "/software/grit/projects/vgp_curation_scripts/birds_microchromosomes/"
+    "/nfs/users/nfs_d/dz11/gitlab/vgp_curation_scripts/birds_microchromosomes/"
     "microchr_second_shot_curation.py"
 )
 

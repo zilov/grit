@@ -14,8 +14,12 @@ from grit.utils.output import print_done, print_step_header
 
 log = logging.getLogger(__name__)
 
+# TEMP: pointing at dz11's branch checkout while add-hap-suffix-handling is
+# unmerged — revert to /software/grit/projects/vgp_curation_scripts/... once
+# that branch lands.
 _COMBINE_CURATED_MICROS_SCRIPT = (
-    "/software/grit/projects/vgp_curation_scripts/birds_microchromosomes/combine_curated_micros.py"
+    "/nfs/users/nfs_d/dz11/gitlab/vgp_curation_scripts/birds_microchromosomes/"
+    "combine_curated_micros.py"
 )
 
 # microchr_second_shot_curation.py's own CLI always takes "-hap1"/"-hap2"
