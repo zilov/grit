@@ -8,11 +8,8 @@ from grit.steps.pre_curation.add_pretext_view_tracks import (
     add_telo_track as add_telo_track,
 )
 from grit.steps.pre_curation.find_reference import find_closest_reference as find_closest_reference
-from grit.steps.pre_curation.microchromosome import (
-    run_microchromosome_curation as run_microchromosome_curation,
-)
-from grit.steps.pre_curation.microchromosome import (
-    run_microchromosome_post_curation as run_microchromosome_post_curation,
+from grit.steps.pre_curation.microchromosome_second_shot import (
+    run_microchromosome_second_shot as run_microchromosome_second_shot,
 )
 from grit.steps.pre_curation.setup import (
     _pick_highest_version as _pick_highest_version,

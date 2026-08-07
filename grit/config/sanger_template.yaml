@@ -1,0 +1,15 @@
+# Your Sanger / farm username (used to derive the working directory path)
+username: {username}
+
+# NFS path where PretextView maps live before curation starts
+pretext_maps_nfs: /nfs/treeoflife-01/teams/grit/data/pretext_maps/
+
+# NFS path where the curator saves the finished PretextView session
+curated_pretext_maps_nfs: /nfs/treeoflife-01/teams/grit/data/curated_pretext_maps/
+
+# Hostname of the farm submission node (used for SSH / bsub)
+farm_host: tol22-head2
+
+# Absolute path to the directory that contains GritJiraIssue.py
+# (the module used to fetch ticket YAML from Jira)
+gritjiraissue_path: /software/grit/projects/vgp_submission/modules

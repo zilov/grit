@@ -1,6 +1,7 @@
 """Optional tracks for pretext map: bedgraph, gap, and telomere tracks."""
 
 import glob
+import logging
 from pathlib import Path
 
 import rich_click as click
@@ -11,11 +12,10 @@ from grit.utils.helpers import _find_pretext_map_in_workdir, _run
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
     print_done,
-    print_info,
-    print_next_step,
     print_step_header,
-    print_warning,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -45,6 +45,7 @@ def add_bedgraph_track(ctx: CurationContext, bedgraph_path: str) -> None:
     Prints:
         Step header, track name, command executed.
     """
+    log.info("add-bedgraph-track | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Add bedgraph track")
 
     bg_path = Path(bedgraph_path)
@@ -52,8 +53,8 @@ def add_bedgraph_track(ctx: CurationContext, bedgraph_path: str) -> None:
         raise FileNotFoundError(f"Bedgraph file not found: {bg_path}")
 
     track_name = bg_path.stem
-    print_info("Bedgraph file", str(bg_path))
-    print_info("Track name", track_name)
+    log.info("Bedgraph file: %s", bg_path)
+    log.info("Track name: %s", track_name)
 
     pretext_map = _find_pretext_map_in_workdir(ctx)
     ml = module_cmd("PRETEXTGRAPH")
@@ -82,6 +83,7 @@ def add_gap_track(ctx: CurationContext) -> None:
         Step header, command executed.
     Next step hint: ``add_telo_track(ctx)``
     """
+    log.info("add-gap-track | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Add gap track")
 
     pretext_map = _find_pretext_map_in_workdir(ctx)
@@ -95,7 +97,6 @@ def add_gap_track(ctx: CurationContext) -> None:
     )
     _run(cmd, ctx.print_only)
     print_done("Gap track added.")
-    print_next_step("add_telo_track(ctx)")
 
 
 def add_telo_track(ctx: CurationContext) -> None:
@@ -115,6 +116,7 @@ def add_telo_track(ctx: CurationContext) -> None:
     Prints:
         Step header, telo file found (or warning if absent), command executed.
     """
+    log.info("add-telo-track | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Add telo track")
 
     telo_pattern = str(
@@ -122,14 +124,14 @@ def add_telo_track(ctx: CurationContext) -> None:
     )
 
     if ctx.print_only:
-        print_info("Telo pattern", telo_pattern)
+        log.info("Telo pattern: %s", telo_pattern)
     else:
         telo_files = glob.glob(telo_pattern)
         if not telo_files:
-            print_warning(f"No telo BED file found at: {telo_pattern} — skipping telo track.")
+            log.warning("No telo BED file found at: %s — skipping telo track.", telo_pattern)
             return
         telo_bed_gz = Path(sorted(telo_files)[-1])
-        print_info("Telo file", str(telo_bed_gz))
+        log.info("Telo file: %s", telo_bed_gz)
 
     pretext_map = _find_pretext_map_in_workdir(ctx)
     ml = module_cmd("PRETEXTGRAPH")
@@ -165,7 +167,11 @@ def add_bedgraph_track_cmd(ctx, bedgraph_path):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    add_bedgraph_track(curation_ctx, bedgraph_path)
+    try:
+        add_bedgraph_track(curation_ctx, bedgraph_path)
+    except Exception:
+        log.exception("add-bedgraph-track failed")
+        raise SystemExit(1)
 
 
 @click.command("add-gap-track", cls=GritCommand)
@@ -176,7 +182,11 @@ def add_gap_track_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    add_gap_track(curation_ctx)
+    try:
+        add_gap_track(curation_ctx)
+    except Exception:
+        log.exception("add-gap-track failed")
+        raise SystemExit(1)
 
 
 @click.command("add-telo-track", cls=GritCommand)
@@ -187,4 +197,8 @@ def add_telo_track_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    add_telo_track(curation_ctx)
+    try:
+        add_telo_track(curation_ctx)
+    except Exception:
+        log.exception("add-telo-track failed")
+        raise SystemExit(1)

@@ -104,7 +104,7 @@ def test_setup_curation_initial_single_hap(mock_glob, mock_run, mock_ctx, tmp_pa
 
     hap1 = "/lustre/draft/ilHelSara1.1/ilHelSara1.1.primary.decontaminated.fa.gz"
 
-    mock_glob.side_effect = [[hap1], []]  # no hap2
+    mock_glob.side_effect = [[hap1], [], []]  # no hap2, no haplotigs fallback either
 
     with patch("grit.steps.pre_curation.setup._sort_by_mtime", side_effect=lambda x: x):
         setup_curation(mock_ctx)
@@ -143,7 +143,7 @@ def test_copy_pretext_maps_copies_and_prints_scp(mock_glob, mock_run, mock_ctx, 
 
     hr = "/nfs/pretext_maps/sDipInt39_1_1_hr.pretext"
     normal = "/nfs/pretext_maps/sDipInt39_1_1_normal.pretext"
-    mock_glob.side_effect = [[hr], [normal]]
+    mock_glob.side_effect = [[hr], [normal], []]  # no ultra
 
     copy_pretext_maps(mock_ctx)
 
@@ -172,7 +172,7 @@ def test_copy_pretext_maps_raises_when_no_normal(mock_glob, mock_run, mock_ctx, 
     mock_ctx.farm_host = "farm22"
 
     hr = "/nfs/pretext_maps/sDipInt39_1_1_hr.pretext"
-    mock_glob.side_effect = [[hr], []]  # no normal
+    mock_glob.side_effect = [[hr], [], []]  # no normal, no ultra
 
     with pytest.raises(FileNotFoundError, match="normal pretext"):
         copy_pretext_maps(mock_ctx)
@@ -191,7 +191,7 @@ def test_copy_pretext_maps_picks_highest_when_multiple(mock_glob, mock_run, mock
         "/nfs/pretext_maps/sDipInt39_1_5_hr.pretext",
     ]
     normal_files = ["/nfs/pretext_maps/sDipInt39_1_1_normal.pretext"]
-    mock_glob.side_effect = [hr_files, normal_files]
+    mock_glob.side_effect = [hr_files, normal_files, []]  # no ultra
 
     copy_pretext_maps(mock_ctx)
 

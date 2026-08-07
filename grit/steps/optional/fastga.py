@@ -1,19 +1,54 @@
 """Run FastGA dot-plot comparison."""
 
 import glob
+import logging
 from pathlib import Path
 
 import rich_click as click
+from rich.table import Table
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run
+from grit.utils.helpers import (
+    _state_update_epilogue,
+    _submit_bsub,
+    build_bsub_opts,
+    find_canonical_fa,
+    find_latest_dir,
+    find_reheadered_reference,
+)
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
+    console,
     print_done,
-    print_info,
     print_step_header,
 )
+
+log = logging.getLogger(__name__)
+
+_REPO_ROOT = Path(__file__).parent.parent.parent.parent
+_PAF_TOP_TARGETS_SCRIPT = _REPO_ROOT / "scripts" / "paf_top_targets_add_top_longest.py"
+
+# Downloadable outputs, picked up by the bsub -Ep epilogue (grit _state-update)
+# and surfaced as an scp tip in `grit status` — see build_scp_tip().
+_OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
+    ("idx", "*.idx", []),
+    ("paf", "*FastGA.paf", []),
+    ("top_targets_summary", "*.top_targets_summary.txt", []),
+    ("top1_targets", "*.top1_targets.tsv", []),
+]
+
+
+def _is_super(name: str) -> bool:
+    """True for curated chromosome-level scaffolds (SUPER_*), false for unloc/contig-level ones."""
+    return name.startswith("SUPER_")
+
+
+def _read_top1_table(top1_file: Path) -> list[tuple[str, str, str]]:
+    """Read the super/top_longest_ref_chr/len rows written by --top1-out (skips the header)."""
+    lines = top1_file.read_text().splitlines()[1:]
+    return [tuple(line.split("\t")) for line in lines if line.strip()]
+
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -21,123 +56,94 @@ from grit.utils.output import (
 
 
 def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
-    """
-    Runs a FastGA dot-plot comparison of the curated assembly vs. a reference.
-
-    Notebook source: ``run_fastga()`` and ``scp_fastga()`` functions.
-
-    Steps:
-        1. Determine the primary curated hap1 FASTA in ``ctx.workdir``.
-        2. If reference is gzipped and not yet decompressed/reheadered::
-
-               ml grit && gunzip {ref} && \
-               reheader {ref.replace('.gz', '')} > {ref_reheader}
-
-        3. Build bsub command::
-
-               bsub -G team135 -n 8 -e e_fastga -o o_fastga \
-                   -M 24000 -R'...' \
-                   /software/grit/projects/vgp_curation_scripts/FastGA_dot_dgenies.sh \
-                   {ref_reheader} {hap1_fa} {run_prefix} {outdir}
-
-        4. Print command and submit via subprocess.
-        5. If a ``fastga/`` output directory already exists: print scp commands
-           for the index and PAF files::
-
-               scp {ctx.farm_host}:{fastga_outdir}/*.f*a.idx ~/curations/.../
-               scp {ctx.farm_host}:{fastga_outdir}/*FastGA.paf ~/curations/.../
-
-    Prints:
-        Step header, bsub command, scp commands (if output exists).
-    """
+    """Submits the FastGA dot-plot alignment (which also writes the top-targets summary)."""
+    log.info("fastga | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run FastGA")
 
-    # --- find curated hap1 fa ---
-    hap1_pattern = str(ctx.workdir / f"{ctx.tol_id}*{ctx.hap1_prefix}*.curated.fa")
-    if ctx.print_only:
-        hap1_fa = ctx.workdir / f"{ctx.tol_id}.{ctx.hap1_prefix}.primary.curated.fa"
-    else:
-        hap1_matches = glob.glob(hap1_pattern)
-        if not hap1_matches:
-            raise FileNotFoundError(f"No curated hap1 FASTA found: {hap1_pattern}")
-        hap1_fa = Path(sorted(hap1_matches)[-1])
-    print_info("Curated hap1 FASTA", str(hap1_fa))
+    # --- find canonical hap1 FASTA (rename_and_orient output preferred) ---
+    hap1_fa = find_canonical_fa(ctx, ctx.hap1_prefix)
+    log.info("Curated hap1 FASTA: %s", hap1_fa)
+
+    from grit.steps.pre_curation.find_reference import reheader_reference
 
     # --- find reference ---
-    ref_dir = ctx.workdir / "reference"
-    ref_patterns = [
-        str(ctx.workdir / "GC*.fna.gz"),
-        str(ctx.workdir / "GC*.fna"),
-        str(ref_dir / "*.fna.gz"),
-        str(ref_dir / "*.fna"),
-    ]
-    ref_path = None
-    for pattern in ref_patterns:
-        if ctx.print_only:
-            ref_path = Path(pattern.replace("*", "example"))
-            break
-        matches = glob.glob(pattern)
-        if matches:
-            ref_path = Path(sorted(matches)[-1])
-            break
+    if reference_path:
+        ref_path = Path(reference_path)
+        if not ctx.print_only and not ref_path.exists():
+            raise FileNotFoundError(f"Reference not found: {ref_path}")
+        log.info("Reference FASTA (explicit): %s", ref_path)
+        ref_reheader = reheader_reference(ctx, ref_path)
+    else:
+        ref_reheader = find_reheadered_reference(ctx)
+        log.info("Reference FASTA: %s", ref_reheader)
 
-    if ref_path is None or (not ctx.print_only and not ref_path.exists()):
-        print_info("No reference found, downloading closest reference")
-        from grit.steps.find_reference import find_closest_reference
-
-        find_closest_reference(ctx)
-        # After download, find again
-        ref_matches = glob.glob(str(ref_dir / "*.fna.gz")) + glob.glob(str(ref_dir / "*.fna"))
-        if not ref_matches:
-            raise FileNotFoundError(f"No reference downloaded to {ref_dir}")
-        ref_path = Path(sorted(ref_matches)[-1])
-
-    print_info("Reference FASTA", str(ref_path))
-
-    # --- prepare reference (gunzip + reheader if needed) ---
-    ref_prefix = ref_path.stem.split(".")[0]
+    ref_prefix = ref_reheader.stem.split(".")[0].removesuffix("_reheader")
     assembly_prefix = hap1_fa.stem.split(".")[0]
     run_prefix = f"{ref_prefix}_vs_{assembly_prefix}"
-    outdir = ctx.workdir / "fastga"
-    ref_reheader = ctx.workdir / f"{ref_prefix}_reheader.fna"
 
-    if ref_path.suffix == ".gz":
-        gunzip_cmd = f"gunzip {ref_path}"
-        reheader_cmd = f"reheader {ref_path.with_suffix('')} > {ref_reheader}"
-        prep_cmd = f"{gunzip_cmd} && {reheader_cmd}"
-    else:
-        prep_cmd = f"reheader {ref_path} > {ref_reheader}"
-
-    ml_grit = module_cmd("GRIT")
-    fastga_script = "/software/grit/projects/vgp_curation_scripts/FastGA_dot_dgenies.sh"
-    bsub_cmd = (
-        f"bsub -G team135 -n 8 -e e_fastga -o o_fastga "
-        f"-M 24000 -R'select[mem>24000] rusage[mem=24000] span[hosts=1]' "
-        f"{fastga_script} {ref_reheader} {hap1_fa} {run_prefix} {outdir}"
+    # --- submit bsub job ---
+    # Each run gets its own tracker run_dir so multiple fastga runs don't overwrite each other.
+    run_dir = (
+        ctx.tracker.start("fastga", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else ctx.workdir / "fastga" / "untracked"
     )
+    fastga_script = _REPO_ROOT / "scripts" / "FastGA_dot_dgenies_stats.sh"
 
-    full_cmd = f"{ml_grit} && {prep_cmd} && {bsub_cmd}"
-    _run(full_cmd, ctx.print_only)
+    inner_cmd = (
+        f"cd {run_dir} && "
+        f"{module_cmd('GRIT')} && "
+        f"bash {fastga_script} {ref_reheader} {hap1_fa} {run_prefix} "
+        f"{run_dir} {_PAF_TOP_TARGETS_SCRIPT}"
+    )
+    bsub_opts = build_bsub_opts(
+        group="team135",
+        cores=8,
+        memory_mb=ctx.bsub_ram or 24000,
+        output="o_fastga",
+        error="e_fastga",
+        run_dir=run_dir,
+    )
+    epilogue = _state_update_epilogue(ctx.workdir, "fastga", run_dir) if run_dir else None
 
-    # --- if output exists, print scp commands ---
-    if ctx.print_only or outdir.exists():
-        scp_local_dir = f"~/curations/work/{ctx.tol_id}"
-        idx_files = (
-            glob.glob(str(outdir / "*f*a.idx"))
-            if not ctx.print_only
-            else [str(outdir / "example.f*a.idx")]
-        )
-        paf_files = (
-            glob.glob(str(outdir / "*FastGA.paf"))
-            if not ctx.print_only
-            else [str(outdir / "example.FastGA.paf")]
-        )
-        files_to_scp = idx_files + paf_files
-        if files_to_scp:
-            scp_cmds = [f"scp {ctx.farm_host}:{f} {scp_local_dir}" for f in files_to_scp]
-            print_info("Scp FastGA results to local", " && ".join(scp_cmds))
+    try:
+        job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
+        if ctx.tracker and run_dir and job_id:
+            ctx.tracker.record_job("fastga", run_dir, job_id)
+    except Exception:
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("fastga", run_dir, "failed")
+        raise
 
     print_done("FastGA submitted.")
+
+
+def run_fastga_stats(ctx: CurationContext) -> None:
+    """Prints the top-longest reference target table for SUPER_* scaffolds from the latest run."""
+    log.info("fastga-stats | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
+    print_step_header(ctx.ticket_id, ctx.tol_id, "FastGA top-longest targets")
+
+    fastga_dir = find_latest_dir(ctx, "fastga")
+    matches = glob.glob(str(fastga_dir / "*.top1_targets.tsv"))
+    if not matches:
+        raise FileNotFoundError(
+            f"No top1_targets table found in {fastga_dir}\n"
+            f"Run 'grit fastga -t {ctx.ticket_id}' first."
+        )
+    top1_file = Path(sorted(matches)[-1])
+
+    rows = [row for row in _read_top1_table(top1_file) if _is_super(row[0])]
+    if not rows:
+        log.warning("No SUPER_* rows found in %s", top1_file)
+        return
+
+    table = Table(title="Top-longest reference target per super scaffold", header_style="bold cyan")
+    table.add_column("super")
+    table.add_column("top_longest_ref_chr")
+    table.add_column("len", justify="right")
+    for super_name, ref_chr, length in rows:
+        table.add_row(super_name, ref_chr, f"{int(length):,}")
+    console.print(table)
 
 
 # ---------------------------------------------------------------------------
@@ -145,11 +151,35 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-@click.command("fastga", cls=GritCommand)
+@click.command("fastga", cls=GritCommand, bsub_ram_default=24000)
+@click.option(
+    "--reference",
+    "-r",
+    default=None,
+    help="Path to reference FASTA (overrides auto-search in workdir/reference/).",
+)
 @click.pass_context
-def fastga_cmd(ctx):
+def fastga_cmd(ctx, reference):
     """Run FastGA dot-plot comparison of curated assembly vs reference."""
     from grit.core.click_cli import build_context
 
     curation_ctx = build_context(ctx.obj)
-    run_fastga(curation_ctx)
+    try:
+        run_fastga(curation_ctx, reference_path=reference)
+    except Exception:
+        log.exception("fastga failed")
+        raise SystemExit(1)
+
+
+@click.command("fastga-stats", cls=GritCommand)
+@click.pass_context
+def fastga_stats_cmd(ctx):
+    """Print the per-query top-longest reference target table from the latest fastga run."""
+    from grit.core.click_cli import build_context
+
+    curation_ctx = build_context(ctx.obj)
+    try:
+        run_fastga_stats(curation_ctx)
+    except Exception:
+        log.exception("fastga-stats failed")
+        raise SystemExit(1)

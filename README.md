@@ -18,17 +18,10 @@ pip install -e .
 
 ## Configuration
 
-Create `~/.grit_curation_config.yaml` with your personal settings:
-
-```yaml
-username: <USERNAME>
-email: <USERNAME>@sanger.ac.uk
-farm_host: <FARM_HOST>
-pretext_maps_nfs: /nfs/.../teams/grit/data/pretext_maps
-curated_pretext_maps_nfs: /nfs/.../teams/grit/data/curated_pretext_maps
-curation_savestates_nfs: /nfs/.../teams/grit/data/curation_savestates
-gritjiraissue_path: <GRITJIRAISSUE_PATH>
-```
+Run `grit init` to create `~/.grit/grit_curation_config.yaml`, pre-filled with your
+Sanger username and Sanger-wide defaults (NFS paths, farm host, `GritJiraIssue` path).
+Review it and adjust anything that doesn't match your setup — no manual setup needed
+otherwise.
 
 ## Usage
 
@@ -39,8 +32,6 @@ The `grit` command is installed with the package:
 ```bash
 # Pre-curation
 grit RC-1234 setup
-grit RC-1234 add-gap-track
-grit RC-1234 add-telo-track
 grit RC-1234 sex-matcher
 
 # Post-curation
@@ -48,7 +39,6 @@ grit RC-1234 pretext-to-asm
 grit RC-1234 haplotig-files
 grit RC-1234 hic-remapping
 grit RC-1234 qv
-grit RC-1234 validate-files
 grit RC-1234 finalize-qc
 
 # Optional

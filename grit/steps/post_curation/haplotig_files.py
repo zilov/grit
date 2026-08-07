@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+import logging
+
 import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
+from grit.utils.helpers import find_latest_dir
 from grit.utils.output import (
     print_done,
-    print_info,
-    print_next_step,
     print_step_header,
-    print_warning,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -24,49 +26,63 @@ def run_haplotig_files(ctx: CurationContext) -> None:
     Ensures all expected haplotig FASTA files are present after pretext-to-asm.
     Creates empty files for any that are missing (e.g. if the Haplotig tag was not used).
 
+    Files are created in the pretext_to_asm run directory (from tracker) so they
+    stay alongside the curated FASTA for the same run.
+
     Notebook source: ``pre_and_post_curation()`` — ``haplotigs_exists`` check.
 
     Steps:
-        1. Build the expected haplotig filename:
+        1. Find the pretext_to_asm run_dir via tracker (or fall back to workdir).
+        2. Build the expected haplotig filename:
            ``{tol_id}.{hap1_prefix}.{release_version}.all_haplotigs.curated.fa``
            (for primary assemblies: ``{tol_id}.{release_version}.all_haplotigs.curated.fa``)
-        2. If the file is absent or empty: create it with ``touch``.
-        3. Print a warning if an existing haplotig file is non-empty
+        3. If the file is absent or empty: create it with ``touch``.
+        4. Print a warning if an existing haplotig file is non-empty
            (curator should verify its contents).
 
     Prints:
         Status per expected file (found / created).
     Next step hint: ``run_hic_remapping(ctx)``
     """
+    log.info("haplotig-files | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Ensure haplotig files")
+
+    # Resolve base dir: prefer the pretext_to_asm run_dir so haplotig files
+    # stay alongside the curated FA for that run.
+    base_dir = find_latest_dir(ctx, "pretext_to_asm")
 
     # hap1/hap2: {tol_id}.hap1.1.all_haplotigs.curated.fa
     # primary:   {tol_id}.1.all_haplotigs.curated.fa
     if ctx.assembly_type in ("hap1", "paternal"):
-        haplotig_name = (
-            f"{ctx.tol_id}.{ctx.hap1_prefix}.{ctx.release_version}.all_haplotigs.curated.fa"
-        )
+        haplotig_names = [
+            f"{ctx.tol_id}.{ctx.hap1_prefix}.{ctx.release_version}.all_haplotigs.curated.fa",
+            f"{ctx.tol_id}.{ctx.hap2_prefix}.{ctx.release_version}.all_haplotigs.curated.fa",
+        ]
     else:
-        haplotig_name = f"{ctx.tol_id}.{ctx.release_version}.all_haplotigs.curated.fa"
-
-    haplotig_path = ctx.workdir / haplotig_name
+        haplotig_names = [f"{ctx.tol_id}.{ctx.release_version}.all_haplotigs.curated.fa"]
 
     if ctx.print_only:
-        print_info("Expected haplotig file", str(haplotig_path))
-        print_next_step("run_hic_remapping(ctx)")
+        for name in haplotig_names:
+            log.info("Expected haplotig file: %s", base_dir / name)
         return
 
-    if haplotig_path.exists() and haplotig_path.stat().st_size > 10:
-        print_warning(f"Haplotig file is non-empty: {haplotig_path}")
-        print_info("Status", "found (non-empty — verify contents)")
-    elif haplotig_path.exists():
-        print_info("Status", f"found (empty) — {haplotig_name}")
-    else:
-        haplotig_path.touch()
-        print_info("Status", f"created empty — {haplotig_name}")
+    if all((base_dir / name).exists() for name in haplotig_names):
+        log.info("All haplotig files already exist — skipping")
+        print_done("Haplotig files already present")
+        return
+
+    for haplotig_name in haplotig_names:
+        haplotig_path = base_dir / haplotig_name
+        if haplotig_path.exists() and haplotig_path.stat().st_size > 10:
+            log.warning("Haplotig file is non-empty: %s", haplotig_path)
+            log.info("Status: found (non-empty — verify contents)")
+        elif haplotig_path.exists():
+            log.info("Status: found (empty) — %s", haplotig_name)
+        else:
+            haplotig_path.touch()
+            log.info("Status: created empty — %s", haplotig_name)
 
     print_done("Haplotig files ready")
-    print_next_step("run_hic_remapping(ctx)")
 
 
 # ---------------------------------------------------------------------------
@@ -82,4 +98,8 @@ def haplotig_files_cmd(ctx):
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    run_haplotig_files(curation_ctx)
+    try:
+        run_haplotig_files(curation_ctx)
+    except Exception:
+        log.exception("haplotig-files failed")
+        raise SystemExit(1)

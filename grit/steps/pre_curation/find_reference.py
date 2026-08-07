@@ -1,15 +1,21 @@
 """Find and download closest reference genome."""
 
+import glob
+import logging
+from pathlib import Path
+
 import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.helpers import _clean_species_name, _run
+from grit.utils.modules import module_cmd
 from grit.utils.output import (
     print_done,
-    print_info,
     print_step_header,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -20,43 +26,171 @@ _GET_NEAREST_COMPARATOR = "/software/grit/projects/vgp_curation_scripts/get_near
 
 
 # ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def reheader_reference(ctx: CurationContext, raw: Path, *, remove_raw: bool = False) -> Path:
+    """
+    Reheader a single reference FASTA with the GRIT ``reheader`` tool (gunzipping
+    first if needed) and return the resulting ``{prefix}_reheader.fna`` path.
+    Skips the work if that file already exists.
+
+    ``remove_raw`` deletes the (decompressed) source file afterwards — used for
+    references we downloaded ourselves, never for a user-supplied ``--reference-path``.
+    """
+    ref_prefix = raw.stem.split(".")[0].removesuffix("_reheader")
+    ref_reheader = raw.parent / f"{ref_prefix}_reheader.fna"
+    if ref_reheader.exists():
+        log.info("Reheadered reference already exists — skipping prep: %s", ref_reheader)
+        return ref_reheader
+
+    if raw.suffix == ".gz":
+        unzipped = raw.with_suffix("")
+        cmd = f"gunzip {raw} && reheader {unzipped} > {ref_reheader}"
+        if remove_raw:
+            cmd += f" && rm {unzipped}"
+    else:
+        cmd = f"reheader {raw} > {ref_reheader}"
+        if remove_raw:
+            cmd += f" && rm {raw}"
+    _run(f"{module_cmd('GRIT')} && {cmd}", ctx.print_only)
+    return ref_reheader
+
+
+def _prep_local_reference(ctx: CurationContext, local: Path, run_dir: Path) -> Path:
+    """
+    Prep a user-supplied local reference FASTA into ``run_dir`` without ever
+    touching the original file — no symlink, no in-place mutation.
+
+    Plain FASTA: ``reheader`` reads directly from ``local`` and writes
+    straight to ``run_dir``.
+    Gzipped FASTA: decompressed via ``gunzip -c`` (stream to stdout, source
+    untouched) into a temporary copy inside ``run_dir``, reheadered from
+    there, then the temporary decompressed copy is removed — only
+    ``{prefix}_reheader.fna`` remains in ``run_dir``.
+
+    Skips the work if ``{prefix}_reheader.fna`` already exists.
+    """
+    ref_prefix = local.stem.split(".")[0].removesuffix("_reheader")
+    ref_reheader = run_dir / f"{ref_prefix}_reheader.fna"
+    if ref_reheader.exists():
+        log.info("Reheadered reference already exists — skipping prep: %s", ref_reheader)
+        return ref_reheader
+
+    if local.suffix == ".gz":
+        decompressed = run_dir / local.with_suffix("").name
+        cmd = (
+            f"mkdir -p {run_dir} && "
+            f"gunzip -c {local} > {decompressed} && "
+            f"reheader {decompressed} > {ref_reheader} && "
+            f"rm {decompressed}"
+        )
+    else:
+        cmd = f"mkdir -p {run_dir} && reheader {local} > {ref_reheader}"
+    _run(f"{module_cmd('GRIT')} && {cmd}", ctx.print_only)
+    return ref_reheader
+
+
+def _reheader_downloaded_references(ctx: CurationContext, run_dir: Path) -> None:
+    """
+    Reheader every reference FASTA get_nearest_comparator.rb just downloaded into
+    ``run_dir``, removing the raw files afterwards — so only
+    ``{prefix}_reheader.fna`` remains. fastga and busco-synteny both consume that
+    file directly and no longer prepare it themselves.
+    """
+    raw_matches = set()
+    for pattern in ("*.fa.gz", "*.fna.gz", "*.fa", "*.fna"):
+        raw_matches.update(glob.glob(str(run_dir / pattern)))
+    raw_paths = sorted(Path(p) for p in raw_matches if not p.endswith("_reheader.fna"))
+
+    for raw in raw_paths:
+        reheader_reference(ctx, raw, remove_raw=True)
+
+
+# ---------------------------------------------------------------------------
 # Public step functions
 # ---------------------------------------------------------------------------
 
 
-def find_closest_reference(ctx: CurationContext, number: int = 1) -> None:
+def find_closest_reference(
+    ctx: CurationContext, number: int = 1, local_path: str | None = None
+) -> None:
     """
     Finds (and downloads) the closest reference genome from NCBI for the
-    species being curated.
+    species being curated, or preps a user-supplied local reference in its
+    place when ``local_path`` is given.
 
-    The reference FASTA is downloaded into ``{ctx.workdir}/reference/``.
-    The script must be run from that directory, so we ``cd`` into it first.
+    The reference FASTA lands in the tracked ``find_reference`` run_dir,
+    the same as a downloaded one, so ``fastga``/``busco-synteny`` pick it up
+    automatically via ``find_reheadered_reference()``.
 
-    Command::
+    Command (download path)::
 
         mkdir -p {ctx.workdir}/reference && \\
         cd {ctx.workdir}/reference && \\
         /software/grit/projects/vgp_curation_scripts/get_nearest_comparator.rb \\
             -s "{ctx.species}" -d -n {number}
 
+    Local path: preps ``local_path`` straight into the run_dir via
+    ``_prep_local_reference()`` — gunzipped (if needed) and reheadered there
+    without ever symlinking, copying, or mutating the original file.
+
     Prints:
         Step header, command executed, path to reference directory.
     """
+    log.info("find-reference | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Find closest reference")
 
-    ref_dir = ctx.workdir / "reference"
+    run_dir = (
+        ctx.tracker.start("find_reference", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else ctx.workdir / "find_reference" / "untracked"
+    )
+    log.info("Reference dir: %s", run_dir)
+
+    if local_path:
+        if number != 1:
+            log.warning(
+                "--local given together with --number=%s; ignoring --number "
+                "(only one local reference is used).",
+                number,
+            )
+        local = Path(local_path).expanduser()
+        log.info("Using local reference: %s", local)
+
+        try:
+            if not ctx.print_only and not local.exists():
+                raise FileNotFoundError(f"Local reference not found: {local}")
+            _prep_local_reference(ctx, local, run_dir)
+            if ctx.tracker and run_dir:
+                ctx.tracker.finish("find_reference", run_dir, "success")
+        except Exception:
+            if ctx.tracker and run_dir:
+                ctx.tracker.finish("find_reference", run_dir, "failed")
+            raise
+        print_done(f"Local reference prepared in {run_dir}")
+        return
+
     species_query = _clean_species_name(ctx.species)
-    print_info("Reference dir", str(ref_dir))
-    print_info("Species (raw)", ctx.species)
-    print_info("Species (query)", species_query)
+    log.info("Species (raw): %s", ctx.species)
+    log.info("Species (query): %s", species_query)
 
     cmd = (
-        f"mkdir -p {ref_dir} && "
-        f"cd {ref_dir} && "
+        f"mkdir -p {run_dir} && "
+        f"cd {run_dir} && "
         f'{_GET_NEAREST_COMPARATOR} -s "{species_query}" -d -n {number}'
     )
-    _run(cmd, ctx.print_only)
-    print_done(f"Reference downloaded to {ref_dir}")
+    try:
+        _run(cmd, ctx.print_only)
+        _reheader_downloaded_references(ctx, run_dir)
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("find_reference", run_dir, "success")
+    except Exception:
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("find_reference", run_dir, "failed")
+        raise
+    print_done(f"Reference downloaded to {run_dir}")
 
 
 # ---------------------------------------------------------------------------
@@ -65,11 +199,23 @@ def find_closest_reference(ctx: CurationContext, number: int = 1) -> None:
 
 
 @click.command("find-reference", cls=GritCommand)
+@click.option(
+    "--local",
+    "-l",
+    "local_path",
+    default=None,
+    help="Path to a local reference FASTA (.fa/.fna, optionally .gz) — "
+    "skips the NCBI download and preps this file instead.",
+)
 @click.pass_context
-def find_reference_cmd(ctx):
+def find_reference_cmd(ctx, local_path):
     """Find and download closest reference genome."""
     from grit.core.click_cli import build_context
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    find_closest_reference(curation_ctx)
+    try:
+        find_closest_reference(curation_ctx, local_path=local_path)
+    except Exception:
+        log.exception("find-reference failed")
+        raise SystemExit(1)

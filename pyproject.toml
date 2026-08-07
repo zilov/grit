@@ -4,11 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "grit"
-version = "0.1.0"
+version = "0.2.0"
 description = "Genome curation pipeline notebook library"
 requires-python = ">=3.10"
 dependencies = [
+    "biopython>=1.80",
+    "pymysql>=1.0",
     "pyyaml>=6.0",
+    "requests>=2.28",
     "rich-click>=1.8.0",
 ]
 

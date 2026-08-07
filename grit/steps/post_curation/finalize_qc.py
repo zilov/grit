@@ -3,20 +3,116 @@
 from __future__ import annotations
 
 import glob
+import logging
+from pathlib import Path
 
 import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run
-from grit.utils.output import console, print_done, print_info, print_step_header, print_warning
+from grit.utils.helpers import (
+    _run,
+    find_canonical_chr_list,
+    find_canonical_fa,
+    find_canonical_haplotigs,
+    find_latest_dir,
+)
+from grit.utils.output import console, print_done, print_step_header
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Public step functions
+# Internal helpers
 # ---------------------------------------------------------------------------
 
 
-def finalize_for_qc(ctx: CurationContext) -> None:
+def _resolve_nfs_dest(nfs_base: Path, tol_id: str, print_only: bool) -> Path:
+    """Resolve the two-level NFS destination directory for pretext maps."""
+    first_level = glob.glob(str(nfs_base / f"{tol_id[0]}_*/"))
+    if first_level:
+        second_level = glob.glob(str(Path(first_level[0]) / f"{tol_id[1]}_*/"))
+        return Path(second_level[0] if second_level else first_level[0])
+    if not print_only:
+        log.warning("No NFS subdirectory found for %s* under %s", tol_id[0], nfs_base)
+    return nfs_base / f"{tol_id[0]}_?" / f"{tol_id[1]}_?"
+
+
+def _warn_if_yaml_pta_mismatch(ctx: CurationContext) -> None:
+    """
+    Warn when the YAML declares a single-hap assembly (primary/alternate,
+    paternal/maternal) but the curator actually split into two haplotypes
+    (hap1/hap2) in PretextView — pretext-to-asm then names its output files
+    with the literal "hap1"/"hap2" tokens instead of the YAML's prefixes,
+    which breaks the single-hap copy logic below (only ``ctx.hap1_prefix``
+    is processed, so the second haplotype's assembly is silently dropped).
+    """
+    if ctx.hap1_prefix in ("hap1", "hap2"):
+        return  # YAML already declares a dual-hap assembly
+
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+    haplotig_keywords = ("all_haplotigs", "additional_haplotigs", "haplotigs")
+
+    def _has_curated_fa(token: str) -> bool:
+        return any(
+            not any(kw in f for kw in haplotig_keywords)
+            for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.{token}.*.curated.fa"))
+        )
+
+    if _has_curated_fa("hap1") and _has_curated_fa("hap2"):
+        log.warning(
+            "YAML and pretext-to-asm assembly types don't match: YAML declares "
+            "primary/alternate, but pretext-to-asm produced hap1/hap2 output. "
+            "Update the YAML to hap1/hap2 to fix this."
+        )
+
+
+def _copy_map(
+    ctx: CurationContext,
+    step_name: str,
+    hap_prefix: str,
+    nfs_dest: Path,
+    override: Path | None,
+) -> None:
+    """Resolve and copy one remapped pretext map to NFS."""
+    tol_id = ctx.tol_id
+    dest_name = f"{tol_id}.{ctx.release_version}.{hap_prefix}.curated.pretext"
+
+    if override:
+        _run(f"cp {override} {nfs_dest / dest_name}", ctx.print_only)
+        return
+
+    hic_dir = find_latest_dir(ctx, step_name)
+    pattern = str(hic_dir / "pretext_maps_processed" / f"{tol_id}*normal.pretext")
+    matches = glob.glob(pattern)
+    if matches:
+        _run(f"cp {matches[0]} {nfs_dest / dest_name}", ctx.print_only)
+    elif ctx.print_only:
+        _run(f"cp {pattern} {nfs_dest / dest_name}", ctx.print_only)
+    else:
+        log.warning(
+            "Remapped pretext map not found at %s. Copy manually after HiC remapping completes.",
+            pattern,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Public step function
+# ---------------------------------------------------------------------------
+
+
+def finalize_for_qc(
+    ctx: CurationContext,
+    *,
+    hap1_assembly: Path | None = None,
+    hap2_assembly: Path | None = None,
+    hap1_chr_list: Path | None = None,
+    hap2_chr_list: Path | None = None,
+    hap1_haplotigs: Path | None = None,
+    hap2_haplotigs: Path | None = None,
+    hap1_map: Path | None = None,
+    hap2_map: Path | None = None,
+    curated_dir: Path | None = None,
+) -> None:
     """
     Copies all curated outputs to their final destinations and prompts
     the curator to move the ticket to Curation QC.
@@ -25,105 +121,214 @@ def finalize_for_qc(ctx: CurationContext) -> None:
 
     Steps:
         1. Create curated assembly directory: ``mkdir {ctx.assembly_curated_dir}``
-        2. Copy curated FASTA files, chromosome lists, and haplotig files
-           to ``{ctx.assembly_curated_dir}/``.
-        3. Copy the remapped pretext map to the NFS curated pretext maps directory.
+        2. Copy canonical assembly FAs and chromosome lists per haplotype
+           (rename_and_orient output if available, otherwise pretext_to_asm),
+           plus haplotig FAs from pretext_to_asm, to ``{ctx.assembly_curated_dir}/``.
+        3. Copy remapped pretext maps (hap1 from hic_remapping, hap2 from
+           hic_remapping_hap2 if present) to NFS.
            Destination path uses a two-level prefix structure:
            ``{curated_pretext_maps_nfs}/{tol_id[0]}_*/{tol_id[1]}_*/``
         4. Run kmer_completeness.bash if no merquryk folder exists in
            ``{ctx.assembly_curated_dir}``.
 
-    Prints:
-        Step header, each copy command executed, reminder to update Jira.
+    All file arguments (``hap1_assembly``, ``hap2_assembly``, etc.) override
+    the automatically resolved paths. ``curated_dir`` overrides
+    ``ctx.assembly_curated_dir``.
     """
+    log.info("finalize-qc | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Finalize for QC")
 
-    curated_dir = ctx.assembly_curated_dir
+    if not ctx.print_only:
+        _warn_if_yaml_pta_mismatch(ctx)
+
+    run_dir = (
+        ctx.tracker.start("finalize_qc", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else None
+    )
+
+    dest_dir = curated_dir or ctx.assembly_curated_dir
+
+    # primary/alternate (and paternal/maternal) assemblies use version-only dest naming
+    # and only copy hap1 files — downstream scripts expect {tol_id}.{version}.primary.curated.fa
+    # hap1/hap2 assemblies copy both haplotypes with {tol_id}.{hap}.{version}.primary.curated.fa
+    _IS_SINGLE_HAP = ctx.hap1_prefix in ("primary", "paternal")
+
+    def _dest_name(hap_prefix: str, suffix: str) -> str:
+        if _IS_SINGLE_HAP:
+            return f"{ctx.tol_id}.{ctx.release_version}.{suffix}"
+        return f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.{suffix}"
 
     # 1. mkdir
-    mkdir_cmd = f"mkdir -p {curated_dir}"
-    _run(mkdir_cmd, ctx.print_only)
-    print_info("Curated dir", str(curated_dir))
+    _run(f"mkdir -p {dest_dir}", ctx.print_only)
+    log.info("Curated dir: %s", dest_dir)
 
-    # 2. gather curated files
-    curated_fa_pattern = str(ctx.workdir / f"{ctx.tol_id}*.curated.fa")
-    chr_list_pattern = str(ctx.workdir / f"{ctx.tol_id}*.chromosome.list.csv")
-    haplotig_pattern = str(ctx.workdir / f"{ctx.tol_id}*haplotigs*.fa")
+    # Which haplotypes to process: primary/alternate → hap1 only; hap1/hap2 → both
+    haps_to_process = [ctx.hap1_prefix] if _IS_SINGLE_HAP else [ctx.hap1_prefix, ctx.hap2_prefix]
 
-    if ctx.print_only:
-        for pattern in (curated_fa_pattern, chr_list_pattern, haplotig_pattern):
-            _run(f"cp {pattern} {curated_dir}/", ctx.print_only)
-    else:
-        for pattern in (curated_fa_pattern, chr_list_pattern, haplotig_pattern):
-            files = glob.glob(pattern)
-            if files:
-                cp_cmd = f"cp {' '.join(files)} {curated_dir}/"
-                _run(cp_cmd, ctx.print_only)
-            else:
-                print_warning(f"No files matched: {pattern}")
+    # 2a. primary assembly FAs
+    assembly_overrides = {ctx.hap1_prefix: hap1_assembly, ctx.hap2_prefix: hap2_assembly}
+    for hap_prefix in haps_to_process:
+        src = assembly_overrides[hap_prefix]
+        if src is None:
+            try:
+                src = find_canonical_fa(ctx, hap_prefix)
+            except FileNotFoundError as e:
+                log.warning(str(e))
+                continue
+        _run(f"cp {src} {dest_dir / _dest_name(hap_prefix, 'primary.curated.fa')}", ctx.print_only)
 
-    # 3. copy remapped pretext map to NFS
-    remapped_pattern = str(
-        ctx.workdir
-        / f"{ctx.tol_id}_curationpretext"
-        / "pretext_maps_processed"
-        / f"{ctx.tol_id}*normal.pretext"
-    )
+    # 2b. haplotig FAs — override, find, or touch empty placeholder
+    haplotig_overrides = {ctx.hap1_prefix: hap1_haplotigs, ctx.hap2_prefix: hap2_haplotigs}
+    for hap_prefix in haps_to_process:
+        src = haplotig_overrides[hap_prefix]
+        if src is None:
+            try:
+                src = find_canonical_haplotigs(ctx, hap_prefix)
+            except FileNotFoundError:
+                src = None
+        dest = dest_dir / _dest_name(hap_prefix, "all_haplotigs.curated.fa")
+        if src:
+            _run(f"cp {src} {dest}", ctx.print_only)
+        else:
+            _run(f"touch {dest}", ctx.print_only)
 
+    # 2c. chromosome lists
+    chr_list_overrides = {ctx.hap1_prefix: hap1_chr_list, ctx.hap2_prefix: hap2_chr_list}
+    for hap_prefix in haps_to_process:
+        src = chr_list_overrides[hap_prefix]
+        if src is None:
+            try:
+                src = find_canonical_chr_list(ctx, hap_prefix)
+            except FileNotFoundError as e:
+                log.warning(str(e))
+                continue
+        _run(
+            f"cp {src} {dest_dir / _dest_name(hap_prefix, 'primary.chromosome.list.csv')}",
+            ctx.print_only,
+        )
+
+    # 3. copy remapped pretext maps to NFS
     tol_id = ctx.tol_id
-    nfs_base = ctx.curated_pretext_maps_nfs
+    nfs_dest = _resolve_nfs_dest(ctx.curated_pretext_maps_nfs, tol_id, ctx.print_only)
 
-    if ctx.print_only:
-        nfs_dest = f"{nfs_base}/{tol_id[0]}_*/{tol_id[1]}_*/"
-        pretext_dest_name = f"{tol_id}.{ctx.release_version}.{ctx.hap1_prefix}.curated.pretext"
-    else:
-        first_level = glob.glob(str(nfs_base / f"{tol_id[0]}_*/"))
-        if first_level:
-            second_level = glob.glob(f"{first_level[0]}/{tol_id[1]}_*/")
-            nfs_dest = second_level[0] if second_level else first_level[0]
-        else:
-            nfs_dest = str(nfs_base) + "/"
-            print_warning(f"No NFS subdirectory found for {tol_id[0]}* under {nfs_base}")
+    _copy_map(ctx, "hic_remapping", ctx.hap1_prefix, nfs_dest, hap1_map)
 
-        pretext_dest_name = f"{tol_id}.{ctx.release_version}.{ctx.hap1_prefix}.curated.pretext"
-
-    if ctx.print_only:
-        _run(f"cp {remapped_pattern} {nfs_dest}{pretext_dest_name}", ctx.print_only)
-    else:
-        remapped_files = glob.glob(remapped_pattern)
-        if remapped_files:
-            cp_map_cmd = f"cp {remapped_files[0]} {nfs_dest}{pretext_dest_name}"
-            _run(cp_map_cmd, ctx.print_only)
-        else:
-            print_warning(
-                f"Remapped pretext map not found at {remapped_pattern}. "
-                "Copy manually after HiC remapping completes."
-            )
+    # hap2 map: only for dual-hap assemblies
+    hap2_hic_dir = find_latest_dir(ctx, "hic_remapping_hap2")
+    hap2_hic_has_output = (
+        (hap2_hic_dir != ctx.workdir and hap2_hic_dir.exists() and any(hap2_hic_dir.iterdir()))
+        if not ctx.print_only
+        else False
+    )
+    if hap2_map or hap2_hic_has_output:
+        _copy_map(ctx, "hic_remapping_hap2", ctx.hap2_prefix, nfs_dest, hap2_map)
 
     # 4. QV if merquryk not yet present
-    qv_dir = curated_dir / "merquryk"
-    if ctx.print_only or not qv_dir.exists():
-        qv_cmd = f"cd {ctx.workdir} && kmer_completeness.bash {ctx.tol_id} {ctx.release_version}"
-        console.print("\n[bold]Running QV analysis (merquryk not found):[/bold]")
-        _run(qv_cmd, ctx.print_only)
+    qv_dir = dest_dir / "merquryk"
+    if not qv_dir.exists():
+        from grit.steps.post_curation.qv import run_qv
 
-    print_done("All files copied to curated directory")
+        run_qv(ctx)
+
+    if ctx.print_only:
+        console.print(
+            "\n[yellow]print-only: files not copied — commands above show what would run[/yellow]"
+        )
+    else:
+        print_done("All files copied to curated directory")
     console.print(
-        "\n[bold yellow]⚠  Remember to move the ticket to 'Curation QC' in Jira![/bold yellow]"
+        "\n[bold yellow]⚠  Please don't forget about Submission Text and attaching "
+        "latest savestate to the ticket, curation summary:[/bold yellow]"
     )
+
+    if ctx.tracker and run_dir:
+        ctx.tracker.finish(
+            "finalize_qc", run_dir, "success", outputs={"curated_dir": str(dest_dir)}
+        )
+
+    from grit.utils.output import print_curation_results, print_tip
+
+    print_curation_results(ctx.tracker, ctx.workdir, ctx.tol_id, curated_dir=dest_dir)
+    print_tip("Submission notes: https://gist.github.com/zilov/93b1e6c68a6e2553b7c12770d6a0a3ef")
 
 
 # ---------------------------------------------------------------------------
-# Argparse
+# CLI
 # ---------------------------------------------------------------------------
 
 
 @click.command("finalize-qc", cls=GritCommand)
+@click.option(
+    "--hap1-assembly",
+    type=click.Path(),
+    default=None,
+    help="Override canonical hap1 assembly FASTA.",
+)
+@click.option(
+    "--hap2-assembly",
+    type=click.Path(),
+    default=None,
+    help="Override canonical hap2 assembly FASTA.",
+)
+@click.option(
+    "--hap1-chr-list", type=click.Path(), default=None, help="Override hap1 chromosome list CSV."
+)
+@click.option(
+    "--hap2-chr-list", type=click.Path(), default=None, help="Override hap2 chromosome list CSV."
+)
+@click.option(
+    "--hap1-haplotigs", type=click.Path(), default=None, help="Override hap1 haplotig FASTA."
+)
+@click.option(
+    "--hap2-haplotigs", type=click.Path(), default=None, help="Override hap2 haplotig FASTA."
+)
+@click.option(
+    "--hap1-map", type=click.Path(), default=None, help="Override hap1 remapped pretext map path."
+)
+@click.option(
+    "--hap2-map",
+    type=click.Path(),
+    default=None,
+    help="Override hap2 remapped pretext map path (also triggers hap2 map copy).",
+)
+@click.option(
+    "--curated-dir",
+    type=click.Path(),
+    default=None,
+    help="Override destination curated assembly directory.",
+)
 @click.pass_context
-def finalize_qc_cmd(ctx):
+def finalize_qc_cmd(
+    ctx,
+    hap1_assembly,
+    hap2_assembly,
+    hap1_chr_list,
+    hap2_chr_list,
+    hap1_haplotigs,
+    hap2_haplotigs,
+    hap1_map,
+    hap2_map,
+    curated_dir,
+):
     """Finalize curation and prepare for QC."""
     from grit.core.click_cli import build_context
 
     state = ctx.obj
     curation_ctx = build_context(state)
-    finalize_for_qc(curation_ctx)
+    try:
+        finalize_for_qc(
+            curation_ctx,
+            hap1_assembly=Path(hap1_assembly) if hap1_assembly else None,
+            hap2_assembly=Path(hap2_assembly) if hap2_assembly else None,
+            hap1_chr_list=Path(hap1_chr_list) if hap1_chr_list else None,
+            hap2_chr_list=Path(hap2_chr_list) if hap2_chr_list else None,
+            hap1_haplotigs=Path(hap1_haplotigs) if hap1_haplotigs else None,
+            hap2_haplotigs=Path(hap2_haplotigs) if hap2_haplotigs else None,
+            hap1_map=Path(hap1_map) if hap1_map else None,
+            hap2_map=Path(hap2_map) if hap2_map else None,
+            curated_dir=Path(curated_dir) if curated_dir else None,
+        )
+    except Exception:
+        log.exception("finalize-qc failed")
+        raise SystemExit(1)

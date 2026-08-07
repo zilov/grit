@@ -15,12 +15,89 @@ from grit.steps.post_curation import (
 )
 
 # ---------------------------------------------------------------------------
+# collect_outputs
+# ---------------------------------------------------------------------------
+
+
+def test_collect_outputs_basic(tmp_path):
+    """collect_outputs globs for files and returns {key: path_str} dict."""
+    from grit.utils.helpers import collect_outputs
+
+    tol_id = "xbTest1"
+    fa = tmp_path / f"{tol_id}.hap1.1.curated.fa"
+    fa.write_text("")
+
+    specs = [
+        ("hap1_fa", "{tol_id}.{hap1}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
+    ]
+    result = collect_outputs(specs, tmp_path, tol_id, hap1="hap1", hap2="hap2")
+    assert result == {"hap1_fa": str(fa)}
+
+
+def test_collect_outputs_excludes(tmp_path):
+    """collect_outputs skips files that contain an exclude keyword."""
+    from grit.utils.helpers import collect_outputs
+
+    tol_id = "xbTest1"
+    haplo = tmp_path / f"{tol_id}.hap1.1.all_haplotigs.curated.fa"
+    haplo.write_text("")
+
+    specs = [
+        ("hap1_fa", "{tol_id}.{hap1}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
+    ]
+    result = collect_outputs(specs, tmp_path, tol_id, hap1="hap1", hap2="hap2")
+    assert result == {}
+
+
+def test_collect_outputs_fallback(tmp_path):
+    """collect_outputs falls back to later spec when earlier key not matched."""
+    from grit.utils.helpers import collect_outputs
+
+    tol_id = "xbTest1"
+    primary = tmp_path / f"{tol_id}.1.primary.curated.fa"
+    primary.write_text("")
+
+    specs = [
+        ("hap1_fa", "{tol_id}.{hap1}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
+        (
+            "hap1_fa",
+            "{tol_id}.*.primary.curated.fa",
+            ["hap1", "hap2", "all_haplotigs", "additional_haplotigs"],
+        ),
+    ]
+    result = collect_outputs(specs, tmp_path, tol_id, hap1="hap1", hap2="hap2")
+    assert result == {"hap1_fa": str(primary)}
+
+
+def test_collect_outputs_fallback_skipped_when_already_found(tmp_path):
+    """collect_outputs skips later specs for a key already found."""
+    from grit.utils.helpers import collect_outputs
+
+    tol_id = "xbTest1"
+    hap1_fa = tmp_path / f"{tol_id}.hap1.1.curated.fa"
+    hap1_fa.write_text("")
+    primary = tmp_path / f"{tol_id}.1.primary.curated.fa"
+    primary.write_text("")
+
+    specs = [
+        ("hap1_fa", "{tol_id}.{hap1}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
+        (
+            "hap1_fa",
+            "{tol_id}.*.primary.curated.fa",
+            ["hap1", "hap2", "all_haplotigs", "additional_haplotigs"],
+        ),
+    ]
+    result = collect_outputs(specs, tmp_path, tol_id, hap1="hap1", hap2="hap2")
+    assert result == {"hap1_fa": str(hap1_fa)}
+
+
+# ---------------------------------------------------------------------------
 # run_pretext_to_asm
 # ---------------------------------------------------------------------------
 
 
-@patch("grit.steps.pretext_to_asm._run")
-@patch("grit.steps.pretext_to_asm.glob.glob")
+@patch("grit.steps.post_curation.pretext_to_asm._run")
+@patch("grit.steps.post_curation.pretext_to_asm.glob.glob")
 def test_run_pretext_to_asm_builds_correct_command(mock_glob, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -40,8 +117,8 @@ def test_run_pretext_to_asm_builds_correct_command(mock_glob, mock_run, mock_ctx
     assert any(agp in c for c in calls)
 
 
-@patch("grit.steps.pretext_to_asm._run")
-@patch("grit.steps.pretext_to_asm.glob.glob", return_value=[])
+@patch("grit.steps.post_curation.pretext_to_asm._run")
+@patch("grit.steps.post_curation.pretext_to_asm.glob.glob", return_value=[])
 def test_run_pretext_to_asm_raises_when_no_agp(mock_glob, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -60,7 +137,7 @@ def test_run_pretext_to_asm_raises_when_no_original_fa(mock_ctx, tmp_path):
         run_pretext_to_asm(mock_ctx)
 
 
-@patch("grit.steps.pretext_to_asm._run")
+@patch("grit.steps.post_curation.pretext_to_asm._run")
 def test_run_pretext_to_asm_print_only_skips_checks(mock_run, mock_ctx, tmp_path):
     """In print_only mode no filesystem checks should occur."""
     mock_ctx.workdir = tmp_path
@@ -142,60 +219,183 @@ def test_run_haplotig_files_print_only(mock_ctx, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@patch("grit.steps.hic_remapping._submit_bsub")
-@patch("grit.steps.hic_remapping.glob.glob")
-def test_run_hic_remapping_submits_bsub(mock_glob, mock_bsub, mock_ctx, tmp_path):
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_submits_command(mock_find_fa, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
     mock_ctx.hic_dir = Path("/lustre/hic")
     mock_ctx.long_reads_dir = Path("/lustre/pacbio")
     mock_ctx.read_type = "hifi"
     mock_ctx.teloseq = ""
 
-    hap1_fa = str(tmp_path / "sDipInt39.1.hap1.primary.curated.fa")
-    mock_glob.return_value = [hap1_fa]
-    mock_bsub.return_value = "12345"
+    hap1_fa = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
+    mock_find_fa.return_value = hap1_fa
+    mock_run.return_value = ""
 
     run_hic_remapping(mock_ctx)
 
-    assert mock_bsub.called
-    inner_cmd = mock_bsub.call_args[0][0]
-    assert "curationpretext.sh" in inner_cmd
-    assert hap1_fa in inner_cmd
-    assert str(mock_ctx.hic_dir) in inner_cmd
+    assert mock_run.called
+    cmd = mock_run.call_args[0][0]
+    assert "curationpretext.sh" in cmd
+    assert str(hap1_fa) in cmd
+    assert str(mock_ctx.hic_dir) in cmd
 
 
-@patch("grit.steps.hic_remapping._submit_bsub")
-@patch("grit.steps.hic_remapping.glob.glob")
-def test_run_hic_remapping_includes_teloseq(mock_glob, mock_bsub, mock_ctx, tmp_path):
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_includes_teloseq(mock_find_fa, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
     mock_ctx.hic_dir = Path("/lustre/hic")
     mock_ctx.long_reads_dir = Path("/lustre/pacbio")
     mock_ctx.read_type = "hifi"
     mock_ctx.teloseq = "--teloseq TTAGG"
 
-    hap1_fa = str(tmp_path / "sDipInt39.1.hap1.primary.curated.fa")
-    mock_glob.return_value = [hap1_fa]
-    mock_bsub.return_value = "12345"
+    mock_find_fa.return_value = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
+    mock_run.return_value = ""
 
     run_hic_remapping(mock_ctx)
 
-    inner_cmd = mock_bsub.call_args[0][0]
-    assert "--teloseq TTAGG" in inner_cmd
+    cmd = mock_run.call_args[0][0]
+    assert "--teloseq TTAGG" in cmd
 
 
-@patch("grit.steps.hic_remapping._submit_bsub")
-@patch("grit.steps.hic_remapping.glob.glob", return_value=[])
-def test_run_hic_remapping_raises_when_no_fasta(mock_glob, mock_bsub, mock_ctx, tmp_path):
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_raises_when_no_fasta(mock_find_fa, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
 
-    with pytest.raises(FileNotFoundError, match="primary curated FASTA"):
+    mock_find_fa.side_effect = FileNotFoundError("No curated FASTA for 'hap1' found")
+
+    with pytest.raises(FileNotFoundError):
         run_hic_remapping(mock_ctx)
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_hap2_submits_two_commands(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.hic_dir = Path("/lustre/hic")
+    mock_ctx.long_reads_dir = Path("/lustre/pacbio")
+    mock_ctx.read_type = "hifi"
+    mock_ctx.teloseq = ""
+
+    hap1_fa = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
+    hap2_fa = tmp_path / "sDipInt39.1.hap2.primary.curated.fa"
+    mock_find_fa.side_effect = [hap1_fa, hap2_fa]
+    mock_run.return_value = ""
+
+    run_hic_remapping(mock_ctx, run_hap2=True)
+
+    assert mock_run.call_count == 2
+    cmds = [call[0][0] for call in mock_run.call_args_list]
+    assert any(str(hap1_fa) in cmd for cmd in cmds)
+    assert any(str(hap2_fa) in cmd for cmd in cmds)
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_assembly_override_bypasses_find_canonical(
+    mock_find_fa, mock_run, mock_ctx, tmp_path
+):
+    """--assembly is used directly for hap1; find_canonical_fa must NOT be called."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.hic_dir = Path("/lustre/hic")
+    mock_ctx.long_reads_dir = Path("/lustre/pacbio")
+    mock_ctx.read_type = "hifi"
+    mock_ctx.teloseq = ""
+    mock_run.return_value = ""
+
+    custom_fa = Path("/custom/my_assembly.fa")
+    run_hic_remapping(mock_ctx, assembly=custom_fa)
+
+    mock_find_fa.assert_not_called()
+    cmd = mock_run.call_args[0][0]
+    assert str(custom_fa) in cmd
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_hic_dir_override(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    """--hic-dir replaces ctx.hic_dir in the submitted command."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.hic_dir = Path("/lustre/hic_original")
+    mock_ctx.long_reads_dir = Path("/lustre/pacbio")
+    mock_ctx.read_type = "hifi"
+    mock_ctx.teloseq = ""
+    mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
+    mock_run.return_value = ""
+
+    override_hic = Path("/custom/hic_dir")
+    run_hic_remapping(mock_ctx, hic_dir=override_hic)
+
+    cmd = mock_run.call_args[0][0]
+    assert str(override_hic) in cmd
+    assert "/lustre/hic_original" not in cmd
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_ont_dir_sets_read_type(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    """--ont-dir overrides long_reads_dir and forces read_type=ont."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.hic_dir = Path("/lustre/hic")
+    mock_ctx.long_reads_dir = Path("/lustre/pacbio")
+    mock_ctx.read_type = "hifi"
+    mock_ctx.teloseq = ""
+    mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
+    mock_run.return_value = ""
+
+    ont_path = Path("/custom/ont_dir")
+    run_hic_remapping(mock_ctx, ont_dir=ont_path)
+
+    cmd = mock_run.call_args[0][0]
+    assert str(ont_path) in cmd
+    assert "--read_type ont" in cmd
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_hifi_dir_override(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    """--hifi-dir replaces long_reads_dir; read_type stays hifi."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.hic_dir = Path("/lustre/hic")
+    mock_ctx.long_reads_dir = Path("/lustre/pacbio_original")
+    mock_ctx.read_type = "hifi"
+    mock_ctx.teloseq = ""
+    mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
+    mock_run.return_value = ""
+
+    hifi_path = Path("/custom/hifi_dir")
+    run_hic_remapping(mock_ctx, hifi_dir=hifi_path)
+
+    cmd = mock_run.call_args[0][0]
+    assert str(hifi_path) in cmd
+    assert "/lustre/pacbio_original" not in cmd
+    assert "--read_type hifi" in cmd
 
 
 # ---------------------------------------------------------------------------
@@ -203,34 +403,80 @@ def test_run_hic_remapping_raises_when_no_fasta(mock_glob, mock_bsub, mock_ctx, 
 # ---------------------------------------------------------------------------
 
 
-@patch("grit.steps.qv._submit_bsub")
-def test_run_qv_submits_bsub(mock_bsub, mock_ctx, tmp_path):
+@patch("grit.steps.post_curation.qv._run")
+def test_run_qv_runs_inline(mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.release_version = 1
-    mock_bsub.return_value = "99999"
 
     run_qv(mock_ctx)
 
-    assert mock_bsub.called
-    inner_cmd = mock_bsub.call_args[0][0]
-    assert "kmer_completeness.bash" in inner_cmd
-    assert "sDipInt39" in inner_cmd
-    assert "1" in inner_cmd
+    assert mock_run.called
+    cmd = mock_run.call_args[0][0]
+    assert "kmer_completeness.bash" in cmd
+    assert "sDipInt39" in cmd
+    assert "1" in cmd
+    assert "module load grit" in cmd
 
 
-@patch("grit.steps.qv._submit_bsub")
-def test_run_qv_print_only(mock_bsub, mock_ctx, tmp_path):
+@patch("grit.steps.post_curation.qv._run")
+def test_run_qv_print_only(mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.release_version = 1
     mock_ctx.print_only = True
-    mock_bsub.return_value = ""
 
     run_qv(mock_ctx)
 
-    # bsub should still be called (it respects print_only internally)
-    assert mock_bsub.called
+    assert mock_run.called
+    assert mock_run.call_args[0][1] is True  # print_only passed through
+
+
+@patch("grit.steps.post_curation.qv._run")
+def test_run_qv_registers_outputs_when_files_present(mock_run, mock_ctx, tmp_path):
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    merquryk = mock_ctx.assembly_curated_dir / "merquryk"
+    merquryk.mkdir(parents=True)
+    qv_file = merquryk / "sDipInt39.qv"
+    qv_file.write_text("qv\t60.0\n")
+    comp_file = merquryk / "sDipInt39.completeness.stats"
+    comp_file.write_text("completeness\t99.9\n")
+
+    run_qv(mock_ctx)
+
+    assert mock_ctx.tracker.get_output("qv", "qv") == str(qv_file)
+    assert mock_ctx.tracker.get_output("qv", "completeness_stats") == str(comp_file)
+
+
+@patch("grit.steps.post_curation.qv._run")
+def test_run_qv_outputs_empty_when_files_missing(mock_run, mock_ctx, tmp_path):
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    run_qv(mock_ctx)
+
+    assert mock_ctx.tracker.get_output("qv", "qv") is None
+    assert mock_ctx.tracker.get_output("qv", "completeness_stats") is None
 
 
 # ---------------------------------------------------------------------------
@@ -271,46 +517,140 @@ def test_validate_curated_files_warns_on_missing_log(mock_ctx, tmp_path, capsys)
     validate_curated_files(mock_ctx)  # should not raise
 
 
+def test_validate_curated_files_reads_tracker_qv_output(mock_ctx, tmp_path, capsys):
+    """When qv registered outputs, validate-files must read those exact paths,
+    not glob curated_dir/merquryk (which may contain stale/unrelated files)."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.assembly_curated_dir = tmp_path / "curated"
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    tracked_qv = tmp_path / "elsewhere" / "sDipInt39.qv"
+    tracked_qv.parent.mkdir()
+    tracked_qv.write_text("tracked qv content\n")
+    mock_ctx.tracker.finish(
+        "qv", tmp_path / "qv" / "run1", "success", outputs={"qv": str(tracked_qv)}
+    )
+
+    validate_curated_files(mock_ctx)  # should not raise
+
+    out = capsys.readouterr().out
+    assert "tracked qv content" in out
+
+
 # ---------------------------------------------------------------------------
 # finalize_for_qc
 # ---------------------------------------------------------------------------
 
 
-@patch("grit.steps.finalize_qc._run")
-@patch("grit.steps.finalize_qc.glob.glob")
-def test_finalize_for_qc_creates_curated_dir(mock_glob, mock_run, mock_ctx, tmp_path):
+@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_creates_curated_dir(
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_bsub,
+    mock_ctx,
+    tmp_path,
+):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.release_version = 1
     mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
     mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
     mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
 
-    curated_fa = str(tmp_path / "sDipInt39.1.hap1.primary.curated.fa")
-    chr_list = str(tmp_path / "sDipInt39.1.hap1.chromosome.list.csv")
-    haplotig = str(tmp_path / "sDipInt39.1.hap1.all_haplotigs.curated.fa")
+    curated_fa = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
+    chr_list = tmp_path / "sDipInt39.1.hap1.chromosome.list.csv"
+    haplotig = tmp_path / "sDipInt39.1.haplotigs.fa"
     remapped = str(
         tmp_path / "sDipInt39_curationpretext/pretext_maps_processed/sDipInt39_normal.pretext"
     )
 
-    # glob side_effect: fa, chr_list, haplotigs, nfs_first_level, nfs_second_level, remapped
-    mock_glob.side_effect = [
-        [curated_fa],  # curated fa
-        [chr_list],  # chr list
-        [haplotig],  # haplotigs
-        [],  # nfs first level (not found → use base)
-        [remapped],  # remapped pretext
-    ]
+    mock_find_fa.return_value = curated_fa
+    mock_find_csv.return_value = chr_list
+    # hap1 haplotig found; hap2 raises → touch
+    mock_find_haplotigs.side_effect = [haplotig, FileNotFoundError("no haplotigs for hap2")]
+    # glob calls: nfs_first_level, hap1 remapped pretext
+    mock_glob.side_effect = [[], [remapped]]
     mock_run.return_value = ""
 
     finalize_for_qc(mock_ctx)
 
-    # mkdir should have been called
     calls = [str(c) for c in mock_run.call_args_list]
     assert any("mkdir" in c for c in calls)
+    assert any(str(curated_fa) in c for c in calls)
+    assert any(str(chr_list) in c for c in calls)
+    assert any(str(haplotig) in c for c in calls)
+    # hap2 haplotigs not found — empty file created
+    assert any("touch" in c and "hap2" in c and "all_haplotigs" in c for c in calls)
 
 
-@patch("grit.steps.finalize_qc._run")
+@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_registers_curated_dir_output(
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_qv_run,
+    mock_ctx,
+    tmp_path,
+):
+    """finalize_qc.finish() must record the *actually used* dest_dir, so overrides
+    (via the curated_dir= kwarg) are discoverable via tracker.get_output, not just
+    the default ctx.assembly_curated_dir."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.post_curation.finalize_qc import finalize_for_qc
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
+    mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    mock_find_fa.return_value = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
+    mock_find_csv.return_value = tmp_path / "sDipInt39.1.hap1.chromosome.list.csv"
+    mock_find_haplotigs.side_effect = [
+        tmp_path / "sDipInt39.1.haplotigs.fa",
+        FileNotFoundError("no haplotigs for hap2"),
+    ]
+    mock_glob.side_effect = [[], []]
+    mock_run.return_value = ""
+
+    override_dir = tmp_path / "custom_curated_dest"
+    finalize_for_qc(mock_ctx, curated_dir=override_dir)
+
+    assert mock_ctx.tracker.get_output("finalize_qc", "curated_dir") == str(override_dir)
+
+
+@patch("grit.steps.post_curation.finalize_qc._run")
 def test_finalize_for_qc_print_only(mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -326,3 +666,183 @@ def test_finalize_for_qc_print_only(mock_run, mock_ctx, tmp_path):
 
     calls = [str(c) for c in mock_run.call_args_list]
     assert any("mkdir" in c for c in calls)
+
+
+@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_assembly_override(
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_bsub,
+    mock_ctx,
+    tmp_path,
+):
+    """--hap1-assembly bypasses find_canonical_fa for hap1."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.assembly_curated_dir = tmp_path / "curated"
+    mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+
+    custom_fa = Path("/custom/sDipInt39.hap1.renamed.fa")
+    mock_find_csv.return_value = tmp_path / "chr.list.csv"
+    mock_find_haplotigs.side_effect = FileNotFoundError("no haplotigs")
+    mock_glob.side_effect = [[], []]  # nfs, remapped
+    mock_run.return_value = ""
+
+    finalize_for_qc(mock_ctx, hap1_assembly=custom_fa)
+
+    mock_find_fa.assert_called_once_with(mock_ctx, "hap2")  # hap1 skipped
+    calls = [str(c) for c in mock_run.call_args_list]
+    assert any(str(custom_fa) in c for c in calls)
+
+
+@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_hap2_map_copied_when_provided(
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_bsub,
+    mock_ctx,
+    tmp_path,
+):
+    """--hap2-map triggers a second pretext map copy to NFS."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.assembly_curated_dir = tmp_path / "curated"
+    mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+
+    hap1_pretext = Path("/hic/hap1_normal.pretext")
+    hap2_pretext = Path("/hic/hap2_normal.pretext")
+
+    mock_find_fa.side_effect = FileNotFoundError("no fa")
+    mock_find_csv.side_effect = FileNotFoundError("no csv")
+    mock_find_haplotigs.side_effect = FileNotFoundError("no haplotigs")
+    mock_glob.side_effect = [[], [str(hap1_pretext)]]  # nfs, hap1 remapped
+    mock_run.return_value = ""
+
+    finalize_for_qc(mock_ctx, hap1_map=hap1_pretext, hap2_map=hap2_pretext)
+
+    calls = [str(c) for c in mock_run.call_args_list]
+    hap1_dest = "sDipInt39.1.hap1.curated.pretext"
+    hap2_dest = "sDipInt39.1.hap2.curated.pretext"
+    assert any(hap1_dest in c for c in calls)
+    assert any(hap2_dest in c for c in calls)
+
+
+@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_primary_alternate_assembly_single_hap_output(
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_bsub,
+    mock_ctx,
+    tmp_path,
+):
+    """primary/alternate assemblies: only hap1 files copied, no hap prefix in dest names."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "ilScoBasi3"
+    mock_ctx.release_version = 1
+    mock_ctx.hap1_prefix = "primary"
+    mock_ctx.hap2_prefix = "alternate"
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "ilScoBasi3.1"
+    mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+
+    hap1_fa = tmp_path / "ilScoBasi3.hap1.1.primary.curated.fa"
+    chr_list = tmp_path / "ilScoBasi3.hap1.1.primary.chromosome.list.csv"
+    haplotig = tmp_path / "ilScoBasi3.1.haplotigs.fa"
+
+    mock_find_fa.return_value = hap1_fa
+    mock_find_csv.return_value = chr_list
+    mock_find_haplotigs.return_value = haplotig
+    mock_glob.side_effect = [[], [], []]  # yaml/pta mismatch check (hap1), nfs, no remapped pretext
+    mock_run.return_value = ""
+
+    finalize_for_qc(mock_ctx)
+
+    calls = [str(c) for c in mock_run.call_args_list]
+    # Dest filenames: no hap prefix — {tol_id}.{version}.{type}
+    assert any("ilScoBasi3.1.primary.curated.fa" in c for c in calls)
+    assert any("ilScoBasi3.1.all_haplotigs.curated.fa" in c for c in calls)
+    assert any("ilScoBasi3.1.primary.chromosome.list.csv" in c for c in calls)
+    # hap2/alternate files must NOT be copied
+    assert not any("hap2" in c for c in calls), "hap2 file copied for primary/alternate assembly"
+    assert not any("alternate" in c for c in calls), "'alternate' must not appear anywhere"
+    assert not any("primary.1.primary" in c for c in calls), "double-primary in dest name"
+    # find_canonical helpers called once (only for hap1), not twice
+    assert mock_find_fa.call_count == 1
+    assert mock_find_haplotigs.call_count == 1
+    assert mock_find_csv.call_count == 1
+
+
+@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_warns_on_yaml_pta_mismatch(
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_bsub,
+    mock_ctx,
+    tmp_path,
+    caplog,
+):
+    """yaml declares primary/alternate but pretext-to-asm output has hap1+hap2 files."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "ilScoBasi3"
+    mock_ctx.release_version = 1
+    mock_ctx.hap1_prefix = "primary"
+    mock_ctx.hap2_prefix = "alternate"
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "ilScoBasi3.1"
+    mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+
+    hap1_fa = tmp_path / "ilScoBasi3.hap1.1.primary.curated.fa"
+    chr_list = tmp_path / "ilScoBasi3.hap1.1.primary.chromosome.list.csv"
+    haplotig = tmp_path / "ilScoBasi3.1.haplotigs.fa"
+
+    mock_find_fa.return_value = hap1_fa
+    mock_find_csv.return_value = chr_list
+    mock_find_haplotigs.return_value = haplotig
+    mock_glob.side_effect = [
+        [str(hap1_fa)],  # yaml/pta mismatch check: hap1 curated fa present
+        ["ilScoBasi3.hap2.1.primary.curated.fa"],  # yaml/pta mismatch check: hap2 too
+        [],  # nfs
+        [],  # no remapped pretext
+    ]
+    mock_run.return_value = ""
+
+    with caplog.at_level("WARNING"):
+        finalize_for_qc(mock_ctx)
+
+    assert any("assembly types don't match" in r.message for r in caplog.records)

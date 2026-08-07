@@ -7,22 +7,24 @@ all step functions. Holds no global state.
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from grit.core.run_tracker import RunTracker
 
 
 @dataclass
 class UserConfig:
-    """Curator user config (loaded from ~/.grit_curation_config.yaml)."""
+    """Curator user config (loaded from ~/.grit/grit_curation_config.yaml)."""
 
     username: str
     pretext_maps_nfs: Path
     curated_pretext_maps_nfs: Path
-    curation_savestates_nfs: Path
     farm_host: str
-    email: str
     gritjiraissue_path: str
 
     @classmethod
@@ -31,9 +33,7 @@ class UserConfig:
             username=d["username"],
             pretext_maps_nfs=Path(d["pretext_maps_nfs"]),
             curated_pretext_maps_nfs=Path(d["curated_pretext_maps_nfs"]),
-            curation_savestates_nfs=Path(d["curation_savestates_nfs"]),
             farm_host=d["farm_host"],
-            email=d["email"],
             gritjiraissue_path=d["gritjiraissue_path"],
         )
 
@@ -73,20 +73,23 @@ class CurationContext:
     # --- NFS paths (from user config) ---
     pretext_maps_nfs: Path
     curated_pretext_maps_nfs: Path
-    curation_savestates_nfs: Path
 
     # --- farm access ---
     farm_host: str
     username: str
-    email: str
 
     # --- optional fields ---
     teloseq: str = ""  # "--teloseq TTAGG" or ""
     release_version: int = 1  # release version from the ticket
     print_only: bool = False  # if True, print commands instead of running them
+    untracked: bool = False  # if True, tracker.start() marks runs as non-canonical
+    bsub_ram: int | None = None  # if set, overrides a step's default LSF memory limit (MB)
 
     # --- raw data ---
     yaml_data: dict[str, Any] = field(default_factory=dict)
+
+    # --- run tracking (populated by from_yaml) ---
+    tracker: RunTracker | None = field(default=None, repr=False, compare=False)
 
     @property
     def tol_id_versioned(self) -> str:
@@ -106,6 +109,8 @@ class CurationContext:
         *,
         teloseq: str = "",
         print_only: bool = False,
+        untracked: bool = False,
+        bsub_ram: int | None = None,
     ) -> "CurationContext":
         """
         Build a CurationContext directly from a parsed YAML dict and user config.
@@ -146,6 +151,8 @@ class CurationContext:
 
         workdir = _derive_workdir(assembly_draft_dir.parent, cfg.username, tol_id)
 
+        from grit.core.run_tracker import RunTracker
+
         return cls(
             ticket_id=ticket_id,
             tol_id=tol_id,
@@ -162,14 +169,15 @@ class CurationContext:
             workdir=workdir,
             pretext_maps_nfs=cfg.pretext_maps_nfs,
             curated_pretext_maps_nfs=cfg.curated_pretext_maps_nfs,
-            curation_savestates_nfs=cfg.curation_savestates_nfs,
             farm_host=cfg.farm_host,
             username=cfg.username,
-            email=cfg.email,
             teloseq=teloseq,
             release_version=release_version,
             print_only=print_only,
+            untracked=untracked,
+            bsub_ram=bsub_ram,
             yaml_data=yaml_data,
+            tracker=RunTracker(workdir, print_only=print_only),
         )
 
     @classmethod
@@ -181,6 +189,8 @@ class CurationContext:
         gritjiraissue_module=None,
         yaml_override: dict[str, Any] | None = None,
         print_only: bool = False,
+        untracked: bool = False,
+        bsub_ram: int | None = None,
     ) -> "CurationContext":
         """
         Fetch YAML from Jira (or use yaml_override for tests) and build context.
@@ -192,7 +202,7 @@ class CurationContext:
             teloseq_raw = ""
         else:
             if gritjiraissue_module is None:
-                sys.path.insert(0, cfg.gritjiraissue_path)
+                sys.path.insert(0, os.path.expanduser(cfg.gritjiraissue_path))
                 import GritJiraIssue as gritjiraissue_module  # noqa: N811
 
             jira_issue = gritjiraissue_module.GritJiraIssue(ticket_id)
@@ -207,6 +217,8 @@ class CurationContext:
             user_config,
             teloseq=teloseq,
             print_only=print_only,
+            untracked=untracked,
+            bsub_ram=bsub_ram,
         )
 
 

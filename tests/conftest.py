@@ -16,9 +16,7 @@ TEST_USER_CONFIG = {
     "username": "testuser",
     "pretext_maps_nfs": "/nfs/treeoflife-01/teams/grit/data/pretext_maps",
     "curated_pretext_maps_nfs": "/nfs/treeoflife-01/teams/grit/data/curated_pretext_maps",
-    "curation_savestates_nfs": "/nfs/treeoflife-01/teams/grit/data/curation_savestates",
     "farm_host": "farm22",
-    "email": "testuser@sanger.ac.uk",
     "gritjiraissue_path": "/software/grit/lib",
 }
 
@@ -52,13 +50,17 @@ TEST_YAML_PRIMARY = {
 @pytest.fixture
 def mock_ctx():
     """CurationContext for a dual-haplotype assembly (hap1/hap2)."""
-    return CurationContext.from_ticket("RC-1234", TEST_USER_CONFIG, yaml_override=TEST_YAML_HAP1)
+    ctx = CurationContext.from_ticket("RC-1234", TEST_USER_CONFIG, yaml_override=TEST_YAML_HAP1)
+    ctx.tracker = None  # unit tests must not touch the filesystem via tracker
+    return ctx
 
 
 @pytest.fixture
 def mock_ctx_primary():
     """CurationContext for a single-haplotype assembly (primary/alternate)."""
-    return CurationContext.from_ticket("RC-5678", TEST_USER_CONFIG, yaml_override=TEST_YAML_PRIMARY)
+    ctx = CurationContext.from_ticket("RC-5678", TEST_USER_CONFIG, yaml_override=TEST_YAML_PRIMARY)
+    ctx.tracker = None
+    return ctx
 
 
 # --- real YAML fixtures (loaded from files) ---
@@ -80,3 +82,90 @@ def real_ctx_primary():
     with open(_FIXTURES_DIR / "xbLimHian1_primary.yaml") as f:
         yaml_data = _yaml.safe_load(f)
     return CurationContext.from_ticket("RC-real-primary", TEST_USER_CONFIG, yaml_override=yaml_data)
+
+
+@pytest.fixture
+def fake_workdir(tmp_path, mock_ctx):
+    """
+    Populate a tmp_path with a minimal workdir structure for a hap1/hap2 ticket.
+
+    Creates the canonical files that real step runs would produce, so tests for
+    context-from-workdir (_extend_from_workdir) and RunTracker can run without
+    a server or real data.
+
+    Layout produced:
+        tmp_path/
+            original.fa                                 (setup output)
+            sDipInt39.1.hap1.hr.pretext                 (copy_pretext_maps output)
+            reference/
+                GCA_000001.fa                           (find_reference output)
+            sex_matcher/
+                Best_match_sDipInt39.txt                (sex_matcher output)
+            pretext_to_asm/
+                2025-06-02T14_00_00/
+                    sDipInt39.1.hap1.curated.fa
+                    sDipInt39.1.curated.agp
+            hic_remapping/
+                2025-06-02T15_00_00/
+                    sDipInt39.1.hap1.hr.pretext         (remapped map)
+            .grit_reg/
+                grit_registry.json           (isolated registry, seeded with step history)
+    """
+    mock_ctx.workdir = tmp_path
+    tol_id = mock_ctx.tol_id  # sDipInt39
+    tol_id_v = mock_ctx.tol_id_versioned  # sDipInt39.1
+
+    # setup outputs
+    (tmp_path / "original.fa").write_text(">seq1\nACGT\n")
+    (tmp_path / f"{tol_id_v}.hap1.hr.pretext").write_text("")
+
+    # find_reference output
+    ref_dir = tmp_path / "reference"
+    ref_dir.mkdir()
+    (ref_dir / "GCA_000001.fa").write_text(">ref\nACGT\n")
+
+    # sex_matcher output
+    sm_dir = tmp_path / "sex_matcher"
+    sm_dir.mkdir()
+    (sm_dir / f"Best_match_{tol_id}.txt").write_text("XX\n")
+
+    # pretext_to_asm run dir
+    pta_ts = "2025-06-02T14_00_00"
+    pta_dir = tmp_path / "pretext_to_asm" / pta_ts
+    pta_dir.mkdir(parents=True)
+    (pta_dir / f"{tol_id_v}.hap1.curated.fa").write_text(">curated\nACGT\n")
+    (pta_dir / f"{tol_id_v}.curated.agp").write_text("")
+
+    # hic_remapping run dir
+    hic_ts = "2025-06-02T15_00_00"
+    hic_dir = tmp_path / "hic_remapping" / hic_ts
+    hic_dir.mkdir(parents=True)
+    (hic_dir / f"{tol_id_v}.hap1.hr.pretext").write_text("")
+
+    # Seed step history directly in an isolated registry
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, tol_id, "species", tmp_path)
+    for step, ts, run_dir in [
+        ("setup_curation", "2025-06-02T10_00_00", tmp_path),
+        ("pretext_to_asm", pta_ts, pta_dir),
+        ("hic_remapping", hic_ts, hic_dir),
+    ]:
+        reg.append_step(
+            tmp_path,
+            {
+                "step": step,
+                "timestamp": ts,
+                "status": "success",
+                "ticket_id": mock_ctx.ticket_id,
+                "tol_id": tol_id,
+                "run_dir": str(run_dir),
+            },
+        )
+
+    # Attach a tracker pointing to the real tmp_path
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    return tmp_path

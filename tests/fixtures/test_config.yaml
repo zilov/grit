@@ -1,0 +1,7 @@
+# Template config for local smoke testing.
+# Paths point to /tmp so no server access is needed.
+username: testuser
+pretext_maps_nfs: /tmp/grit_test/pretext_maps
+curated_pretext_maps_nfs: /tmp/grit_test/curated_pretext_maps
+farm_host: farm22-login
+gritjiraissue_path: /tmp/dummy_gritjiraissue
