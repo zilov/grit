@@ -3,7 +3,5 @@
 username: testuser
 pretext_maps_nfs: /tmp/grit_test/pretext_maps
 curated_pretext_maps_nfs: /tmp/grit_test/curated_pretext_maps
-curation_savestates_nfs: /tmp/grit_test/curation_savestates
 farm_host: farm22-login
-email: testuser@sanger.ac.uk
 gritjiraissue_path: /tmp/dummy_gritjiraissue

@@ -74,9 +74,7 @@ def test_parse_chromosome_list_excludes_unloc_marker_on_chrom_label(tmp_path):
     the naming convention 03a0914 fixed for and a8d21db later regressed by only
     checking the scaffold name."""
     csv = tmp_path / "hap1.chromosome.list.csv"
-    csv.write_text(
-        "scaffold_1,1\nscaffold_2,Z\nscaffold_3,Zunloc10\nscaffold_4,Zunloc11\n"
-    )
+    csv.write_text("scaffold_1,1\nscaffold_2,Z\nscaffold_3,Zunloc10\nscaffold_4,Zunloc11\n")
     autosomes, sex_ids = parse_chromosome_list(csv)
     assert autosomes == 1
     assert sex_ids == ["Z"]

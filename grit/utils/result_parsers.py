@@ -6,15 +6,15 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-
 # ---------------------------------------------------------------------------
 # Data containers
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CurationResults:
-    autosomes: int | None = None      # non-sex, non-unloc chromosomes
-    allosomes: str = ""               # e.g. "ZW", "XY", "Z1W1W2"
+    autosomes: int | None = None  # non-sex, non-unloc chromosomes
+    allosomes: str = ""  # e.g. "ZW", "XY", "Z1W1W2"
     cuts: int | None = None
     breaks: int | None = None
     joins: int | None = None
@@ -23,18 +23,21 @@ class CurationResults:
     completeness_text: str | None = None
 
     def has_any(self) -> bool:
-        return any([
-            self.autosomes is not None,
-            self.cuts is not None,
-            self.sex_matches,
-            self.qv_text,
-            self.completeness_text,
-        ])
+        return any(
+            [
+                self.autosomes is not None,
+                self.cuts is not None,
+                self.sex_matches,
+                self.qv_text,
+                self.completeness_text,
+            ]
+        )
 
 
 # ---------------------------------------------------------------------------
 # Individual parsers
 # ---------------------------------------------------------------------------
+
 
 def parse_chromosome_list(path: Path) -> tuple[int, list[str]]:
     """Return (autosome_count, [sex_chrom_ids]) from one haplotype CSV, deduped
@@ -54,7 +57,7 @@ def parse_chromosome_list(path: Path) -> tuple[int, list[str]]:
         chrom_id = parts[1].strip()
         if "unloc" in scaffold_name.lower() or "unloc" in chrom_id.lower():
             continue
-        if re.search(r'[XYZW]', chrom_id, re.IGNORECASE):
+        if re.search(r"[XYZW]", chrom_id, re.IGNORECASE):
             if chrom_id not in seen_sex_ids:
                 seen_sex_ids.add(chrom_id)
                 sex_ids.append(chrom_id)
@@ -79,8 +82,8 @@ def _build_allosome_string(sex_ids: list[str]) -> str:
         return sex_ids[0] + "O"
 
     def sort_key(s: str) -> tuple:
-        letter = re.sub(r'\d', '', s).upper()
-        num = int(m.group()) if (m := re.search(r'\d+', s)) else 0
+        letter = re.sub(r"\d", "", s).upper()
+        num = int(m.group()) if (m := re.search(r"\d+", s)) else 0
         return (_SEX_SORT_ORDER.get(letter, 2), num, letter)
 
     return "".join(sorted(sex_ids, key=sort_key))
@@ -143,14 +146,13 @@ def find_lsf_log(run_dir: Path) -> Path | None:
 
 def read_tabular(path: Path) -> str:
     """Return file content with whitespace-only lines stripped."""
-    return "\n".join(
-        line for line in path.read_text().splitlines() if line.strip()
-    )
+    return "\n".join(line for line in path.read_text().splitlines() if line.strip())
 
 
 # ---------------------------------------------------------------------------
 # Collector
 # ---------------------------------------------------------------------------
+
 
 def collect_curation_results(
     tracker,
@@ -228,7 +230,9 @@ def collect_curation_results(
             break
 
     # --- QV and completeness: tracker outputs first, curated_dir/merquryk fallback ---
-    qv_path = Path(tracker.get_output("qv", "qv")) if tracker and tracker.get_output("qv", "qv") else None
+    qv_path = (
+        Path(tracker.get_output("qv", "qv")) if tracker and tracker.get_output("qv", "qv") else None
+    )
     comp_path = (
         Path(tracker.get_output("qv", "completeness_stats"))
         if tracker and tracker.get_output("qv", "completeness_stats")

@@ -35,7 +35,6 @@ HAP_COMMANDS = [
     "pretext-to-asm",
     "haplotig-files",
     "qv",
-    "validate-files",
     "finalize-qc",
 ]
 

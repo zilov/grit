@@ -40,9 +40,7 @@ def print_curation_results(tracker, workdir, tol_id: str, curated_dir=None) -> N
         lines.append(f"[bold]Allosomes    :[/bold] {r.allosomes}")
 
     if r.cuts is not None:
-        lines.append(
-            f"[bold]Curation     :[/bold] {r.breaks} breaks, {r.cuts + r.joins} joins"
-        )
+        lines.append(f"[bold]Curation     :[/bold] {r.breaks} breaks, {r.cuts + r.joins} joins")
 
     if r.sex_matches:
         matches_str = "  ".join(f"{s} ({c})" for s, c in r.sex_matches)

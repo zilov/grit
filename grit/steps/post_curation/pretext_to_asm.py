@@ -17,14 +17,18 @@ from grit.utils.output import print_done, print_step_header
 log = logging.getLogger(__name__)
 
 _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
-    ("hap1_fa",        "{tol_id}.{hap1}.*.curated.fa",               ["all_haplotigs", "additional_haplotigs"]),
-    ("hap2_fa",        "{tol_id}.{hap2}.*.curated.fa",               ["all_haplotigs", "additional_haplotigs"]),
+    ("hap1_fa", "{tol_id}.{hap1}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
+    ("hap2_fa", "{tol_id}.{hap2}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
     ("hap1_haplotigs", "{tol_id}.{hap1}.*.all_haplotigs.curated.fa", []),
     ("hap2_haplotigs", "{tol_id}.{hap2}.*.all_haplotigs.curated.fa", []),
-    ("hap1_chr_list",  "{tol_id}.{hap1}.*.chromosome.list.csv",      []),
-    ("hap2_chr_list",  "{tol_id}.{hap2}.*.chromosome.list.csv",      []),
+    ("hap1_chr_list", "{tol_id}.{hap1}.*.chromosome.list.csv", []),
+    ("hap2_chr_list", "{tol_id}.{hap2}.*.chromosome.list.csv", []),
     # fallback: primary assembly naming (tried only if hap1_fa not found above)
-    ("hap1_fa",        "{tol_id}.*.primary.curated.fa",              ["hap1", "hap2", "all_haplotigs", "additional_haplotigs"]),
+    (
+        "hap1_fa",
+        "{tol_id}.*.primary.curated.fa",
+        ["hap1", "hap2", "all_haplotigs", "additional_haplotigs"],
+    ),
 ]
 
 # ---------------------------------------------------------------------------
@@ -63,7 +67,11 @@ def _run_pretext_to_asm_core(
                 return prev_dir
 
     # Start tracking
-    run_dir = ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else ctx.workdir / step_name / "untracked"
+    run_dir = (
+        ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else ctx.workdir / step_name / "untracked"
+    )
     out_fa = run_dir / out_fa_name
 
     if not ctx.print_only and not original_fa.exists():

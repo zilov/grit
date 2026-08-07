@@ -6,11 +6,14 @@ from pathlib import Path
 
 import rich_click as click
 
-_REPO_ROOT = Path(__file__).parent.parent.parent.parent
-
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _state_update_epilogue, _submit_bsub, build_bsub_opts, require_workdir
+from grit.utils.helpers import (
+    _state_update_epilogue,
+    _submit_bsub,
+    build_bsub_opts,
+    require_workdir,
+)
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
     console,
@@ -29,6 +32,7 @@ log = logging.getLogger(__name__)
 _INSECT_PREFIXES = ("ic", "il", "id")
 
 # Path to the bundled sex-matcher script (relative to repo root)
+_REPO_ROOT = Path(__file__).parent.parent.parent.parent
 _SEX_MATCHER_SCRIPT = _REPO_ROOT / "scripts" / "sex-matcher.sh"
 
 
@@ -52,7 +56,8 @@ def run_sex_matcher(ctx: CurationContext) -> None:
            so that sex_matcher.sh finds the assembly in its working directory.
         3. Submit via bsub::
 
-               bsub -q normal -n 32 -G team135 -e {workdir}/sex_matcher.err -o {workdir}/sex_matcher.out \\
+               bsub -q normal -n 32 -G team135 \\
+                    -e {workdir}/sex_matcher.err -o {workdir}/sex_matcher.out \\
                     -M 80000 -R'select[mem>80000] rusage[mem=80000] span[hosts=1]' \\
                     "cd {run_dir} && /software/grit/projects/vgp_curation_scripts/sex_matcher.sh"
 
@@ -94,7 +99,11 @@ def run_sex_matcher(ctx: CurationContext) -> None:
                 )
                 return
 
-    run_dir = ctx.tracker.start("sex_matcher", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else None
+    run_dir = (
+        ctx.tracker.start("sex_matcher", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else None
+    )
     work_dir = run_dir if run_dir else ctx.workdir
 
     if not ctx.print_only and run_dir:

@@ -36,7 +36,11 @@ def run_post_processing(ctx: CurationContext) -> None:
 
     require_workdir(ctx)
 
-    run_dir = ctx.tracker.start("post_processing", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else None
+    run_dir = (
+        ctx.tracker.start("post_processing", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else None
+    )
 
     script_lines = [
         f". {_MODULES_INIT}",
@@ -44,7 +48,8 @@ def run_post_processing(ctx: CurationContext) -> None:
         f"source {_POST_PROC_CONF}",
         # contamination_screen.conf prepends tola_production venv to PATH,
         # but its python3 is not accessible; strip it so the conda snakemake is used instead
-        r"export PATH=$(echo \"$PATH\" | tr ':' '\n' | grep -v 'tola_production/.venv' | tr '\n' ':' | sed 's/:$//')",
+        r"export PATH=$(echo \"$PATH\" | tr ':' '\n' | grep -v 'tola_production/.venv' "
+        r"| tr '\n' ':' | sed 's/:$//')",
         "shopt -s expand_aliases",
         f"cd {ctx.assembly_curated_dir}",
         f"post_process_rc {ctx.ticket_id}",
@@ -60,6 +65,7 @@ def run_post_processing(ctx: CurationContext) -> None:
             if ctx.tracker and run_dir:
                 ctx.tracker.finish("post_processing", run_dir, "success")
             from grit.core.registry import RegistryManager
+
             RegistryManager().mark_done(ctx.ticket_id)
         except subprocess.CalledProcessError:
             if ctx.tracker and run_dir:

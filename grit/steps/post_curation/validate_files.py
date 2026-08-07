@@ -132,7 +132,6 @@ def run_validate_files(ctx: CurationContext) -> None:
             log.warning("Some expected files are missing — see above")
 
 
-
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------

@@ -25,8 +25,7 @@ def require_workdir(ctx: CurationContext) -> None:
         return
     if not ctx.workdir.exists():
         log.error(
-            "Workdir does not exist: %s\n"
-            "Run 'grit setup -t %s' first.",
+            "Workdir does not exist: %s\nRun 'grit setup -t %s' first.",
             ctx.workdir,
             ctx.ticket_id,
         )
@@ -157,9 +156,8 @@ def build_bsub_opts(
 
     Example::
 
-        >>> build_bsub_opts(memory_mb=50000, wait=True,
-        ...                 output="sex_matcher.out", error="sex_matcher.err")
-        "-q normal -K -o sex_matcher.out -e sex_matcher.err -M 50000 -R'select[mem>50000] rusage[mem=50000] span[hosts=1]'"
+        >>> build_bsub_opts(memory_mb=50000, wait=True, output="out", error="err")
+        "-q normal -K -o out -e err -M 50000 -R'select[mem>50000] rusage[mem=50000] span[hosts=1]'"
     """
     if run_dir is not None:
         if "/" not in output:
@@ -246,7 +244,9 @@ def agp_newer_than_curated_fa(workdir: Path, tol_id: str, pta_dir: Path | None) 
     curated_fas = list(pta_dir.glob(f"{tol_id}*.curated.fa")) if pta_dir else []
     if not curated_fas:
         return False
-    agp_files = list(workdir.glob(f"{tol_id}*.pretext.agp_1")) or list(workdir.glob(f"{tol_id}*.agp*"))
+    agp_files = list(workdir.glob(f"{tol_id}*.pretext.agp_1")) or list(
+        workdir.glob(f"{tol_id}*.agp*")
+    )
     if not agp_files:
         return False
     return max(f.stat().st_mtime for f in agp_files) > min(f.stat().st_mtime for f in curated_fas)
@@ -269,15 +269,18 @@ def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
     _HAPLOTIG_KEYWORDS = ("all_haplotigs", "additional_haplotigs", "haplotigs")
     _PTA_ALIASES: dict[str, str] = {
-        "primary": "hap1", "paternal": "hap1",
-        "alternate": "hap2", "maternal": "hap2",
+        "primary": "hap1",
+        "paternal": "hap1",
+        "alternate": "hap2",
+        "maternal": "hap2",
     }
 
     pta_dir = find_latest_dir(ctx, "pretext_to_asm")
 
     def _search(token: str) -> list[str]:
         return [
-            f for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.{token}.*.curated.fa"))
+            f
+            for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.{token}.*.curated.fa"))
             if not any(kw in f for kw in _HAPLOTIG_KEYWORDS)
         ]
 
@@ -289,15 +292,16 @@ def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     # 3. No-hap-prefix format: {tol_id}.{version}.primary.curated.fa (single hap / merged)
     if not matches:
         matches = [
-            f for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.*.primary.curated.fa"))
+            f
+            for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.*.primary.curated.fa"))
             if not any(kw in f for kw in _HAPLOTIG_KEYWORDS)
-            and "hap1" not in Path(f).name and "hap2" not in Path(f).name
+            and "hap1" not in Path(f).name
+            and "hap2" not in Path(f).name
         ]
 
     if not matches:
         raise FileNotFoundError(
-            f"No curated FASTA for {hap_prefix!r} found in {pta_dir}. "
-            "Run pretext-to-asm first."
+            f"No curated FASTA for {hap_prefix!r} found in {pta_dir}. Run pretext-to-asm first."
         )
     return Path(sorted(matches)[-1])
 
@@ -317,14 +321,19 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
     _HAPLOTIG_KEYWORDS = ("all_haplotigs", "additional_haplotigs", "haplotigs")
     _PTA_ALIASES: dict[str, str] = {
-        "primary": "hap1", "paternal": "hap1",
-        "alternate": "hap2", "maternal": "hap2",
+        "primary": "hap1",
+        "paternal": "hap1",
+        "alternate": "hap2",
+        "maternal": "hap2",
     }
 
     if ctx.tracker:
         for step in (
-            "rename_and_orient", "rename_and_orient_hap2",
-            "blast_contaminants", "microchromosome_combine", "pretext_to_asm",
+            "rename_and_orient",
+            "rename_and_orient_hap2",
+            "blast_contaminants",
+            "microchromosome_combine",
+            "pretext_to_asm",
         ):
             for k in (f"{hap_prefix}_fa", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_fa"):
                 val = ctx.tracker.get_output(step, k)
@@ -333,9 +342,11 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
 
     rao_dir = ctx.workdir / "rename_and_orient"
     if rao_dir.exists():
+
         def _rao_search(token: str) -> list[str]:
             return [
-                f for f in glob.glob(str(rao_dir / f"{ctx.tol_id}.{token}.*.fa"))
+                f
+                for f in glob.glob(str(rao_dir / f"{ctx.tol_id}.{token}.*.fa"))
                 if not any(kw in f for kw in _HAPLOTIG_KEYWORDS)
             ]
 
@@ -367,13 +378,18 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
     Raises FileNotFoundError if nothing is found.
     """
     _PTA_ALIASES: dict[str, str] = {
-        "primary": "hap1", "paternal": "hap1",
-        "alternate": "hap2", "maternal": "hap2",
+        "primary": "hap1",
+        "paternal": "hap1",
+        "alternate": "hap2",
+        "maternal": "hap2",
     }
 
     if ctx.tracker:
         for step in ("pretext_to_asm",):
-            for k in (f"{hap_prefix}_haplotigs", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_haplotigs"):
+            for k in (
+                f"{hap_prefix}_haplotigs",
+                f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_haplotigs",
+            ):
                 val = ctx.tracker.get_output(step, k)
                 if val and Path(val).exists():
                     return Path(val)
@@ -403,24 +419,24 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
     # 3. No-hap-prefix patterns — assign to hap1 only to avoid double-copying
     if hap_prefix == ctx.hap1_prefix:
         for pattern in (
-            str(pta_dir / f"{ctx.tol_id}*.haplotigs.fa"),                     # dual hap combined
-            str(pta_dir / f"{ctx.tol_id}*.all_haplotigs.curated.fa"),          # merged
-            str(pta_dir / f"{ctx.tol_id}*.additional_haplotigs.curated.fa"),   # single hap
+            str(pta_dir / f"{ctx.tol_id}*.haplotigs.fa"),  # dual hap combined
+            str(pta_dir / f"{ctx.tol_id}*.all_haplotigs.curated.fa"),  # merged
+            str(pta_dir / f"{ctx.tol_id}*.additional_haplotigs.curated.fa"),  # single hap
         ):
             matches = glob.glob(pattern)
             # Exclude any file that is already hap-specific (contains hap1 or hap2 token)
             combined = [
-                m for m in matches
-                if "hap1" not in Path(m).name and "hap2" not in Path(m).name
+                m
+                for m in matches
+                if "hap1" not in Path(m).name
+                and "hap2" not in Path(m).name
                 and ctx.hap1_prefix not in Path(m).name
                 and ctx.hap2_prefix not in Path(m).name
             ]
             if combined:
                 return Path(sorted(combined)[-1])
 
-    raise FileNotFoundError(
-        f"No haplotig FASTA for {hap_prefix!r} found in {pta_dir}."
-    )
+    raise FileNotFoundError(f"No haplotig FASTA for {hap_prefix!r} found in {pta_dir}.")
 
 
 def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
@@ -430,7 +446,8 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     Priority:
       1. Tracker outputs — rename_and_orient → rename_and_orient_hap2 →
          microchromosome_combine → pretext_to_asm
-      2. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.chromosome.list.csv
+      2. ``rename_and_orient`` output —
+         {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.chromosome.list.csv
       3. ``pretext_to_asm`` output — {tol_id}.{hap_prefix}.*.chromosome.list.csv
       4. ``pretext_to_asm`` no-hap-prefix format (single hap / merged) —
          {tol_id}.{version}.primary.chromosome.list.csv
@@ -443,17 +460,22 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     Raises FileNotFoundError if nothing is found in either location.
     """
     _PTA_ALIASES: dict[str, str] = {
-        "primary": "hap1", "paternal": "hap1",
-        "alternate": "hap2", "maternal": "hap2",
+        "primary": "hap1",
+        "paternal": "hap1",
+        "alternate": "hap2",
+        "maternal": "hap2",
     }
 
     if ctx.tracker:
         for step in (
-            "rename_and_orient", "rename_and_orient_hap2",
-            "microchromosome_combine", "pretext_to_asm",
+            "rename_and_orient",
+            "rename_and_orient_hap2",
+            "microchromosome_combine",
+            "pretext_to_asm",
         ):
             for k in (
-                f"{hap_prefix}_chr_list", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_chr_list"
+                f"{hap_prefix}_chr_list",
+                f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_chr_list",
             ):
                 val = ctx.tracker.get_output(step, k)
                 if val and Path(val).exists():
@@ -477,7 +499,8 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     # No-hap-prefix format: {tol_id}.{version}.primary.chromosome.list.csv (single hap / merged)
     if not matches:
         matches = [
-            f for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.*.primary.chromosome.list.csv"))
+            f
+            for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.*.primary.chromosome.list.csv"))
             if "hap1" not in Path(f).name and "hap2" not in Path(f).name
         ]
     if not matches:
@@ -615,10 +638,7 @@ def collect_outputs(
         if key in outputs:  # already found via earlier spec (fallback skip)
             continue
         glob_pattern = pattern.format(tol_id=tol_id, hap1=hap1, hap2=hap2)
-        matches = [
-            f for f in run_dir.glob(glob_pattern)
-            if not any(e in f.name for e in excludes)
-        ]
+        matches = [f for f in run_dir.glob(glob_pattern) if not any(e in f.name for e in excludes)]
         if matches:
             outputs[key] = str(sorted(matches)[-1])
     return outputs
@@ -638,13 +658,16 @@ def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
         "busco_synteny": ("grit.steps.optional.busco_synteny", "_OUTPUT_SPECS"),
         "fastga_synteny": ("grit.steps.optional.fastga_synteny", "_OUTPUT_SPECS"),
         "microchromosome_second_shot": (
-            "grit.steps.pre_curation.microchromosome_second_shot", "_OUTPUT_SPECS"
+            "grit.steps.pre_curation.microchromosome_second_shot",
+            "_OUTPUT_SPECS",
         ),
         "pretext_to_asm_micro": (
-            "grit.steps.post_curation.microchromosome_combine", "_MICRO_PTA_OUTPUT_SPECS"
+            "grit.steps.post_curation.microchromosome_combine",
+            "_MICRO_PTA_OUTPUT_SPECS",
         ),
         "microchromosome_combine": (
-            "grit.steps.post_curation.microchromosome_combine", "_OUTPUT_SPECS"
+            "grit.steps.post_curation.microchromosome_combine",
+            "_OUTPUT_SPECS",
         ),
     }
     if step not in _MAP:

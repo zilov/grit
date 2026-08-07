@@ -51,7 +51,11 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     log.info("blast-contaminants | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Blast contaminants search")
 
-    run_dir = ctx.tracker.start("blast_contaminants", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else None
+    run_dir = (
+        ctx.tracker.start("blast_contaminants", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else None
+    )
 
     is_single_hap = ctx.hap1_prefix in ("primary", "paternal")
     haps_to_process = [ctx.hap1_prefix] if is_single_hap else [ctx.hap1_prefix, ctx.hap2_prefix]
@@ -71,7 +75,9 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     print_done("Contaminant blasting completed")
 
 
-def _blast_contaminants_for_hap(ctx: CurationContext, hap_prefix: str, run_dir: Path | None) -> Path:
+def _blast_contaminants_for_hap(
+    ctx: CurationContext, hap_prefix: str, run_dir: Path | None
+) -> Path:
     """Blast one haplotype's curated FASTA and return the decontaminated output path."""
     # Get target phylum from species lineage
     cleaned_species = _clean_species_name(ctx.species)
@@ -148,7 +154,9 @@ def _blast_contaminants_for_hap(ctx: CurationContext, hap_prefix: str, run_dir: 
     _run(remove_cmd, ctx.print_only)
 
     cleaned_fasta = curated_fasta.with_suffix(".cleaned.fa")
-    dest = (run_dir or ctx.workdir) / f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.decontaminated.fa"
+    dest = (
+        run_dir or ctx.workdir
+    ) / f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.decontaminated.fa"
 
     if not ctx.print_only:
         if cleaned_fasta.exists():

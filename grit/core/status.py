@@ -17,7 +17,9 @@ def show_global_status(registry) -> None:
 
     tickets = registry.all_tickets()
     if not tickets:
-        console.print("[dim]No active tickets. Run [bold]grit setup[/bold] to start curation.[/dim]")
+        console.print(
+            "[dim]No active tickets. Run [bold]grit setup[/bold] to start curation.[/dim]"
+        )
         return
 
     table = Table(title="Active Curation Tickets", show_header=True, header_style="bold cyan")
@@ -67,7 +69,9 @@ def show_global_status(registry) -> None:
     if done:
         console.print("\n[dim]Recently completed:[/dim]")
         for t in done:
-            console.print(f"  [dim]{t['ticket_id']} ({t.get('tol_id', '')}) — {t.get('status', '')}[/dim]")
+            console.print(
+                f"  [dim]{t['ticket_id']} ({t.get('tol_id', '')}) — {t.get('status', '')}[/dim]"
+            )
 
 
 def _parse_ts(ts: str) -> datetime.datetime | None:
@@ -143,7 +147,6 @@ def _print_canonical_files(ctx) -> None:
         find_canonical_haplotigs,
     )
 
-    tol_id = ctx.tol_id
     haps = (
         [ctx.hap1_prefix]
         if ctx.hap1_prefix in ("primary", "paternal")
@@ -281,12 +284,14 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     ctx = None
     try:
         from grit.core.context import CurationContext
+
         ctx = CurationContext.from_ticket(ticket_id, user_config, print_only=True)
     except Exception as exc:
         console.print(f"[dim]Could not build curation context: {exc}[/dim]")
 
     if ctx:
         from grit.steps.pre_curation.setup import print_curation_summary
+
         print_curation_summary(ctx)
         console.print()
         _print_canonical_files(ctx)
@@ -387,9 +392,9 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
 
     agp_files = sorted(workdir.glob(f"{tol_id}*.pretext.agp_1"), key=lambda p: p.stat().st_mtime)
     if agp_files:
-        agp_mtime = datetime.datetime.fromtimestamp(
-            agp_files[-1].stat().st_mtime
-        ).strftime("%Y-%m-%dT%H:%M:%S")
+        agp_mtime = datetime.datetime.fromtimestamp(agp_files[-1].stat().st_mtime).strftime(
+            "%Y-%m-%dT%H:%M:%S"
+        )
         table.add_row("agp_copied", "-", agp_mtime, "[green]found[/green]", "")
     else:
         table.add_row("agp_copied", "-", "", "[yellow]missing[/yellow]", "")
@@ -429,6 +434,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     )
 
     from grit.utils.helpers import agp_newer_than_curated_fa
+
     pta_dir = tracker.latest_run_dir("pretext_to_asm")
     if agp_newer_than_curated_fa(workdir, tol_id, pta_dir):
         print_tip(
@@ -460,4 +466,6 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
         )
 
     if curated_dir and (curated_dir / "merquryk").exists():
-        print_tip("Submission notes: https://gist.github.com/zilov/93b1e6c68a6e2553b7c12770d6a0a3ef")
+        print_tip(
+            "Submission notes: https://gist.github.com/zilov/93b1e6c68a6e2553b7c12770d6a0a3ef"
+        )

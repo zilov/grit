@@ -25,7 +25,9 @@ def test_falls_back_to_pretext_to_asm_when_nothing_else_ran(mock_ctx, tmp_path):
     pta_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
     tracker.start("pretext_to_asm", mock_ctx.ticket_id, mock_ctx.tol_id)
     tracker.finish(
-        "pretext_to_asm", pta_dir, "success",
+        "pretext_to_asm",
+        pta_dir,
+        "success",
         outputs={"hap1_fa": str(pta_fa)},
     )
 

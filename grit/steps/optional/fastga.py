@@ -83,13 +83,18 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
 
     # --- submit bsub job ---
     # Each run gets its own tracker run_dir so multiple fastga runs don't overwrite each other.
-    run_dir = ctx.tracker.start("fastga", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else ctx.workdir / "fastga" / "untracked"
+    run_dir = (
+        ctx.tracker.start("fastga", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else ctx.workdir / "fastga" / "untracked"
+    )
     fastga_script = _REPO_ROOT / "scripts" / "FastGA_dot_dgenies_stats.sh"
 
     inner_cmd = (
         f"cd {run_dir} && "
         f"{module_cmd('GRIT')} && "
-        f"bash {fastga_script} {ref_reheader} {hap1_fa} {run_prefix} {run_dir} {_PAF_TOP_TARGETS_SCRIPT}"
+        f"bash {fastga_script} {ref_reheader} {hap1_fa} {run_prefix} "
+        f"{run_dir} {_PAF_TOP_TARGETS_SCRIPT}"
     )
     bsub_opts = build_bsub_opts(
         group="team135",
@@ -147,7 +152,12 @@ def run_fastga_stats(ctx: CurationContext) -> None:
 
 
 @click.command("fastga", cls=GritCommand, bsub_ram_default=24000)
-@click.option("--reference", "-r", default=None, help="Path to reference FASTA (overrides auto-search in workdir/reference/).")
+@click.option(
+    "--reference",
+    "-r",
+    default=None,
+    help="Path to reference FASTA (overrides auto-search in workdir/reference/).",
+)
 @click.pass_context
 def fastga_cmd(ctx, reference):
     """Run FastGA dot-plot comparison of curated assembly vs reference."""

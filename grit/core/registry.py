@@ -1,5 +1,5 @@
 """
-RegistryManager — global ticket registry stored in ~/.grit/registry.json.
+RegistryManager — global ticket registry stored in ~/.grit/grit_registry.json.
 
 All tickets live in a single file. The ``status`` field controls visibility:
 active tickets (status != "done") appear in ``grit status``; done tickets are
@@ -28,11 +28,11 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 _DEFAULT_DIR = Path.home() / ".grit"
-_REGISTRY_FILENAME = "registry_v2.json"
+_REGISTRY_FILENAME = "grit_registry.json"
 
 
 class RegistryManager:
-    """Manages the global ticket registry in ~/.grit/registry.json."""
+    """Manages the global ticket registry in ~/.grit/grit_registry.json."""
 
     def __init__(self, registry_dir: Path | None = None) -> None:
         self.dir = registry_dir or _DEFAULT_DIR
@@ -99,7 +99,7 @@ class RegistryManager:
         log.warning("Registry: ticket %s not found (cannot update status)", ticket_id)
 
     def mark_done(self, ticket_id: str) -> None:
-        """Set ticket status to 'done'. Ticket stays in registry.json."""
+        """Set ticket status to 'done'. Ticket stays in grit_registry.json."""
         self.update_status(ticket_id, "done")
         log.info("Registry: ticket %s marked as done", ticket_id)
 
@@ -181,7 +181,11 @@ class RegistryManager:
             last_step = success_steps[-1]
             new_status = STEP_TO_STATUS.get(last_step, ticket["status"])
             tol_id = ticket.get("tol_id", "")
-            if new_status == "in_curation" and tol_id and list(workdir.glob(f"{tol_id}*.pretext.agp_1")):
+            if (
+                new_status == "in_curation"
+                and tol_id
+                and list(workdir.glob(f"{tol_id}*.pretext.agp_1"))
+            ):
                 new_status = STEP_TO_STATUS.get("agp_copied", new_status)
             if new_status == "done":
                 ticket["status"] = "done"
@@ -246,7 +250,9 @@ class RegistryManager:
         specs = _get_step_specs(step)
         if specs:
             outputs = collect_outputs(specs, run_dir, tol_id, hap1=hap1, hap2=hap2)
-            tracker.finish(step, run_dir, "success" if outputs else "failed", outputs=outputs or None)
+            tracker.finish(
+                step, run_dir, "success" if outputs else "failed", outputs=outputs or None
+            )
         elif step == "sex_matcher":
             found = run_dir.exists() and any(run_dir.glob("Best_match*"))
             tracker.finish(step, run_dir, "success" if found else "failed")

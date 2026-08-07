@@ -46,9 +46,7 @@ def test_is_super():
 def test_read_top1_table(tmp_path):
     top1_file = tmp_path / "x.top1_targets.tsv"
     top1_file.write_text(
-        "super\ttop_longest_ref_chr\tlen\n"
-        "SUPER_1\tchr1\t500\n"
-        "SUPER_2\tchr3\t800\n"
+        "super\ttop_longest_ref_chr\tlen\nSUPER_1\tchr1\t500\nSUPER_2\tchr3\t800\n"
     )
 
     rows = _read_top1_table(top1_file)
@@ -61,10 +59,7 @@ def test_run_fastga_stats_prints_table(mock_find_latest_dir, mock_ctx, tmp_path,
     run_dir = tmp_path / "fastga_run"
     run_dir.mkdir()
     top1_file = run_dir / "GCA_x_vs_y.top1_targets.tsv"
-    top1_file.write_text(
-        "super\ttop_longest_ref_chr\tlen\n"
-        "SUPER_1\tchr1\t500\n"
-    )
+    top1_file.write_text("super\ttop_longest_ref_chr\tlen\nSUPER_1\tchr1\t500\n")
     mock_find_latest_dir.return_value = run_dir
 
     run_fastga_stats(mock_ctx)
@@ -83,9 +78,7 @@ def test_run_fastga_stats_filters_to_super_scaffolds(
     run_dir.mkdir()
     top1_file = run_dir / "GCA_x_vs_y.top1_targets.tsv"
     top1_file.write_text(
-        "super\ttop_longest_ref_chr\tlen\n"
-        "SUPER_1\tchr1\t500\n"
-        "scaffold_unloc_1\tchr2\t200\n"
+        "super\ttop_longest_ref_chr\tlen\nSUPER_1\tchr1\t500\nscaffold_unloc_1\tchr2\t200\n"
     )
     mock_find_latest_dir.return_value = run_dir
 

@@ -141,7 +141,11 @@ def finalize_for_qc(
     if not ctx.print_only:
         _warn_if_yaml_pta_mismatch(ctx)
 
-    run_dir = ctx.tracker.start("finalize_qc", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else None
+    run_dir = (
+        ctx.tracker.start("finalize_qc", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else None
+    )
 
     dest_dir = curated_dir or ctx.assembly_curated_dir
 
@@ -199,7 +203,10 @@ def finalize_for_qc(
             except FileNotFoundError as e:
                 log.warning(str(e))
                 continue
-        _run(f"cp {src} {dest_dir / _dest_name(hap_prefix, 'primary.chromosome.list.csv')}", ctx.print_only)
+        _run(
+            f"cp {src} {dest_dir / _dest_name(hap_prefix, 'primary.chromosome.list.csv')}",
+            ctx.print_only,
+        )
 
     # 3. copy remapped pretext maps to NFS
     tol_id = ctx.tol_id
@@ -210,10 +217,10 @@ def finalize_for_qc(
     # hap2 map: only for dual-hap assemblies
     hap2_hic_dir = find_latest_dir(ctx, "hic_remapping_hap2")
     hap2_hic_has_output = (
-        hap2_hic_dir != ctx.workdir
-        and hap2_hic_dir.exists()
-        and any(hap2_hic_dir.iterdir())
-    ) if not ctx.print_only else False
+        (hap2_hic_dir != ctx.workdir and hap2_hic_dir.exists() and any(hap2_hic_dir.iterdir()))
+        if not ctx.print_only
+        else False
+    )
     if hap2_map or hap2_hic_has_output:
         _copy_map(ctx, "hic_remapping_hap2", ctx.hap2_prefix, nfs_dest, hap2_map)
 
@@ -221,20 +228,27 @@ def finalize_for_qc(
     qv_dir = dest_dir / "merquryk"
     if not qv_dir.exists():
         from grit.steps.post_curation.qv import run_qv
+
         run_qv(ctx)
 
     if ctx.print_only:
-        console.print("\n[yellow]print-only: files not copied — commands above show what would run[/yellow]")
+        console.print(
+            "\n[yellow]print-only: files not copied — commands above show what would run[/yellow]"
+        )
     else:
         print_done("All files copied to curated directory")
     console.print(
-        "\n[bold yellow]⚠  Please don't forget about Submission Text and attaching latest savestate to the ticket, curation summary:[/bold yellow]"
+        "\n[bold yellow]⚠  Please don't forget about Submission Text and attaching "
+        "latest savestate to the ticket, curation summary:[/bold yellow]"
     )
 
     if ctx.tracker and run_dir:
-        ctx.tracker.finish("finalize_qc", run_dir, "success", outputs={"curated_dir": str(dest_dir)})
+        ctx.tracker.finish(
+            "finalize_qc", run_dir, "success", outputs={"curated_dir": str(dest_dir)}
+        )
 
     from grit.utils.output import print_curation_results, print_tip
+
     print_curation_results(ctx.tracker, ctx.workdir, ctx.tol_id, curated_dir=dest_dir)
     print_tip("Submission notes: https://gist.github.com/zilov/93b1e6c68a6e2553b7c12770d6a0a3ef")
 
@@ -245,31 +259,56 @@ def finalize_for_qc(
 
 
 @click.command("finalize-qc", cls=GritCommand)
-@click.option("--hap1-assembly", type=click.Path(), default=None,
-              help="Override canonical hap1 assembly FASTA.")
-@click.option("--hap2-assembly", type=click.Path(), default=None,
-              help="Override canonical hap2 assembly FASTA.")
-@click.option("--hap1-chr-list", type=click.Path(), default=None,
-              help="Override hap1 chromosome list CSV.")
-@click.option("--hap2-chr-list", type=click.Path(), default=None,
-              help="Override hap2 chromosome list CSV.")
-@click.option("--hap1-haplotigs", type=click.Path(), default=None,
-              help="Override hap1 haplotig FASTA.")
-@click.option("--hap2-haplotigs", type=click.Path(), default=None,
-              help="Override hap2 haplotig FASTA.")
-@click.option("--hap1-map", type=click.Path(), default=None,
-              help="Override hap1 remapped pretext map path.")
-@click.option("--hap2-map", type=click.Path(), default=None,
-              help="Override hap2 remapped pretext map path (also triggers hap2 map copy).")
-@click.option("--curated-dir", type=click.Path(), default=None,
-              help="Override destination curated assembly directory.")
+@click.option(
+    "--hap1-assembly",
+    type=click.Path(),
+    default=None,
+    help="Override canonical hap1 assembly FASTA.",
+)
+@click.option(
+    "--hap2-assembly",
+    type=click.Path(),
+    default=None,
+    help="Override canonical hap2 assembly FASTA.",
+)
+@click.option(
+    "--hap1-chr-list", type=click.Path(), default=None, help="Override hap1 chromosome list CSV."
+)
+@click.option(
+    "--hap2-chr-list", type=click.Path(), default=None, help="Override hap2 chromosome list CSV."
+)
+@click.option(
+    "--hap1-haplotigs", type=click.Path(), default=None, help="Override hap1 haplotig FASTA."
+)
+@click.option(
+    "--hap2-haplotigs", type=click.Path(), default=None, help="Override hap2 haplotig FASTA."
+)
+@click.option(
+    "--hap1-map", type=click.Path(), default=None, help="Override hap1 remapped pretext map path."
+)
+@click.option(
+    "--hap2-map",
+    type=click.Path(),
+    default=None,
+    help="Override hap2 remapped pretext map path (also triggers hap2 map copy).",
+)
+@click.option(
+    "--curated-dir",
+    type=click.Path(),
+    default=None,
+    help="Override destination curated assembly directory.",
+)
 @click.pass_context
 def finalize_qc_cmd(
     ctx,
-    hap1_assembly, hap2_assembly,
-    hap1_chr_list, hap2_chr_list,
-    hap1_haplotigs, hap2_haplotigs,
-    hap1_map, hap2_map,
+    hap1_assembly,
+    hap2_assembly,
+    hap1_chr_list,
+    hap2_chr_list,
+    hap1_haplotigs,
+    hap2_haplotigs,
+    hap1_map,
+    hap2_map,
     curated_dir,
 ):
     """Finalize curation and prepare for QC."""

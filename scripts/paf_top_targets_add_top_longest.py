@@ -65,11 +65,11 @@ def main():
                 query_order.append(q_name)
 
             q_start = int(cols[2])
-            q_end   = int(cols[3])
-            t_name  = cols[5]
+            q_end = int(cols[3])
+            t_name = cols[5]
             t_start = int(cols[7])
-            t_end   = int(cols[8])
-            length  = q_end - q_start
+            t_end = int(cols[8])
+            length = q_end - q_start
 
             pair_intervals[(q_name, t_name)].append((q_start, q_end))
             if top_longest:
@@ -97,24 +97,22 @@ def main():
         }
         top10 = sorted(coverage.items(), key=lambda x: x[1], reverse=True)[:10]
 
-        print(f"\n{'#'*80}")
+        print(f"\n{'#' * 80}")
         print(f"Query: {query_name}")
-        print(f"{'#'*80}")
+        print(f"{'#' * 80}")
 
         for rank, (target, cov) in enumerate(top10, 1):
-            print(f"{'='*80}")
+            print(f"{'=' * 80}")
             print(f"#{rank}  {target}")
             print(f"    Total non-overlapping coverage: {cov:,} bp")
 
             if top_longest:
-                top5 = sorted(
-                    pair_alns[(query_name, target)], key=lambda x: x[0], reverse=True
-                )[:5]
+                top5 = sorted(pair_alns[(query_name, target)], key=lambda x: x[0], reverse=True)[:5]
                 print(
                     f"    {'Aln':<6} {'Length (bp)':>12}  {'Query start':>12} "
                     f"{'Query end':>12}  {'Target start':>13} {'Target end':>12}"
                 )
-                print(f"    {'-'*70}")
+                print(f"    {'-' * 70}")
                 for i, (length, qs, qe, ts, te) in enumerate(top5, 1):
                     print(f"    {i:<6} {length:>12,}  {qs:>12,} {qe:>12,}  {ts:>13,} {te:>12,}")
 

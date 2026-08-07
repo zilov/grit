@@ -63,8 +63,12 @@ def setup_curation(ctx: CurationContext) -> None:
     # Glob for decontaminated hap1 FASTA
     # assembly_draft_dir already points to the versioned subdir,
     # e.g. .../assembly/draft/uoEpiScra1.20241115
-    hap1_pattern = str(ctx.assembly_draft_dir / f"{ctx.tol_id}*{ctx.hap1_prefix}.decontaminated.fa*")
-    hap2_pattern = str(ctx.assembly_draft_dir / f"{ctx.tol_id}*{ctx.hap2_prefix}.decontaminated.fa*")
+    hap1_pattern = str(
+        ctx.assembly_draft_dir / f"{ctx.tol_id}*{ctx.hap1_prefix}.decontaminated.fa*"
+    )
+    hap2_pattern = str(
+        ctx.assembly_draft_dir / f"{ctx.tol_id}*{ctx.hap2_prefix}.decontaminated.fa*"
+    )
 
     if ctx.print_only:
         # In print-only mode show expected paths without checking the filesystem
@@ -75,7 +79,9 @@ def setup_curation(ctx: CurationContext) -> None:
     else:
         hap1_files = glob.glob(hap1_pattern)
         if not hap1_files:
-            hap1_files = glob.glob(str(ctx.assembly_draft_dir / f"{ctx.tol_id}*.decontaminated.fa*"))
+            hap1_files = glob.glob(
+                str(ctx.assembly_draft_dir / f"{ctx.tol_id}*.decontaminated.fa*")
+            )
         if not hap1_files:
             raise FileNotFoundError(f"No decontaminated hap1 FASTA found at: {hap1_pattern}")
         decont_hap1 = _sort_by_mtime(hap1_files)[0]
@@ -83,7 +89,9 @@ def setup_curation(ctx: CurationContext) -> None:
         hap2_files = glob.glob(hap2_pattern)
         if not hap2_files:
             # some primary assemblies use 'haplotigs' rather than 'alternate'
-            hap2_files = glob.glob(str(ctx.assembly_draft_dir / f"{ctx.tol_id}*haplotigs.decontaminated.fa*"))
+            hap2_files = glob.glob(
+                str(ctx.assembly_draft_dir / f"{ctx.tol_id}*haplotigs.decontaminated.fa*")
+            )
         if hap2_files:
             decont_hap2 = _sort_by_mtime(hap2_files)[0]
         else:
@@ -119,8 +127,12 @@ def _find_pretext_maps(ctx: CurationContext) -> tuple[Path, Path]:
         return filtered if filtered else files
 
     hr_files = _ticket_filter(glob.glob(str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*hr.pretext")))
-    normal_files = _ticket_filter(glob.glob(str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*normal.pretext")))
-    ultra_files = _ticket_filter(glob.glob(str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*ultra.pretext")))
+    normal_files = _ticket_filter(
+        glob.glob(str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*normal.pretext"))
+    )
+    ultra_files = _ticket_filter(
+        glob.glob(str(ctx.pretext_maps_nfs / f"{ctx.tol_id}*ultra.pretext"))
+    )
 
     if not hr_files:
         raise FileNotFoundError(
@@ -267,15 +279,21 @@ def run_setup(ctx: CurationContext) -> None:
     # Record in global registry
     if not ctx.print_only:
         from grit.core.registry import RegistryManager
+
         RegistryManager().add_ticket(
-            ctx.ticket_id, ctx.tol_id, ctx.species, ctx.workdir,
+            ctx.ticket_id,
+            ctx.tol_id,
+            ctx.species,
+            ctx.workdir,
             hap1_prefix=ctx.hap1_prefix,
             hap2_prefix=ctx.hap2_prefix,
         )
 
     # Track execution
     if ctx.tracker:
-        run_dir = ctx.tracker.start("setup_curation", ctx.ticket_id, ctx.tol_id, create_dir=False, untracked=ctx.untracked)
+        run_dir = ctx.tracker.start(
+            "setup_curation", ctx.ticket_id, ctx.tol_id, create_dir=False, untracked=ctx.untracked
+        )
 
     print_curation_summary(ctx)
     try:

@@ -8,7 +8,12 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _state_update_epilogue, _submit_bsub, build_bsub_opts, find_latest_dir
+from grit.utils.helpers import (
+    _state_update_epilogue,
+    _submit_bsub,
+    build_bsub_opts,
+    find_latest_dir,
+)
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -103,7 +108,11 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     )
 
     # --- build bsub options ---
-    run_dir = ctx.tracker.start("busco_curated", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else None
+    run_dir = (
+        ctx.tracker.start("busco_curated", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else None
+    )
     bsub_opts = build_bsub_opts(
         memory_mb=mem_mb,
         cores=32,

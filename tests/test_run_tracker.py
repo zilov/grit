@@ -1,7 +1,5 @@
 """Tests for RunTracker."""
 
-from pathlib import Path
-
 import pytest
 
 from grit.core.registry import RegistryManager
@@ -194,13 +192,16 @@ def test_history_reads_from_registry(tmp_path, reg):
     workdir = tmp_path / "workdir"
     workdir.mkdir()
     reg.add_ticket("RC-9999", "xbTest1", "species", workdir)
-    reg.append_step(workdir, {
-        "step": "pretext_to_asm",
-        "timestamp": "2026-07-01T10_00_00",
-        "status": "success",
-        "run_dir": str(workdir / "pretext_to_asm" / "2026-07-01T10_00_00"),
-        "job_id": None,
-    })
+    reg.append_step(
+        workdir,
+        {
+            "step": "pretext_to_asm",
+            "timestamp": "2026-07-01T10_00_00",
+            "status": "success",
+            "run_dir": str(workdir / "pretext_to_asm" / "2026-07-01T10_00_00"),
+            "job_id": None,
+        },
+    )
 
     tracker = RunTracker(workdir, registry=reg)
 

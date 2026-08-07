@@ -27,40 +27,40 @@ parser.add_argument("-q", "--query", required=True)
 parser.add_argument("-ri", "--ref_id")
 parser.add_argument("-qi", "--query_id")
 parser.add_argument("-p", "--path", required=True)
-parser.add_argument("-k", "--keep", action='store_true')
+parser.add_argument("-k", "--keep", action="store_true")
 args = parser.parse_args()
 
 
 if args.ref_id:
-    sp1 = f'{args.ref_id}'
+    sp1 = f"{args.ref_id}"
 else:
-    sp1 = 'Rf'
+    sp1 = "Rf"
 if args.query_id:
-    sp2 = f'{args.query_id}'
+    sp2 = f"{args.query_id}"
 else:
-    sp2 = 'Qu'
+    sp2 = "Qu"
 
-base_path = f'{args.path}/'
+base_path = f"{args.path}/"
 
-names = f'{sp1}_{sp2}'
+names = f"{sp1}_{sp2}"
 
 ################## FORMAT BUSCO OUTPUT ##################
 
-#Busco full table headers
-
-#table_headers=["Busco id", "Status", "Sequence", "Gene Start", "Gene End", 'Strand', 'Score', 'Length', 'OrthoDB url', 'Description']
+table_headers = ["Busco id", "Status", "Sequence", "Gene Start", "Gene End"]
 # Data types in busco full table
-#my_types = {"Busco id": "string","Status": "string","Sequence": "string","Gene Start": "Int64","Gene End": "Int64",}
-
-
-table_headers=["Busco id", "Status", "Sequence", "Gene Start", "Gene End"]
-# Data types in busco full table
-my_types = {"Busco id": "string","Status": "string","Sequence": "string","Gene Start": "Int64","Gene End": "Int64",}
+my_types = {
+    "Busco id": "string",
+    "Status": "string",
+    "Sequence": "string",
+    "Gene Start": "Int64",
+    "Gene End": "Int64",
+}
 
 # Chromosome header prefixes we accept: 'SUPER_n' (curated ToL assemblies) and
 # 'chr_n' / 'chrN' (references reheadered by the shared GRIT `reheader` tool).
 # Checked in this order since 'chr_' must win over the looser 'chr' before it.
-_KNOWN_CHROM_PREFIXES = ('SUPER_', 'chr_', 'chr')
+_KNOWN_CHROM_PREFIXES = ("SUPER_", "chr_", "chr")
+
 
 def detect_chrom_prefix(names):
     """Detect which chromosome-header convention a genome's contig names use."""
@@ -72,72 +72,102 @@ def detect_chrom_prefix(names):
         f"found in headers: {list(names)[:5]}"
     )
 
+
 def readfulltables(ID, prefix):
     # The bash wrapper (busco-synteny.sh) always flattens BUSCO's full table
     # to this path immediately after running BUSCO for this genome, before
     # this script is invoked — see run_busco_if_needed() in that script.
-    ID_table = pd.read_csv(f'{base_path}{ID}_BUSCO_full_table.tsv', sep="\t", skiprows=3, names=table_headers, dtype=my_types, usecols=["Busco id", "Status", "Sequence", "Gene Start", "Gene End"])
-    ID_table['Sequence']=ID_table.Sequence.str.replace(f'^{re.escape(prefix)}', ID, regex=True)
-    ID_table = ID_table[(ID_table["Status"]=='Complete') & (ID_table.Sequence.str.startswith(ID))]
+    ID_table = pd.read_csv(
+        f"{base_path}{ID}_BUSCO_full_table.tsv",
+        sep="\t",
+        skiprows=3,
+        names=table_headers,
+        dtype=my_types,
+        usecols=["Busco id", "Status", "Sequence", "Gene Start", "Gene End"],
+    )
+    ID_table["Sequence"] = ID_table.Sequence.str.replace(f"^{re.escape(prefix)}", ID, regex=True)
+    ID_table = ID_table[(ID_table["Status"] == "Complete") & (ID_table.Sequence.str.startswith(ID))]
     return ID_table
 
+
 def get_chroms_data(fasta, id):
-    ff = open(fasta, 'r')
+    ff = open(fasta, "r")
     ffdata = pd.DataFrame()
-    chroms=[]
-    end=[]
-    start=[]
+    chroms = []
+    end = []
+    start = []
     for name, seq in SimpleFastaParser(ff):
         end.append(len(seq))
         chroms.append(name)
-        start.append('1')
+        start.append("1")
 
-    ffdata['chr'] = chroms
-    ffdata['start']= start
-    ffdata['end'] = end
+    ffdata["chr"] = chroms
+    ffdata["start"] = start
+    ffdata["end"] = end
 
-    prefix = detect_chrom_prefix(ffdata['chr'])
-    ffdata = ffdata[ffdata['chr'].str.startswith(prefix)]
-    ffdata['chr'] = ffdata.chr.str.replace(f'^{re.escape(prefix)}', id, regex=True)
-    filter = ffdata['chr'].str.contains('unloc')
+    prefix = detect_chrom_prefix(ffdata["chr"])
+    ffdata = ffdata[ffdata["chr"].str.startswith(prefix)]
+    ffdata["chr"] = ffdata.chr.str.replace(f"^{re.escape(prefix)}", id, regex=True)
+    filter = ffdata["chr"].str.contains("unloc")
     fffdata_filter = ffdata[~filter]
     return fffdata_filter, prefix
+
 
 sp1_chroms, sp1_prefix = get_chroms_data(args.ref, sp1)
 sp2_chroms, sp2_prefix = get_chroms_data(args.query, sp2)
 chroms = pd.concat([sp2_chroms, sp1_chroms], axis=0)
-chroms.to_csv(f'{base_path}/{sp1}_{sp2}_chrom.csv', sep = ',', index = False)
+chroms.to_csv(f"{base_path}/{sp1}_{sp2}_chrom.csv", sep=",", index=False)
 
 sp1_data = readfulltables(sp1, sp1_prefix)
 sp2_data = readfulltables(sp2, sp2_prefix)
 
-links = pd.merge(sp1_data, sp2_data, how ='inner', on =['Busco id'])
-links = links.rename(columns={'Sequence_x': 'chr1', 'Gene Start_x': 'start1', 'Gene End_x': 'end1','Sequence_y': 'chr2', 'Gene Start_y': 'start2', 'Gene End_y': 'end2' })
-links_tidy = links.loc[:,['chr2', 'start2', 'end2','chr1','start1','end1']]
-links_tidy['color'] = links_tidy['chr1']
-links_tidy['end2'] = links_tidy['end2']+1000000
-links_tidy['end1'] = links_tidy['end1']+1000000
-links_tidy = links_tidy.rename(columns={'chr2':'chr1', 'start2':'start1', 'end2':'end1','chr1':'chr2','start1':'start2','end1':'end2'})
+links = pd.merge(sp1_data, sp2_data, how="inner", on=["Busco id"])
+links = links.rename(
+    columns={
+        "Sequence_x": "chr1",
+        "Gene Start_x": "start1",
+        "Gene End_x": "end1",
+        "Sequence_y": "chr2",
+        "Gene Start_y": "start2",
+        "Gene End_y": "end2",
+    }
+)
+links_tidy = links.loc[:, ["chr2", "start2", "end2", "chr1", "start1", "end1"]]
+links_tidy["color"] = links_tidy["chr1"]
+links_tidy["end2"] = links_tidy["end2"] + 1000000
+links_tidy["end1"] = links_tidy["end1"] + 1000000
+links_tidy = links_tidy.rename(
+    columns={
+        "chr2": "chr1",
+        "start2": "start1",
+        "end2": "end1",
+        "chr1": "chr2",
+        "start1": "start2",
+        "end1": "end2",
+    }
+)
 
-links_tidy.to_csv(f'{base_path}/{sp1}_{sp2}.links', sep = ',', index = False)
+links_tidy.to_csv(f"{base_path}/{sp1}_{sp2}.links", sep=",", index=False)
+
 
 def bestSexMatch(df):
     RfZs = df[df.chr2.str.endswith(("Z", "X"))]
     zmdf = []
-    if(RfZs.empty == True):
+    if RfZs.empty:
         pass
     else:
         for i in RfZs.chr2.unique():
-            zmatchpcnt = (RfZs['chr2'].value_counts()[i]/len(RfZs))*100
+            zmatchpcnt = (RfZs["chr2"].value_counts()[i] / len(RfZs)) * 100
             matcher = i, zmatchpcnt.round(2)
             zmdf.append(matcher)
         zmdf = pd.DataFrame(zmdf)
-        zmdf = zmdf.rename(columns={0:'chr', 1:'pcnt'})
-        maxZmatch = zmdf['pcnt'].idxmax()
+        zmdf = zmdf.rename(columns={0: "chr", 1: "pcnt"})
+        maxZmatch = zmdf["pcnt"].idxmax()
         c = zmdf.iloc[maxZmatch].chr
         p = zmdf.iloc[maxZmatch].pcnt
         sexChrom = RfZs.chr1.unique()[0]
-        zmdf.to_csv(f'Best_match_to_{sexChrom}_is_{c}_at_{p}%', sep = ',', index = False)
+        zmdf.to_csv(f"Best_match_to_{sexChrom}_is_{c}_at_{p}%", sep=",", index=False)
+
 
 bestSexMatch(links_tidy)
 
@@ -145,54 +175,55 @@ bestSexMatch(links_tidy)
 
 
 now = datetime.now()
-current_time = now.strftime('%Y-%m-%d_%H.%M.%S')
-Garc    = pycircos.Garc
+current_time = now.strftime("%Y-%m-%d_%H.%M.%S")
+Garc = pycircos.Garc
 Gcircle = pycircos.Gcircle
-l = links_tidy
+links = links_tidy
 c = chroms
 
-chr1s = pd.Series(c['chr']).str.count(sp1)
-chr1_count= chr1s.sum()
-chr2s = pd.Series(c['chr']).str.count(sp2)
-chr2_count= chr2s.sum()
+chr1s = pd.Series(c["chr"]).str.count(sp1)
+chr1_count = chr1s.sum()
+chr2s = pd.Series(c["chr"]).str.count(sp2)
+chr2_count = chr2s.sum()
 
 if chr1_count > 12:
     palette_scheme = "Spectral"
 else:
     palette_scheme = "Paired"
 
-palette = sns.color_palette(palette_scheme, chr1_count)    # Testing colour palettes: Paired, Spectral, magma
+palette = sns.color_palette(
+    palette_scheme, chr1_count
+)  # Testing colour palettes: Paired, Spectral, magma
 chroms1_colours = []
-for i in sns.color_palette(palette) :
+for i in sns.color_palette(palette):
     chroms1_colours.append(i)
 
 chroms1_random = random.shuffle(chroms1_colours)
 
-chroms2_colours = ['#CDC9C9'] * chr2_count
+chroms2_colours = ["#CDC9C9"] * chr2_count
 colour_list = chroms2_colours + chroms1_colours
-#colour_list
+# colour_list
 
 # Add the colour list as a column of the croms df
 
-c['colour'] = colour_list
+c["colour"] = colour_list
 
-colour_map = c.set_index('chr')['colour'].to_dict()
+colour_map = c.set_index("chr")["colour"].to_dict()
 
-l['color'] = l['chr2'].apply(colour_map.get)
+links["color"] = links["chr2"].apply(colour_map.get)
 
-#Set chromosomes
-circle = Gcircle(figsize=(8,8))
+# Set chromosomes
+circle = Gcircle(figsize=(8, 8))
 
 for i, row in c.iterrows():
-
     arc = Garc(
-        arc_id=row['chr'],
-        size=row['end'],
+        arc_id=row["chr"],
+        size=row["end"],
         interspace=2,
-        raxis_range=(935,985),
+        raxis_range=(935, 985),
         labelposition=80,
         label_visible=True,
-        facecolor=row['colour']
+        facecolor=row["colour"],
     )
 
     circle.add_garc(arc)
@@ -202,19 +233,20 @@ ref_name = Path(args.ref).stem
 query_name = Path(args.query).stem
 
 circle.set_garcs()
-circle.ax.set_title(f'{ref_name}_vs_{query_name}', pad = 40)
+circle.ax.set_title(f"{ref_name}_vs_{query_name}", pad=40)
 
-for i, row in l.iterrows():
-    source = (row['chr1'], row['start1'], row['end1'], 920)
-    destination = (row['chr2'], row['start2'], row['end2'], 920)
-    circle.chord_plot(
-        source,
-        destination,
-        facecolor=row['color']
-    )
+for i, row in links.iterrows():
+    source = (row["chr1"], row["start1"], row["end1"], 920)
+    destination = (row["chr2"], row["start2"], row["end2"], 920)
+    circle.chord_plot(source, destination, facecolor=row["color"])
 
 
-circle.figure.savefig(f"{base_path}/{ref_name}_vs_{query_name}.{current_time}.png", dpi=300, bbox_inches='tight' , pad_inches=0.4)
+circle.figure.savefig(
+    f"{base_path}/{ref_name}_vs_{query_name}.{current_time}.png",
+    dpi=300,
+    bbox_inches="tight",
+    pad_inches=0.4,
+)
 
 
 ####### TIDY DIRECTORY  #########
@@ -225,6 +257,6 @@ circle.figure.savefig(f"{base_path}/{ref_name}_vs_{query_name}.{current_time}.pn
 if args.keep:
     pass
 else:
-    busco_downloads_dir = Path(base_path) / 'busco_downloads'
+    busco_downloads_dir = Path(base_path) / "busco_downloads"
     if busco_downloads_dir.exists():
         shutil.rmtree(busco_downloads_dir)

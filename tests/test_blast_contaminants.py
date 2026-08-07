@@ -25,7 +25,9 @@ def _fake_find_curated_fa(tmp_path):
 
 
 def _write_cleaned_fasta(tmp_path, tol_id, hap_prefix):
-    (tmp_path / f"{tol_id}.{hap_prefix}.1.curated.fa").with_suffix(".cleaned.fa").write_text(">seq\n")
+    (tmp_path / f"{tol_id}.{hap_prefix}.1.curated.fa").with_suffix(".cleaned.fa").write_text(
+        ">seq\n"
+    )
 
 
 @patch("grit.steps.optional.blast_contaminants._run", return_value="")
@@ -84,7 +86,9 @@ def test_output_survives_untrack_fallback(mock_find_fa, mock_run, mock_ctx, tmp_
     _write_cleaned_fasta(tmp_path, mock_ctx.tol_id, mock_ctx.hap2_prefix)
 
     run_blast_contaminants(mock_ctx)
-    assert mock_ctx.tracker.get_output("blast_contaminants", f"{mock_ctx.hap1_prefix}_fa") is not None
+    assert (
+        mock_ctx.tracker.get_output("blast_contaminants", f"{mock_ctx.hap1_prefix}_fa") is not None
+    )
 
     mock_ctx.tracker.untrack("blast_contaminants")
     assert mock_ctx.tracker.get_output("blast_contaminants", f"{mock_ctx.hap1_prefix}_fa") is None

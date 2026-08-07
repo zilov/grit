@@ -62,6 +62,7 @@ def _submit_rename_and_orient_for_hap(
     if not ctx.print_only and (outdir / f"{prefix}.fa").exists():
         log.info("rename-and-orient output already exists — skipping %s", hap_prefix)
         from grit.utils.output import print_done
+
         print_done(f"Already done → {outdir / f'{prefix}.fa'}")
         return None
 
@@ -142,8 +143,7 @@ def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> No
     paf_matches = glob.glob(str(fastga_dir / "*FastGA.paf"))
     if not paf_matches:
         raise FileNotFoundError(
-            f"No FastGA PAF found in {fastga_dir}\n"
-            f"Run 'grit fastga -t {ctx.ticket_id}' first."
+            f"No FastGA PAF found in {fastga_dir}\nRun 'grit fastga -t {ctx.ticket_id}' first."
         )
     paf_file = Path(sorted(paf_matches)[-1])
     log.info("FastGA PAF: %s", paf_file)
@@ -151,8 +151,7 @@ def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> No
     _submit_rename_and_orient_for_hap(ctx, ctx.hap1_prefix, paf_file, "rename_and_orient")
 
     if run_hap2:
-        print_step_header(ctx.ticket_id, ctx.tol_id,
-                          f"Rename and orient ({ctx.hap2_prefix})")
+        print_step_header(ctx.ticket_id, ctx.tol_id, f"Rename and orient ({ctx.hap2_prefix})")
         outdir = ctx.workdir / "rename_and_orient"
         hap1_prefix = f"{ctx.tol_id}.{ctx.hap1_prefix}.primary.renamed"
         mapping_tsv = outdir / f"{hap1_prefix}.mapping.tsv"
@@ -165,7 +164,10 @@ def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> No
             return
 
         _submit_rename_and_orient_for_hap(
-            ctx, ctx.hap2_prefix, paf_file, "rename_and_orient_hap2",
+            ctx,
+            ctx.hap2_prefix,
+            paf_file,
+            "rename_and_orient_hap2",
             mapping_table=mapping_tsv,
         )
 
@@ -178,8 +180,13 @@ def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> No
 
 
 @click.command("rename-and-orient", cls=GritCommand, bsub_ram_default=_DEFAULT_MEM_MB)
-@click.option("--hap2", "run_hap2", is_flag=True, default=False,
-              help="Also rename and orient hap2 using the mapping table from hap1 run.")
+@click.option(
+    "--hap2",
+    "run_hap2",
+    is_flag=True,
+    default=False,
+    help="Also rename and orient hap2 using the mapping table from hap1 run.",
+)
 @click.pass_context
 def rename_and_orient_cmd(ctx, run_hap2):
     """Rename and orient chromosomes in curated FASTA based on FastGA PAF alignment."""

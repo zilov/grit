@@ -47,8 +47,9 @@ def run_post_curation(ctx, *, run_hap2: bool = False):
 
 
 @click.command("post-curation", cls=GritCommand)
-@click.option("--hap2", "run_hap2", is_flag=True, default=False,
-              help="Also submit HiC remapping for hap2.")
+@click.option(
+    "--hap2", "run_hap2", is_flag=True, default=False, help="Also submit HiC remapping for hap2."
+)
 @click.pass_context
 def post_curation_cmd(ctx, run_hap2):
     """Run all post-curation steps."""

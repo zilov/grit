@@ -16,9 +16,7 @@ TEST_USER_CONFIG = {
     "username": "testuser",
     "pretext_maps_nfs": "/nfs/treeoflife-01/teams/grit/data/pretext_maps",
     "curated_pretext_maps_nfs": "/nfs/treeoflife-01/teams/grit/data/curated_pretext_maps",
-    "curation_savestates_nfs": "/nfs/treeoflife-01/teams/grit/data/curation_savestates",
     "farm_host": "farm22",
-    "email": "testuser@sanger.ac.uk",
     "gritjiraissue_path": "/software/grit/lib",
 }
 
@@ -111,10 +109,10 @@ def fake_workdir(tmp_path, mock_ctx):
                 2025-06-02T15_00_00/
                     sDipInt39.1.hap1.hr.pretext         (remapped map)
             .grit_reg/
-                registry_v2.json                        (isolated registry, seeded with step history)
+                grit_registry.json           (isolated registry, seeded with step history)
     """
     mock_ctx.workdir = tmp_path
-    tol_id = mock_ctx.tol_id          # sDipInt39
+    tol_id = mock_ctx.tol_id  # sDipInt39
     tol_id_v = mock_ctx.tol_id_versioned  # sDipInt39.1
 
     # setup outputs
@@ -155,10 +153,17 @@ def fake_workdir(tmp_path, mock_ctx):
         ("pretext_to_asm", pta_ts, pta_dir),
         ("hic_remapping", hic_ts, hic_dir),
     ]:
-        reg.append_step(tmp_path, {
-            "step": step, "timestamp": ts, "status": "success",
-            "ticket_id": mock_ctx.ticket_id, "tol_id": tol_id, "run_dir": str(run_dir),
-        })
+        reg.append_step(
+            tmp_path,
+            {
+                "step": step,
+                "timestamp": ts,
+                "status": "success",
+                "ticket_id": mock_ctx.ticket_id,
+                "tol_id": tol_id,
+                "run_dir": str(run_dir),
+            },
+        )
 
     # Attach a tracker pointing to the real tmp_path
     mock_ctx.tracker = RunTracker(tmp_path, registry=reg)

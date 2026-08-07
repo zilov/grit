@@ -19,14 +19,12 @@ if TYPE_CHECKING:
 
 @dataclass
 class UserConfig:
-    """Curator user config (loaded from ~/.grit_curation_config.yaml)."""
+    """Curator user config (loaded from ~/.grit/grit_curation_config.yaml)."""
 
     username: str
     pretext_maps_nfs: Path
     curated_pretext_maps_nfs: Path
-    curation_savestates_nfs: Path
     farm_host: str
-    email: str
     gritjiraissue_path: str
 
     @classmethod
@@ -35,9 +33,7 @@ class UserConfig:
             username=d["username"],
             pretext_maps_nfs=Path(d["pretext_maps_nfs"]),
             curated_pretext_maps_nfs=Path(d["curated_pretext_maps_nfs"]),
-            curation_savestates_nfs=Path(d["curation_savestates_nfs"]),
             farm_host=d["farm_host"],
-            email=d["email"],
             gritjiraissue_path=d["gritjiraissue_path"],
         )
 
@@ -77,12 +73,10 @@ class CurationContext:
     # --- NFS paths (from user config) ---
     pretext_maps_nfs: Path
     curated_pretext_maps_nfs: Path
-    curation_savestates_nfs: Path
 
     # --- farm access ---
     farm_host: str
     username: str
-    email: str
 
     # --- optional fields ---
     teloseq: str = ""  # "--teloseq TTAGG" or ""
@@ -175,10 +169,8 @@ class CurationContext:
             workdir=workdir,
             pretext_maps_nfs=cfg.pretext_maps_nfs,
             curated_pretext_maps_nfs=cfg.curated_pretext_maps_nfs,
-            curation_savestates_nfs=cfg.curation_savestates_nfs,
             farm_host=cfg.farm_host,
             username=cfg.username,
-            email=cfg.email,
             teloseq=teloseq,
             release_version=release_version,
             print_only=print_only,

@@ -10,7 +10,7 @@ Storage layout:
                 <timestamp>.log ← per-run stdout/stderr capture
 
 Step history itself lives in the global registry (RegistryManager,
-~/.grit/registry_v2.json) — RunTracker is a workdir-scoped view over it, not
+~/.grit/grit_registry.json) — RunTracker is a workdir-scoped view over it, not
 a separate store. Non-repeatable steps (setup, haplotig_files, …) still log
 history the same way; their output files stay in workdir/ or the parent
 step's run_dir.
@@ -168,15 +168,19 @@ class RunTracker:
         runs = self.history(step)
         untracked_dirs = _untracked_dirs(runs)
         success_runs = [
-            r for r in runs
-            if r.get("status") == "success" and r.get("run_dir")
+            r
+            for r in runs
+            if r.get("status") == "success"
+            and r.get("run_dir")
             and r["run_dir"] not in untracked_dirs
         ]
         if success_runs:
             return Path(success_runs[-1]["run_dir"])
         started_runs = [
-            r for r in runs
-            if r.get("status") == "started" and r.get("run_dir")
+            r
+            for r in runs
+            if r.get("status") == "started"
+            and r.get("run_dir")
             and r["run_dir"] not in untracked_dirs
         ]
         if started_runs:
@@ -193,8 +197,10 @@ class RunTracker:
         runs = self.history(step)
         untracked_dirs = _untracked_dirs(runs)
         success_runs = [
-            r for r in runs
-            if r.get("status") == "success" and r.get("outputs")
+            r
+            for r in runs
+            if r.get("status") == "success"
+            and r.get("outputs")
             and r.get("run_dir") not in untracked_dirs
         ]
         if not success_runs:
@@ -202,7 +208,7 @@ class RunTracker:
         return success_runs[-1]["outputs"].get(key)
 
     def untrack(self, step: str, run_dir: Path | None = None) -> bool:
-        """Mark the latest success run of *step* as untracked (non-canonical). Returns True if found."""
+        """Mark the latest success run of *step* as untracked. Returns True if found."""
         if run_dir is None:
             run_dir = self.latest_run_dir(step)
         if run_dir is None:
@@ -228,7 +234,8 @@ class RunTracker:
             key = (r.get("step"), r.get("run_dir"))
             latest[key] = r.get("status", "")
         return [
-            r for r in all_records
+            r
+            for r in all_records
             if r.get("status") == "started"
             and r.get("job_id")
             and latest.get((r.get("step"), r.get("run_dir"))) not in terminal
@@ -290,5 +297,6 @@ class RunTracker:
     def _registry(self) -> "RegistryManager":
         if self._registry_obj is None:
             from grit.core.registry import RegistryManager
+
             self._registry_obj = RegistryManager()
         return self._registry_obj

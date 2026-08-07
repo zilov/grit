@@ -59,7 +59,11 @@ def test_collect_outputs_fallback(tmp_path):
 
     specs = [
         ("hap1_fa", "{tol_id}.{hap1}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
-        ("hap1_fa", "{tol_id}.*.primary.curated.fa", ["hap1", "hap2", "all_haplotigs", "additional_haplotigs"]),
+        (
+            "hap1_fa",
+            "{tol_id}.*.primary.curated.fa",
+            ["hap1", "hap2", "all_haplotigs", "additional_haplotigs"],
+        ),
     ]
     result = collect_outputs(specs, tmp_path, tol_id, hap1="hap1", hap2="hap2")
     assert result == {"hap1_fa": str(primary)}
@@ -77,7 +81,11 @@ def test_collect_outputs_fallback_skipped_when_already_found(tmp_path):
 
     specs = [
         ("hap1_fa", "{tol_id}.{hap1}.*.curated.fa", ["all_haplotigs", "additional_haplotigs"]),
-        ("hap1_fa", "{tol_id}.*.primary.curated.fa", ["hap1", "hap2", "all_haplotigs", "additional_haplotigs"]),
+        (
+            "hap1_fa",
+            "{tol_id}.*.primary.curated.fa",
+            ["hap1", "hap2", "all_haplotigs", "additional_haplotigs"],
+        ),
     ]
     result = collect_outputs(specs, tmp_path, tol_id, hap1="hap1", hap2="hap2")
     assert result == {"hap1_fa": str(hap1_fa)}
@@ -298,7 +306,9 @@ def test_run_hic_remapping_hap2_submits_two_commands(mock_find_fa, mock_run, moc
 
 @patch("grit.steps.post_curation.hic_remapping._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
-def test_run_hic_remapping_assembly_override_bypasses_find_canonical(mock_find_fa, mock_run, mock_ctx, tmp_path):
+def test_run_hic_remapping_assembly_override_bypasses_find_canonical(
+    mock_find_fa, mock_run, mock_ctx, tmp_path
+):
     """--assembly is used directly for hap1; find_canonical_fa must NOT be called."""
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -547,7 +557,14 @@ def test_validate_curated_files_reads_tracker_qv_output(mock_ctx, tmp_path, caps
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_creates_curated_dir(
-    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_bsub, mock_ctx, tmp_path
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_bsub,
+    mock_ctx,
+    tmp_path,
 ):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
@@ -590,7 +607,14 @@ def test_finalize_for_qc_creates_curated_dir(
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_registers_curated_dir_output(
-    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_qv_run, mock_ctx, tmp_path
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_qv_run,
+    mock_ctx,
+    tmp_path,
 ):
     """finalize_qc.finish() must record the *actually used* dest_dir, so overrides
     (via the curated_dir= kwarg) are discoverable via tracker.get_output, not just
@@ -614,7 +638,8 @@ def test_finalize_for_qc_registers_curated_dir_output(
     mock_find_fa.return_value = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
     mock_find_csv.return_value = tmp_path / "sDipInt39.1.hap1.chromosome.list.csv"
     mock_find_haplotigs.side_effect = [
-        tmp_path / "sDipInt39.1.haplotigs.fa", FileNotFoundError("no haplotigs for hap2")
+        tmp_path / "sDipInt39.1.haplotigs.fa",
+        FileNotFoundError("no haplotigs for hap2"),
     ]
     mock_glob.side_effect = [[], []]
     mock_run.return_value = ""
@@ -650,7 +675,14 @@ def test_finalize_for_qc_print_only(mock_run, mock_ctx, tmp_path):
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_assembly_override(
-    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_bsub, mock_ctx, tmp_path
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_bsub,
+    mock_ctx,
+    tmp_path,
 ):
     """--hap1-assembly bypasses find_canonical_fa for hap1."""
     mock_ctx.workdir = tmp_path
@@ -681,7 +713,14 @@ def test_finalize_for_qc_assembly_override(
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_hap2_map_copied_when_provided(
-    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_bsub, mock_ctx, tmp_path
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_bsub,
+    mock_ctx,
+    tmp_path,
 ):
     """--hap2-map triggers a second pretext map copy to NFS."""
     mock_ctx.workdir = tmp_path
@@ -717,7 +756,14 @@ def test_finalize_for_qc_hap2_map_copied_when_provided(
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_primary_alternate_assembly_single_hap_output(
-    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_bsub, mock_ctx, tmp_path
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_bsub,
+    mock_ctx,
+    tmp_path,
 ):
     """primary/alternate assemblies: only hap1 files copied, no hap prefix in dest names."""
     mock_ctx.workdir = tmp_path
@@ -762,8 +808,15 @@ def test_finalize_for_qc_primary_alternate_assembly_single_hap_output(
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_warns_on_yaml_pta_mismatch(
-    mock_find_fa, mock_find_haplotigs, mock_find_csv, mock_glob, mock_run, mock_bsub,
-    mock_ctx, tmp_path, caplog,
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_bsub,
+    mock_ctx,
+    tmp_path,
+    caplog,
 ):
     """yaml declares primary/alternate but pretext-to-asm output has hap1+hap2 files."""
     mock_ctx.workdir = tmp_path

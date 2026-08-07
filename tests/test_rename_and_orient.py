@@ -40,7 +40,9 @@ def test_run_rename_and_orient_submits_bsub(mock_find_fa, mock_glob, mock_bsub, 
 @patch("grit.steps.optional.rename_and_orient._submit_bsub")
 @patch("grit.steps.optional.rename_and_orient.glob.glob")
 @patch("grit.steps.optional.rename_and_orient.find_curated_fa")
-def test_run_rename_and_orient_print_only_mode(mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path):
+def test_run_rename_and_orient_print_only_mode(
+    mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path
+):
     """print_only resolves real PAF and FA paths, just doesn't execute the job."""
     mock_ctx.workdir = tmp_path / "workdir"
     mock_ctx.tol_id = "sDipInt39"
@@ -162,7 +164,12 @@ def test_run_rename_and_orient_prefers_blast_contaminants_output(
     reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
     mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
 
-    decontaminated_fa = tmp_path / "blast_contaminants" / "2026-01-01T00_00_00" / "sDipInt39.hap1.1.decontaminated.fa"
+    decontaminated_fa = (
+        tmp_path
+        / "blast_contaminants"
+        / "2026-01-01T00_00_00"
+        / "sDipInt39.hap1.1.decontaminated.fa"
+    )
     decontaminated_fa.parent.mkdir(parents=True)
     decontaminated_fa.write_text(">seq\n")
     bc_run_dir = tmp_path / "blast_contaminants" / "2026-01-01T00_00_00"
