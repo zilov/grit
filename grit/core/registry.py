@@ -13,8 +13,12 @@ Registry record format:
         "species": "Limanda limanda",
         "workdir": "/lustre/.../working/dz11_curation/xbLimHian1",
         "added_at": "2025-06-02T10:00:00Z",
-        "status": "in_curation"
+        "status": "in_curation",
+        "cleaned_up": false
     }
+
+``cleaned_up`` is only set (to True) once ``grit cleanup`` has processed a
+done ticket with no errors; absent/false means it hasn't been cleaned yet.
 """
 
 from __future__ import annotations
@@ -103,6 +107,17 @@ class RegistryManager:
         self.update_status(ticket_id, "done")
         log.info("Registry: ticket %s marked as done", ticket_id)
 
+    def mark_cleaned_up(self, ticket_id: str) -> None:
+        """Set cleaned_up=True so future `grit cleanup` runs skip this ticket."""
+        tickets = self._load()
+        for t in tickets:
+            if t["ticket_id"] == ticket_id:
+                t["cleaned_up"] = True
+                self._save(tickets)
+                log.debug("Registry: %s marked cleaned_up", ticket_id)
+                return
+        log.warning("Registry: ticket %s not found (cannot mark cleaned_up)", ticket_id)
+
     def find_ticket(self, ticket_id: str) -> dict | None:
         """Find any ticket by ID regardless of status."""
         return next((t for t in self._load() if t["ticket_id"] == ticket_id), None)
@@ -115,9 +130,14 @@ class RegistryManager:
         """Return active tickets (status != 'done')."""
         return [t for t in self._load() if t.get("status") != "done"]
 
-    def done_tickets(self, limit: int | None = 5) -> list[dict]:
-        """Return the most recently completed tickets. Pass limit=None for all."""
+    def done_tickets(self, limit: int | None = 5, include_cleaned: bool = False) -> list[dict]:
+        """Return the most recently completed tickets. Pass limit=None for all.
+
+        Excludes tickets already marked cleaned_up unless include_cleaned=True.
+        """
         done = [t for t in self._load() if t.get("status") == "done"]
+        if not include_cleaned:
+            done = [t for t in done if not t.get("cleaned_up")]
         return done[-limit:] if limit is not None else done
 
     def append_step(self, workdir: Path, record: dict) -> None:

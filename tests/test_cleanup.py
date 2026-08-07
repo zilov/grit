@@ -130,3 +130,88 @@ def test_run_cleanup_dry_run_does_not_submit_gzip_job(
         run_cleanup(dry_run=True)
 
     mock_submit_bsub.assert_not_called()
+
+
+@patch("grit.core.cleanup.RegistryManager")
+def test_run_cleanup_passes_include_cleaned_to_done_tickets(mock_registry_cls, tmp_path):
+    mock_registry = mock_registry_cls.return_value
+    mock_registry.done_tickets.return_value = []
+
+    run_cleanup(dry_run=True, include_cleaned=True)
+
+    mock_registry.done_tickets.assert_called_once_with(limit=None, include_cleaned=True)
+
+
+@patch("grit.core.cleanup._submit_bsub")
+@patch("grit.core.cleanup.RegistryManager")
+def test_run_cleanup_marks_ticket_cleaned_up_when_actions_succeed(
+    mock_registry_cls, mock_submit_bsub, tmp_path
+):
+    workdir = tmp_path / "workdir"
+    run_dir = workdir / "pretext_to_asm" / "run1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "a.hap1.curated.fa").write_text("ACGT" * 10)
+
+    mock_registry = mock_registry_cls.return_value
+    mock_registry.done_tickets.return_value = [
+        {"ticket_id": "RC-1", "tol_id": "tolId1", "workdir": str(workdir)}
+    ]
+    mock_submit_bsub.return_value = "12345"
+
+    with patch("grit.core.cleanup.RunTracker", return_value=_FakeTracker()):
+        run_cleanup(dry_run=False)
+
+    mock_registry.mark_cleaned_up.assert_called_once_with("RC-1")
+
+
+@patch("grit.core.cleanup.RegistryManager")
+def test_run_cleanup_marks_ticket_cleaned_up_when_nothing_to_clean(mock_registry_cls, tmp_path):
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+
+    mock_registry = mock_registry_cls.return_value
+    mock_registry.done_tickets.return_value = [
+        {"ticket_id": "RC-1", "tol_id": "tolId1", "workdir": str(workdir)}
+    ]
+
+    with patch("grit.core.cleanup.RunTracker", return_value=_FakeTracker()):
+        run_cleanup(dry_run=False)
+
+    mock_registry.mark_cleaned_up.assert_called_once_with("RC-1")
+
+
+@patch("grit.core.cleanup.RegistryManager")
+def test_run_cleanup_does_not_mark_cleaned_up_dry_run(mock_registry_cls, tmp_path):
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+
+    mock_registry = mock_registry_cls.return_value
+    mock_registry.done_tickets.return_value = [
+        {"ticket_id": "RC-1", "tol_id": "tolId1", "workdir": str(workdir)}
+    ]
+
+    with patch("grit.core.cleanup.RunTracker", return_value=_FakeTracker()):
+        run_cleanup(dry_run=True)
+
+    mock_registry.mark_cleaned_up.assert_not_called()
+
+
+@patch("grit.core.cleanup.RegistryManager")
+def test_run_cleanup_does_not_mark_cleaned_up_on_delete_error(mock_registry_cls, tmp_path):
+    workdir = tmp_path / "workdir"
+    run_dir = workdir / "hic_remapping" / "run1"
+    run_dir.mkdir(parents=True)
+    (run_dir / ".foo.ktab.1").write_text("x")
+
+    mock_registry = mock_registry_cls.return_value
+    mock_registry.done_tickets.return_value = [
+        {"ticket_id": "RC-1", "tol_id": "tolId1", "workdir": str(workdir)}
+    ]
+
+    with (
+        patch("grit.core.cleanup.RunTracker", return_value=_FakeTracker()),
+        patch("pathlib.Path.unlink", side_effect=OSError("boom")),
+    ):
+        run_cleanup(dry_run=False)
+
+    mock_registry.mark_cleaned_up.assert_not_called()

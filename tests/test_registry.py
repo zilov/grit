@@ -227,3 +227,42 @@ def test_find_ticket_by_workdir(reg, tmp_path):
 def test_find_ticket_by_workdir_not_found(reg, tmp_path):
     """find_ticket_by_workdir returns None when no ticket matches."""
     assert reg.find_ticket_by_workdir(tmp_path / "nonexistent") is None
+
+
+def test_mark_cleaned_up_sets_flag(reg):
+    reg.add_ticket("RC-1234", "sDipInt39", "species", Path("/work"))
+    reg.mark_done("RC-1234")
+    reg.mark_cleaned_up("RC-1234")
+
+    t = reg.find_ticket("RC-1234")
+    assert t["cleaned_up"] is True
+
+
+def test_mark_cleaned_up_missing_ticket_warns(reg, caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        reg.mark_cleaned_up("MISSING")
+    assert "not found" in caplog.text
+
+
+def test_done_tickets_excludes_cleaned_by_default(reg):
+    reg.add_ticket("RC-1", "tol1", "species", Path("/work/1"))
+    reg.mark_done("RC-1")
+    reg.add_ticket("RC-2", "tol2", "species", Path("/work/2"))
+    reg.mark_done("RC-2")
+    reg.mark_cleaned_up("RC-2")
+
+    done = reg.done_tickets(limit=None)
+    assert [t["ticket_id"] for t in done] == ["RC-1"]
+
+
+def test_done_tickets_include_cleaned_returns_all(reg):
+    reg.add_ticket("RC-1", "tol1", "species", Path("/work/1"))
+    reg.mark_done("RC-1")
+    reg.add_ticket("RC-2", "tol2", "species", Path("/work/2"))
+    reg.mark_done("RC-2")
+    reg.mark_cleaned_up("RC-2")
+
+    done = reg.done_tickets(limit=None, include_cleaned=True)
+    assert {t["ticket_id"] for t in done} == {"RC-1", "RC-2"}
