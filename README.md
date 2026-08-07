@@ -9,7 +9,11 @@ Genome curation pipeline CLI and library for the Tree of Life curation team.
 ## Installation
 
 ```bash
-# With uv (recommended)
+# With uv (recommended) — installs the `grit` command globally as a uv tool
+uv tool install .
+
+# For local development instead (editable install into a project-local .venv;
+# `grit` is only on PATH after `source .venv/bin/activate` or via `uv run grit`)
 uv sync
 
 # Or with pip
