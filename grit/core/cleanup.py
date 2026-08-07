@@ -78,6 +78,11 @@ def _is_fastk_index_file(name: str) -> bool:
     return ".ktab." in name or ".post." in name
 
 
+def _is_within(path: Path, ancestors: set[Path]) -> bool:
+    """True if any of *path*'s parent directories is already in *ancestors*."""
+    return any(parent in ancestors for parent in path.parents)
+
+
 def plan_cleanup(workdir: Path, tol_id: str, tracker: RunTracker) -> list[CleanupAction]:
     """Return a list of (kind, path) actions that would be applied for this workdir."""
     actions: list[CleanupAction] = []
@@ -95,10 +100,16 @@ def plan_cleanup(workdir: Path, tol_id: str, tracker: RunTracker) -> list[Cleanu
             if not subdir.is_dir():
                 continue
             if keep and subdir.resolve() == keep.resolve():
-                # Still delete work/ inside the kept run dir (Nextflow scratch)
+                # Still delete Nextflow scratch inside the kept run dir
                 work_dir = subdir / "work"
                 if work_dir.is_dir():
                     actions.append(("delete", work_dir))
+                nf_dir = subdir / ".nextflow"
+                if nf_dir.is_dir():
+                    actions.append(("delete", nf_dir))
+                for nf_log in subdir.glob(".nextflow.log*"):
+                    if nf_log.is_file():
+                        actions.append(("delete", nf_log))
             else:
                 actions.append(("delete", subdir))
 
@@ -131,14 +142,38 @@ def plan_cleanup(workdir: Path, tol_id: str, tracker: RunTracker) -> list[Cleanu
             if f.is_file() and f.stat().st_size > 0:
                 actions.append(("gzip", f))
 
-    # 2. Any remaining work/ dirs at any depth not already covered above
+    # 2. Any remaining Nextflow scratch (work/, .nextflow/, .nextflow.log*) at any
+    # depth not already covered above. Skip anything already nested under a path
+    # slated for full deletion in section 1 (e.g. work/ inside an old, non-kept
+    # run dir) — it'll be removed along with its parent and would otherwise error
+    # as "already gone" when the plan tries to delete it a second time.
     already_deleted = {p for kind, p in actions if kind == "delete"}
     for work_dir in workdir.rglob("work"):
-        if work_dir.is_dir() and work_dir not in already_deleted:
+        if (
+            work_dir.is_dir()
+            and work_dir not in already_deleted
+            and not _is_within(work_dir, already_deleted)
+        ):
             # Only include if it looks like a Nextflow work dir (has hash subdirs)
             children = list(work_dir.iterdir())
             if children and all(len(c.name) == 2 for c in children if c.is_dir()):
                 actions.append(("delete", work_dir))
+
+    for nf_dir in workdir.rglob(".nextflow"):
+        if (
+            nf_dir.is_dir()
+            and nf_dir not in already_deleted
+            and not _is_within(nf_dir, already_deleted)
+        ):
+            actions.append(("delete", nf_dir))
+
+    for nf_log in workdir.rglob(".nextflow.log*"):
+        if (
+            nf_log.is_file()
+            and nf_log not in already_deleted
+            and not _is_within(nf_log, already_deleted)
+        ):
+            actions.append(("delete", nf_log))
 
     # 3. workdir root files
     for fname in _WORKDIR_FILES_TO_DELETE:
@@ -301,8 +336,8 @@ def cleanup_cmd(yes, include_cleaned):
       hic_remapping, hic_remapping_hap2, rename_and_orient, fastga, find_reference,
       qv), keeping only the latest canonical run per step — this already covers
       removing non-canonical pretext_to_asm run dirs, no separate mechanism needed.
-    - Deletes Nextflow work/ scratch dirs, both inside kept run dirs and anywhere
-      else under the workdir.
+    - Deletes Nextflow scratch (work/, .nextflow/, .nextflow.log*), both inside
+      kept run dirs and anywhere else under the workdir.
     - Deletes original.fa from the workdir root.
     - Deletes FastK .ktab/.post per-thread index files found inside any kept
       run dir.

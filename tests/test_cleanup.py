@@ -33,6 +33,48 @@ def test_fastk_index_files_in_kept_dir_are_flagged_delete(tmp_path):
     assert run_dir / "unrelated.txt" not in deleted
 
 
+def test_nextflow_scratch_in_kept_dir_is_deleted(tmp_path):
+    workdir = tmp_path / "workdir"
+    run_dir = workdir / "hic_remapping" / "run1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "work" / "ab").mkdir(parents=True)
+    (run_dir / ".nextflow" / "cache").mkdir(parents=True)
+    (run_dir / ".nextflow.log").write_text("log")
+    (run_dir / ".nextflow.log.1").write_text("old log")
+
+    actions = plan_cleanup(workdir, "tolId1", _FakeTracker())
+
+    deleted = _actions_for("delete", actions)
+    assert run_dir / "work" in deleted
+    assert run_dir / ".nextflow" in deleted
+    assert run_dir / ".nextflow.log" in deleted
+    assert run_dir / ".nextflow.log.1" in deleted
+
+
+def test_nextflow_scratch_in_old_run_dir_not_double_planned(tmp_path):
+    """A work/ or .nextflow dir nested inside a non-kept (fully deleted) run dir
+    must not also get its own delete action — it'll vanish with its parent, and
+    a second delete attempt on an already-gone path would surface as a spurious
+    error during execution."""
+    workdir = tmp_path / "workdir"
+    step_dir = workdir / "fastga"
+    old_run = step_dir / "2026-01-01T00_00_00"
+    new_run = step_dir / "2026-02-01T00_00_00"
+    for run in (old_run, new_run):
+        run.mkdir(parents=True)
+    (old_run / "work" / "ab").mkdir(parents=True)
+    (old_run / ".nextflow" / "cache").mkdir(parents=True)
+    (old_run / ".nextflow.log").write_text("log")
+
+    actions = plan_cleanup(workdir, "tolId1", _FakeTracker())
+
+    deleted = _actions_for("delete", actions)
+    assert old_run in deleted
+    assert old_run / "work" not in deleted
+    assert old_run / ".nextflow" not in deleted
+    assert old_run / ".nextflow.log" not in deleted
+
+
 def test_find_reference_kept_dir_truncate_and_delete(tmp_path):
     workdir = tmp_path / "workdir"
     run_dir = workdir / "find_reference" / "run1"
