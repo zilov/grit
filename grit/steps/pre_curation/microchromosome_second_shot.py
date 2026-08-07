@@ -31,6 +31,7 @@ _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("hap1_large_chr", "*.hap1.large.chr_list.csv", []),
     ("hap2_large_chr", "*.hap2.large.chr_list.csv", []),
     ("merged_small_fa", "*_curated_small_merged.fa", []),
+    ("pretext_map", "hic/pretext_maps_processed/*hr.pretext", []),
 ]
 
 # ---------------------------------------------------------------------------
