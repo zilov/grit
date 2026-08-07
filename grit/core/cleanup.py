@@ -12,7 +12,7 @@ from rich.table import Table
 from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
 from grit.utils.helpers import _submit_bsub, build_bsub_opts
-from grit.utils.output import console
+from grit.utils.output import console, shorten_path
 
 log = logging.getLogger(__name__)
 
@@ -180,7 +180,7 @@ def run_cleanup(dry_run: bool = True, include_cleaned: bool = False) -> None:
         targets = plan_cleanup(workdir, tol_id, tracker)
         for kind, t in targets:
             num_bytes = _size_bytes(t)
-            table.add_row(kind, ticket_id, tol_id, str(t), _fmt_size(num_bytes))
+            table.add_row(kind, ticket_id, tol_id, shorten_path(t, workdir), _fmt_size(num_bytes))
             all_targets.append((ticket_id, kind, t))
             total_bytes += num_bytes or 0
 

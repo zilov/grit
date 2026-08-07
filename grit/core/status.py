@@ -7,7 +7,7 @@ from pathlib import Path
 
 from rich.table import Table
 
-from grit.utils.output import console, print_curation_results, print_tip
+from grit.utils.output import console, print_curation_results, print_tip, shorten_path
 from grit.utils.result_parsers import find_lsf_log, parse_lsf_exit_reason
 
 
@@ -169,7 +169,11 @@ def _print_canonical_files(ctx) -> None:
             try:
                 p = finder(ctx, hap)
                 found = "[green]✓[/green]"
-                path_str = str(p) if p.exists() else f"[yellow]{p}[/yellow]"
+                path_str = (
+                    shorten_path(p, ctx.workdir)
+                    if p.exists()
+                    else f"[yellow]{shorten_path(p, ctx.workdir)}[/yellow]"
+                )
             except FileNotFoundError:
                 found = "[red]✗[/red]"
                 path_str = "[dim]not found[/dim]"

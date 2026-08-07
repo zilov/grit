@@ -1,9 +1,19 @@
 """Pipeline step output formatting via rich."""
 
+from pathlib import Path
+
 from rich.console import Console
 from rich.panel import Panel
 
 console = Console()
+
+
+def shorten_path(path: Path, workdir: Path) -> str:
+    """Return *path* with the *workdir* prefix replaced by ``{workdir}`` for table display."""
+    try:
+        return f"{{workdir}}/{path.relative_to(workdir)}"
+    except ValueError:
+        return str(path)
 
 
 def print_step_header(ticket_id: str, tol_id: str, step_name: str) -> None:
