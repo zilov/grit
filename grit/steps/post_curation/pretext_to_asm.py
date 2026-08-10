@@ -10,7 +10,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, agp_newer_than_curated_fa, collect_outputs
+from grit.utils.helpers import _run, collect_outputs, inputs_newer_than_curated_fa
 from grit.utils.modules import module_cmd
 from grit.utils.output import print_done, print_step_header
 
@@ -55,12 +55,16 @@ def _run_pretext_to_asm_core(
     Shared by ``run_pretext_to_asm`` (main assembly) and
     ``run_microchromosome_combine`` (micro-assembly small chromosomes).
     """
-    # Check for existing successful run; re-run if AGP is newer than curated FASTA
+    # Check for existing successful run; re-run if AGP or original.fa is newer than curated FASTA
     if not ctx.print_only and ctx.tracker:
         prev_dir = ctx.tracker.latest_run_dir(step_name)
         if prev_dir and list(prev_dir.glob(f"{ctx.tol_id}*.curated.fa")):
-            if agp_newer_than_curated_fa(agp_search_dir, ctx.tol_id, prev_dir):
-                log.info("AGP is newer than curated FASTA — re-running %s", step_name)
+            if inputs_newer_than_curated_fa(
+                agp_search_dir, ctx.tol_id, prev_dir, extra_inputs=[original_fa]
+            ):
+                log.info(
+                    "AGP or original.fa is newer than curated FASTA — re-running %s", step_name
+                )
             else:
                 log.info("Curated FASTA already exists — skipping: %s", prev_dir)
                 print_done(f"Already done → {prev_dir}")

@@ -437,12 +437,14 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
         f"{farm_host}:{workdir}/[/bold cyan]"
     )
 
-    from grit.utils.helpers import agp_newer_than_curated_fa
+    from grit.utils.helpers import inputs_newer_than_curated_fa
 
     pta_dir = tracker.latest_run_dir("pretext_to_asm")
-    if agp_newer_than_curated_fa(workdir, tol_id, pta_dir):
+    if inputs_newer_than_curated_fa(
+        workdir, tol_id, pta_dir, extra_inputs=[workdir / "original.fa"]
+    ):
         print_tip(
-            f"AGP is newer than curated FASTA — re-run all post-curation steps:\n"
+            f"AGP or original.fa is newer than curated FASTA — re-run all post-curation steps:\n"
             f"[bold cyan]grit post-curation -t {ticket_id}[/bold cyan] "
             f"[dim](add --hap2 if you need to build both hap maps)[/dim]"
         )

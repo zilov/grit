@@ -12,6 +12,11 @@ from grit.steps.pre_curation import (
     print_curation_summary,
     setup_curation,
 )
+from grit.steps.pre_curation.setup import (
+    _peek_first_fasta_header,
+    _resolve_hap2_fasta,
+    _validate_scaffold_headers,
+)
 
 # ---------------------------------------------------------------------------
 # _sort_by_mtime
@@ -66,9 +71,12 @@ def test_pick_highest_version_picks_highest_index():
 # ---------------------------------------------------------------------------
 
 
+@patch("grit.steps.pre_curation.setup._validate_scaffold_headers")
 @patch("grit.steps.pre_curation.setup._run")
 @patch("grit.steps.pre_curation.setup.glob.glob")
-def test_setup_curation_initial_hap1hap2(mock_glob, mock_run, mock_ctx, tmp_path):
+def test_setup_curation_initial_hap1hap2(
+    mock_glob, mock_run, mock_validate_headers, mock_ctx, tmp_path
+):
     mock_ctx.workdir = tmp_path / "workdir"
     mock_ctx.assembly_draft_dir = Path("/lustre/draft")
     mock_ctx.tol_id = "sDipInt39"
@@ -92,9 +100,12 @@ def test_setup_curation_initial_hap1hap2(mock_glob, mock_run, mock_ctx, tmp_path
     assert any("zcat" in c and "hap1" in c and "hap2" in c for c in calls)
 
 
+@patch("grit.steps.pre_curation.setup._validate_scaffold_headers")
 @patch("grit.steps.pre_curation.setup._run")
 @patch("grit.steps.pre_curation.setup.glob.glob")
-def test_setup_curation_initial_single_hap(mock_glob, mock_run, mock_ctx, tmp_path):
+def test_setup_curation_initial_single_hap(
+    mock_glob, mock_run, mock_validate_headers, mock_ctx, tmp_path
+):
     """When hap2 is not found, only hap1 should appear in the zcat command."""
     mock_ctx.workdir = tmp_path / "workdir"
     mock_ctx.assembly_draft_dir = Path("/lustre/draft")
@@ -126,6 +137,126 @@ def test_setup_curation_raises_when_no_hap1(mock_glob, mock_run, mock_ctx, tmp_p
 
     with pytest.raises(FileNotFoundError, match="decontaminated hap1"):
         setup_curation(mock_ctx)
+
+
+# ---------------------------------------------------------------------------
+# _resolve_hap2_fasta — haplotigs fallback
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.pre_curation.setup._sort_by_mtime", side_effect=lambda x: x)
+@patch("grit.steps.pre_curation.setup.glob.glob")
+def test_resolve_hap2_fasta_falls_back_to_haplotigs(mock_glob, mock_sort, mock_ctx):
+    """When the hap2_prefix ('alternate') glob is empty, fall back to '*haplotigs*'."""
+    mock_ctx.assembly_draft_dir = Path("/lustre/draft")
+    mock_ctx.tol_id = "ilBrySene2"
+    mock_ctx.hap2_prefix = "alternate"
+
+    haplotigs_file = "/lustre/draft/ilBrySene2.20260615.haplotigs.decontaminated.fa.gz"
+    mock_glob.side_effect = [[], [haplotigs_file]]
+
+    result = _resolve_hap2_fasta(mock_ctx)
+
+    assert result == haplotigs_file
+    assert "haplotigs" in mock_glob.call_args_list[1].args[0]
+
+
+@patch("grit.steps.pre_curation.setup.glob.glob", return_value=[])
+def test_resolve_hap2_fasta_returns_empty_when_nothing_found(mock_glob, mock_ctx):
+    mock_ctx.assembly_draft_dir = Path("/lustre/draft")
+    mock_ctx.tol_id = "ilHelSara1"
+    mock_ctx.hap2_prefix = "alternate"
+
+    assert _resolve_hap2_fasta(mock_ctx) == ""
+
+
+# ---------------------------------------------------------------------------
+# setup_curation — print-only mirrors the real haplotigs fallback
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.pre_curation.setup._run")
+@patch("grit.steps.pre_curation.setup.glob.glob")
+def test_setup_curation_print_only_reflects_haplotigs_fallback(mock_glob, mock_run, mock_ctx):
+    """print-only must show the file that would actually be picked, not just the pattern."""
+    mock_ctx.print_only = True
+    mock_ctx.assembly_draft_dir = Path("/lustre/draft")
+    mock_ctx.tol_id = "ilBrySene2"
+    mock_ctx.hap1_prefix = "primary"
+    mock_ctx.hap2_prefix = "alternate"
+
+    hap1 = "/lustre/draft/ilBrySene2.primary.decontaminated.fa.gz"
+    haplotigs_file = "/lustre/draft/ilBrySene2.haplotigs.decontaminated.fa.gz"
+    # hap1: found on first try. hap2: alternate pattern empty, haplotigs fallback matches.
+    mock_glob.side_effect = [[hap1], [], [haplotigs_file]]
+
+    with patch("grit.steps.pre_curation.setup._sort_by_mtime", side_effect=lambda x: x):
+        setup_curation(mock_ctx)
+
+    zcat_calls = [str(c) for c in mock_run.call_args_list if "zcat" in str(c)]
+    assert len(zcat_calls) == 1
+    assert haplotigs_file in zcat_calls[0]
+
+
+# ---------------------------------------------------------------------------
+# _peek_first_fasta_header / _validate_scaffold_headers
+# ---------------------------------------------------------------------------
+
+
+def test_peek_first_fasta_header_plain(tmp_path):
+    fasta = tmp_path / "test.fa"
+    fasta.write_text(">SCAFFOLD_1 some description\nACGT\n>SCAFFOLD_2\nACGT\n")
+    assert _peek_first_fasta_header(str(fasta)) == ">SCAFFOLD_1 some description"
+
+
+def test_peek_first_fasta_header_gzipped(tmp_path):
+    import gzip
+
+    fasta = tmp_path / "test.fa.gz"
+    with gzip.open(fasta, "wt") as fh:
+        fh.write(">HAPM_SCAFFOLD_3\nACGT\n")
+    assert _peek_first_fasta_header(str(fasta)) == ">HAPM_SCAFFOLD_3"
+
+
+def test_validate_scaffold_headers_accepts_scaffold(tmp_path):
+    fasta = tmp_path / "test.fa"
+    fasta.write_text(">SCAFFOLD_1\nACGT\n")
+    _validate_scaffold_headers(str(fasta))  # should not raise
+
+
+def test_validate_scaffold_headers_accepts_hapm_scaffold(tmp_path):
+    fasta = tmp_path / "test.fa"
+    fasta.write_text(">HAPM_SCAFFOLD_7\nACGT\n")
+    _validate_scaffold_headers(str(fasta))  # should not raise
+
+
+def test_validate_scaffold_headers_rejects_raw_contig_header(tmp_path):
+    fasta = tmp_path / "test.fa"
+    fasta.write_text(">atg000001l\nACGT\n")
+    with pytest.raises(ValueError, match="atg000001l"):
+        _validate_scaffold_headers(str(fasta))
+
+
+@patch("grit.steps.pre_curation.setup._run")
+@patch("grit.steps.pre_curation.setup.glob.glob")
+def test_setup_curation_raises_on_bad_headers(mock_glob, mock_run, mock_ctx, tmp_path):
+    """setup_curation must fail loudly instead of concatenating unrenamed contigs."""
+    mock_ctx.workdir = tmp_path / "workdir"
+    mock_ctx.assembly_draft_dir = Path("/lustre/draft")
+    mock_ctx.tol_id = "ilBrySene2"
+    mock_ctx.hap1_prefix = "primary"
+    mock_ctx.hap2_prefix = "alternate"
+
+    bad_hap1 = tmp_path / "ilBrySene2.primary.decontaminated.fa"
+    bad_hap1.write_text(">atg000001l\nACGT\n")
+    mock_glob.side_effect = [[str(bad_hap1)]]
+
+    with patch("grit.steps.pre_curation.setup._sort_by_mtime", side_effect=lambda x: x):
+        with pytest.raises(ValueError, match="atg000001l"):
+            setup_curation(mock_ctx)
+
+    zcat_calls = [str(c) for c in mock_run.call_args_list if "zcat" in str(c)]
+    assert not zcat_calls
 
 
 # ---------------------------------------------------------------------------

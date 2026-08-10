@@ -239,17 +239,20 @@ def build_less_tip(file: str | None, label: str) -> str | None:
     return f"Check {label}:\n[bold cyan]less {file}[/bold cyan]"
 
 
-def agp_newer_than_curated_fa(workdir: Path, tol_id: str, pta_dir: Path | None) -> bool:
-    """Return True if the AGP in workdir is newer than the curated FASTA in pta_dir."""
+def inputs_newer_than_curated_fa(
+    workdir: Path, tol_id: str, pta_dir: Path | None, extra_inputs: list[Path] = ()
+) -> bool:
+    """Return True if the AGP or any extra_inputs are newer than the curated FASTA in pta_dir."""
     curated_fas = list(pta_dir.glob(f"{tol_id}*.curated.fa")) if pta_dir else []
     if not curated_fas:
         return False
     agp_files = list(workdir.glob(f"{tol_id}*.pretext.agp_1")) or list(
         workdir.glob(f"{tol_id}*.agp*")
     )
-    if not agp_files:
+    input_files = agp_files + [p for p in extra_inputs if p.exists()]
+    if not input_files:
         return False
-    return max(f.stat().st_mtime for f in agp_files) > min(f.stat().st_mtime for f in curated_fas)
+    return max(f.stat().st_mtime for f in input_files) > min(f.stat().st_mtime for f in curated_fas)
 
 
 def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
