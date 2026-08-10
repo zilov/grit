@@ -12,4 +12,8 @@ farm_host: tol22-head2
 
 # Absolute path to the directory that contains GritJiraIssue.py
 # (the module used to fetch ticket YAML from Jira)
-gritjiraissue_path: /software/grit/projects/vgp_submission/modules
+# Temporarily pinned to a known-working copy while the shared version at
+# /software/grit/projects/vgp_submission/modules is mid-refactor (new "src"
+# package layout not yet resolvable via this path). Revert once that
+# refactor lands.
+gritjiraissue_path: /nfs/users/nfs_d/dz11/gitlab/vgp_submission/modules/
