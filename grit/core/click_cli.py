@@ -117,6 +117,7 @@ from grit.steps.optional.busco_synteny import busco_synteny_cmd  # noqa: E402
 from grit.steps.optional.fastga import fastga_cmd, fastga_stats_cmd  # noqa: E402
 from grit.steps.optional.fastga_synteny import fastga_synteny_cmd  # noqa: E402
 from grit.steps.optional.rename_and_orient import rename_and_orient_cmd  # noqa: E402
+from grit.steps.optional.super_to_scaffold import super_to_scaffold_cmd  # noqa: E402
 from grit.steps.post_curation.finalize_qc import finalize_qc_cmd  # noqa: E402
 from grit.steps.post_curation.haplotig_files import haplotig_files_cmd  # noqa: E402
 from grit.steps.post_curation.hic_remapping import hic_remapping_cmd  # noqa: E402
@@ -243,6 +244,7 @@ cli.add_command(fastga_cmd)
 cli.add_command(fastga_stats_cmd)
 cli.add_command(fastga_synteny_cmd)
 cli.add_command(rename_and_orient_cmd)
+cli.add_command(super_to_scaffold_cmd)
 
 
 from grit.core.cleanup import cleanup_cmd  # noqa: E402

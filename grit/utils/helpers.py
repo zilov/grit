@@ -513,6 +513,39 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     return Path(sorted(matches)[-1])
 
 
+def find_hap_agp(ctx: "CurationContext", hap_prefix: str) -> Path:
+    """
+    Find the per-haplotype curated AGP for *hap_prefix* in the latest
+    ``pretext_to_asm`` run dir — {tol_id}.{hap_prefix}.*.curated.agp.
+
+    Falls back to the pretext-to-asm alias (primary/paternal → hap1,
+    alternate/maternal → hap2) when the YAML key differs from the
+    pretext-to-asm naming convention.
+
+    Raises FileNotFoundError if nothing is found.
+    """
+    _PTA_ALIASES: dict[str, str] = {
+        "primary": "hap1",
+        "paternal": "hap1",
+        "alternate": "hap2",
+        "maternal": "hap2",
+    }
+
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+
+    def _search(token: str) -> list[str]:
+        return glob.glob(str(pta_dir / f"{ctx.tol_id}.{token}.*.curated.agp"))
+
+    matches = _search(hap_prefix)
+    if not matches and hap_prefix in _PTA_ALIASES:
+        matches = _search(_PTA_ALIASES[hap_prefix])
+    if not matches:
+        raise FileNotFoundError(
+            f"No curated AGP for {hap_prefix!r} found in {pta_dir}. Run pretext-to-asm first."
+        )
+    return Path(sorted(matches)[-1])
+
+
 def find_latest_dir(ctx: "CurationContext", step: str) -> Path:
     """
     Return the output directory for *step*, trying locations in priority order:
