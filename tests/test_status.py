@@ -258,3 +258,46 @@ def test_show_ticket_history_skips_microchromosome_tip_once_second_shot_ran(tmp_
 
     tips = [call.args[0] for call in mock_print_tip.call_args_list]
     assert not any("microchromosome-second-shot" in t for t in tips)
+
+
+def test_show_ticket_history_resolves_done_job_without_waiting_for_gone(
+    tmp_path, monkeypatch, capsys
+):
+    """hic_remapping has no bsub -Ep epilogue (curationpretext.sh submits its own job),
+    so grit only learns of completion via bjobs polling. Once bjobs reports the job
+    DONE, grit should verify+finish immediately rather than waiting for the job to
+    age out of `bjobs` history (which can take hours) — and the scp tip should show
+    up in that same `grit status` call, not just the next one."""
+    tol_id = "aEleAbb1"
+    registry_dir = tmp_path / ".grit_reg"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=registry_dir)
+    reg.add_ticket("RC-1234", tol_id, "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+
+    run_dir = tracker.start("hic_remapping", "RC-1234", tol_id, suffix="primary")
+    tracker.record_job("hic_remapping", run_dir, "685359")
+
+    maps_dir = run_dir / "pretext_maps_processed"
+    maps_dir.mkdir(parents=True)
+    (maps_dir / f"{tol_id}.hap1_hr.pretext").write_text("")
+    (maps_dir / f"{tol_id}.hap1_normal.pretext").write_text("")
+
+    with (
+        patch("grit.utils.helpers._check_bjobs", return_value={"685359": "DONE"}),
+        patch("grit.core.status.print_tip") as mock_print_tip,
+    ):
+        show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    assert "done (check)" not in out
+    assert "success" in out
+
+    tips = [call.args[0] for call in mock_print_tip.call_args_list]
+    assert any("hap1_normal.pretext" in t for t in tips)
+
+    history = tracker.history("hic_remapping")
+    assert history[-1]["status"] == "success"
