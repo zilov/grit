@@ -306,6 +306,28 @@ def test_run_hic_remapping_hap2_submits_two_commands(mock_find_fa, mock_run, moc
 
 @patch("grit.steps.post_curation.hic_remapping._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_hap2_exclusive_skips_hap1(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.hic_dir = Path("/lustre/hic")
+    mock_ctx.long_reads_dir = Path("/lustre/pacbio")
+    mock_ctx.read_type = "hifi"
+    mock_ctx.teloseq = ""
+
+    hap2_fa = tmp_path / "sDipInt39.1.hap2.primary.curated.fa"
+    mock_find_fa.return_value = hap2_fa
+    mock_run.return_value = ""
+
+    run_hic_remapping(mock_ctx, run_hap1=False, run_hap2=True)
+
+    assert mock_run.call_count == 1
+    assert str(hap2_fa) in mock_run.call_args_list[0][0][0]
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_assembly_override_bypasses_find_canonical(
     mock_find_fa, mock_run, mock_ctx, tmp_path
 ):

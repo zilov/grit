@@ -34,7 +34,10 @@ __all__ = [
 
 
 def run_post_curation(ctx, *, run_hap2: bool = False):
-    """Run all post-curation steps in sequence."""
+    """Run all post-curation steps in sequence.
+
+    ``run_hap2=True`` also submits HiC remapping for hap2 (hap1 still runs).
+    """
     log.info("post-curation | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     run_pretext_to_asm(ctx)
     run_haplotig_files(ctx)
