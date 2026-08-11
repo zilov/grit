@@ -25,13 +25,15 @@ log = logging.getLogger(__name__)
 def _parse_agp_supers(path: Path) -> list[dict]:
     """
     Parse a headerless, tab-separated AGP file and return, per super (object),
-    the longest ``W``-type (real sequence) component.
+    the ``W``-type (real sequence) scaffold with the largest total length —
+    summed across all its pieces, since a scaffold can be split into several
+    pieces within the same super when another scaffold is inserted between them.
 
-    Returns a list of dicts with keys: super, scaffold, length, pct_of_super
-    (scaffold length as a percentage of the super's total length, i.e. the
-    max object_end seen for that super across all rows).
+    Returns a list of dicts with keys: super, scaffold, length, num_pieces,
+    pct_of_super (summed scaffold length as a percentage of the super's total
+    length, i.e. the max object_end seen for that super across all rows).
     """
-    supers: dict[str, dict] = {}
+    scaffolds_by_super: dict[str, dict[str, dict]] = {}
     totals: dict[str, int] = {}
 
     for line in path.read_text().splitlines():
@@ -42,7 +44,7 @@ def _parse_agp_supers(path: Path) -> list[dict]:
         if len(parts) < 9:
             continue
 
-        obj_name, obj_beg, obj_end, _part_num, component_type = parts[:5]
+        obj_name, _obj_beg, obj_end, _part_num, component_type = parts[:5]
         obj_end = int(obj_end)
         totals[obj_name] = max(totals.get(obj_name, 0), obj_end)
 
@@ -52,15 +54,25 @@ def _parse_agp_supers(path: Path) -> list[dict]:
         component_id, comp_beg, comp_end = parts[5], int(parts[6]), int(parts[7])
         length = comp_end - comp_beg + 1
 
-        best = supers.get(obj_name)
-        if best is None or length > best["length"]:
-            supers[obj_name] = {"super": obj_name, "scaffold": component_id, "length": length}
+        scaffolds = scaffolds_by_super.setdefault(obj_name, {})
+        entry = scaffolds.setdefault(component_id, {"length": 0, "num_pieces": 0})
+        entry["length"] += length
+        entry["num_pieces"] += 1
 
     rows = []
-    for obj_name, row in supers.items():
-        total = totals.get(obj_name, row["length"])
-        pct = 100.0 * row["length"] / total if total else 0.0
-        rows.append({**row, "pct_of_super": pct})
+    for obj_name, scaffolds in scaffolds_by_super.items():
+        scaffold_id, entry = max(scaffolds.items(), key=lambda item: item[1]["length"])
+        total = totals.get(obj_name, entry["length"])
+        pct = 100.0 * entry["length"] / total if total else 0.0
+        rows.append(
+            {
+                "super": obj_name,
+                "scaffold": scaffold_id,
+                "length": entry["length"],
+                "num_pieces": entry["num_pieces"],
+                "pct_of_super": pct,
+            }
+        )
     return rows
 
 
@@ -102,6 +114,19 @@ def run_super_to_scaffold(ctx: CurationContext) -> None:
         print_done("Would print super/scaffold table and save it as CSV.")
         return
 
+    # Even for a hap1/hap2 assembly, curation may have been done in a single
+    # combined window (e.g. combine_for_curation) — in that case there is no
+    # separate hap2 AGP, so hap2 is dropped rather than treated as an error.
+    if not is_single_hap:
+        try:
+            find_hap_agp(ctx, ctx.hap2_prefix)
+        except FileNotFoundError:
+            log.info(
+                "No separate AGP for %s — treating as a single combined curation window",
+                ctx.hap2_prefix,
+            )
+            haps_to_process = [ctx.hap1_prefix]
+
     run_dir = (
         ctx.tracker.start("super_to_scaffold", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
         if ctx.tracker
@@ -124,7 +149,8 @@ def run_super_to_scaffold(ctx: CurationContext) -> None:
         csv_path = run_dir / f"{ctx.tol_id}.super_to_scaffold.csv"
         with csv_path.open("w", newline="") as fh:
             writer = csv.DictWriter(
-                fh, fieldnames=["hap", "super", "scaffold", "length", "pct_of_super"]
+                fh,
+                fieldnames=["hap", "super", "scaffold", "length", "num_pieces", "pct_of_super"],
             )
             writer.writeheader()
             writer.writerows(all_rows)
@@ -147,6 +173,7 @@ def _print_table(rows: list[dict]) -> None:
     table.add_column("Super")
     table.add_column("Scaffold")
     table.add_column("Length", justify="right")
+    table.add_column("Pieces", justify="right")
     table.add_column("% of super", justify="right")
 
     for row in rows:
@@ -155,6 +182,7 @@ def _print_table(rows: list[dict]) -> None:
             row["super"],
             row["scaffold"],
             f"{row['length']:,}",
+            str(row["num_pieces"]),
             f"{row['pct_of_super']:.1f}",
         )
     console.print(table)

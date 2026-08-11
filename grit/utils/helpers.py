@@ -515,21 +515,21 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
 
 def find_hap_agp(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
-    Find the per-haplotype curated AGP for *hap_prefix* in the latest
-    ``pretext_to_asm`` run dir — {tol_id}.{hap_prefix}.*.curated.agp.
+    Find the curated AGP for *hap_prefix* in the latest ``pretext_to_asm`` run dir.
 
-    Falls back to the pretext-to-asm alias (primary/paternal → hap1,
-    alternate/maternal → hap2) when the YAML key differs from the
-    pretext-to-asm naming convention.
+    Two pretext-to-asm output layouts exist:
+      - dual-window (hap1 and hap2 each curated separately):
+        {tol_id}.{hap_prefix}.*.curated.agp, hap_prefix literally "hap1"/"hap2"
+        (falls back to the primary→hap1 / alternate→hap2 alias when the YAML
+        key differs from the pretext-to-asm naming convention).
+      - single/combined window (e.g. ``combine_for_curation``, or a
+        primary/alternate assembly with only one curated window): no hap
+        token in the filename — {tol_id}.*.primary.curated.agp. Only matched
+        for hap1_prefix, since the combined AGP has no per-hap counterpart.
 
     Raises FileNotFoundError if nothing is found.
     """
-    _PTA_ALIASES: dict[str, str] = {
-        "primary": "hap1",
-        "paternal": "hap1",
-        "alternate": "hap2",
-        "maternal": "hap2",
-    }
+    _PTA_ALIASES: dict[str, str] = {"primary": "hap1", "alternate": "hap2"}
 
     pta_dir = find_latest_dir(ctx, "pretext_to_asm")
 
@@ -539,6 +539,12 @@ def find_hap_agp(ctx: "CurationContext", hap_prefix: str) -> Path:
     matches = _search(hap_prefix)
     if not matches and hap_prefix in _PTA_ALIASES:
         matches = _search(_PTA_ALIASES[hap_prefix])
+    if not matches and hap_prefix == ctx.hap1_prefix:
+        matches = [
+            f
+            for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.*.primary.curated.agp"))
+            if "hap1" not in Path(f).name and "hap2" not in Path(f).name
+        ]
     if not matches:
         raise FileNotFoundError(
             f"No curated AGP for {hap_prefix!r} found in {pta_dir}. Run pretext-to-asm first."
