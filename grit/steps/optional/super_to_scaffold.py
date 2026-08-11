@@ -29,6 +29,10 @@ def _parse_agp_supers(path: Path) -> list[dict]:
     summed across all its pieces, since a scaffold can be split into several
     pieces within the same super when another scaffold is inserted between them.
 
+    Unplaced scaffolds appear in the AGP as their own object (named after the
+    scaffold itself, not a super) — these are excluded; only objects named
+    ``SUPER...`` are reported.
+
     Returns a list of dicts with keys: super, scaffold, length, num_pieces,
     pct_of_super (summed scaffold length as a percentage of the super's total
     length, i.e. the max object_end seen for that super across all rows).
@@ -61,6 +65,8 @@ def _parse_agp_supers(path: Path) -> list[dict]:
 
     rows = []
     for obj_name, scaffolds in scaffolds_by_super.items():
+        if not obj_name.startswith("SUPER"):
+            continue
         scaffold_id, entry = max(scaffolds.items(), key=lambda item: item[1]["length"])
         total = totals.get(obj_name, entry["length"])
         pct = 100.0 * entry["length"] / total if total else 0.0

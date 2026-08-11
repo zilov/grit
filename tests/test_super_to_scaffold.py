@@ -35,6 +35,20 @@ def test_parse_agp_supers_sums_scaffold_split_across_pieces():
     assert super_4["pct_of_super"] == pytest.approx(100.0 * (122153285 + 3654898) / 125808283)
 
 
+def test_parse_agp_supers_excludes_unplaced_scaffold_objects(tmp_path):
+    # An unplaced scaffold is its own AGP object, named after the scaffold
+    # itself rather than a super — it must not be reported as a "super".
+    agp = tmp_path / "test.agp"
+    agp.write_text(
+        "SUPER_1\t1\t100\t1\tW\tSCAFFOLD_1\t1\t100\t+\n"
+        "HAP1_SCAFFOLD_948\t1\t4225\t1\tW\tHAP1_SCAFFOLD_948\t1\t4225\t+\n"
+    )
+
+    rows = _rows_by_super(_parse_agp_supers(agp))
+
+    assert set(rows) == {"SUPER_1"}
+
+
 def test_parse_agp_supers_sums_scaffold_interrupted_by_another_scaffold(tmp_path):
     # SCAFFOLD_A appears in two pieces (60 + 50 = 110bp) with SCAFFOLD_B (80bp)
     # inserted between them. SCAFFOLD_A must win on summed length despite
