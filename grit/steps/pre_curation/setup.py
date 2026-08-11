@@ -20,7 +20,7 @@ from grit.utils.output import (
 
 log = logging.getLogger(__name__)
 
-_SCAFFOLD_HEADER_RE = re.compile(r"^>(HAPM_)?SCAFFOLD_\d+")
+_SCAFFOLD_HEADER_RE = re.compile(r"^>(HAP\d+_)?SCAFFOLD_\d+")
 
 # ---------------------------------------------------------------------------
 # Decontaminated FASTA resolution
@@ -84,7 +84,7 @@ def _peek_first_fasta_header(fasta_path: str) -> str:
 
 def _validate_scaffold_headers(fasta_path: str) -> None:
     """
-    Raises ValueError if the first header of *fasta_path* isn't SCAFFOLD_N / HAPM_SCAFFOLD_N.
+    Raises ValueError if the first header of *fasta_path* isn't SCAFFOLD_N / HAP<N>_SCAFFOLD_N.
 
     Catches decontamination pipelines that didn't rename contigs to the
     curation-ready convention before setup_curation concatenates them into
@@ -94,7 +94,7 @@ def _validate_scaffold_headers(fasta_path: str) -> None:
     if not _SCAFFOLD_HEADER_RE.match(header):
         raise ValueError(
             f"{fasta_path} has unexpected header {header!r} — expected "
-            f"SCAFFOLD_N / HAPM_SCAFFOLD_N. Upstream decontamination likely "
+            f"SCAFFOLD_N / HAP<N>_SCAFFOLD_N. Upstream decontamination likely "
             f"didn't rename contigs; fix upstream before re-running setup."
         )
 
@@ -119,7 +119,7 @@ def setup_curation(ctx: CurationContext) -> None:
            Decontaminated files are resolved via :func:`_resolve_hap1_fasta` /
            :func:`_resolve_hap2_fasta`. If multiple files match, the newest
            (by mtime) is chosen. Each file's first header is validated
-           against the SCAFFOLD_N / HAPM_SCAFFOLD_N convention before concatenation.
+           against the SCAFFOLD_N / HAP<N>_SCAFFOLD_N convention before concatenation.
 
     Args:
         ctx: CurationContext for the ticket.

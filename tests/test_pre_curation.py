@@ -224,9 +224,9 @@ def test_validate_scaffold_headers_accepts_scaffold(tmp_path):
     _validate_scaffold_headers(str(fasta))  # should not raise
 
 
-def test_validate_scaffold_headers_accepts_hapm_scaffold(tmp_path):
+def test_validate_scaffold_headers_accepts_hap_numbered_scaffold(tmp_path):
     fasta = tmp_path / "test.fa"
-    fasta.write_text(">HAPM_SCAFFOLD_7\nACGT\n")
+    fasta.write_text(">HAP1_SCAFFOLD_7\nACGT\n")
     _validate_scaffold_headers(str(fasta))  # should not raise
 
 
