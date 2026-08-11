@@ -33,12 +33,17 @@ def _parse_agp_supers(path: Path) -> list[dict]:
     scaffold itself, not a super) — these are excluded; only objects named
     ``SUPER...`` are reported.
 
+    A "piece" only starts a new count when a *different* scaffold interrupts
+    it — a gap (``N``/``U`` row) between two ``W`` rows of the same scaffold
+    is an internal gap within that scaffold, not a break into separate pieces.
+
     Returns a list of dicts with keys: super, scaffold, length, num_pieces,
     pct_of_super (summed scaffold length as a percentage of the super's total
     length, i.e. the max object_end seen for that super across all rows).
     """
     scaffolds_by_super: dict[str, dict[str, dict]] = {}
     totals: dict[str, int] = {}
+    last_scaffold_by_super: dict[str, str | None] = {}
 
     for line in path.read_text().splitlines():
         line = line.strip()
@@ -61,7 +66,9 @@ def _parse_agp_supers(path: Path) -> list[dict]:
         scaffolds = scaffolds_by_super.setdefault(obj_name, {})
         entry = scaffolds.setdefault(component_id, {"length": 0, "num_pieces": 0})
         entry["length"] += length
-        entry["num_pieces"] += 1
+        if component_id != last_scaffold_by_super.get(obj_name):
+            entry["num_pieces"] += 1
+        last_scaffold_by_super[obj_name] = component_id
 
     rows = []
     for obj_name, scaffolds in scaffolds_by_super.items():

@@ -23,15 +23,16 @@ def test_parse_agp_supers_single_component_super_is_100pct():
     assert super_2["pct_of_super"] == pytest.approx(100.0)
 
 
-def test_parse_agp_supers_sums_scaffold_split_across_pieces():
+def test_parse_agp_supers_sums_scaffold_split_by_internal_gap():
     rows = _rows_by_super(_parse_agp_supers(_FIXTURES_DIR / "bAraMil1.hap1.1.primary.curated.agp"))
 
     super_4 = rows["SUPER_4_HAP1"]
-    # SUPER_4_HAP1 has HAP1_SCAFFOLD_26 split into two W components by a gap
-    # (122153285bp and 3654898bp) — summed length must cover both pieces.
+    # SUPER_4_HAP1 has HAP1_SCAFFOLD_26 split into two W rows by a gap
+    # (122153285bp and 3654898bp). Length must cover both, but since only a
+    # gap (not another scaffold) separates them, it's still 1 piece.
     assert super_4["scaffold"] == "HAP1_SCAFFOLD_26"
     assert super_4["length"] == 122153285 + 3654898
-    assert super_4["num_pieces"] == 2
+    assert super_4["num_pieces"] == 1
     assert super_4["pct_of_super"] == pytest.approx(100.0 * (122153285 + 3654898) / 125808283)
 
 
@@ -67,6 +68,27 @@ def test_parse_agp_supers_sums_scaffold_interrupted_by_another_scaffold(tmp_path
     assert super_1["length"] == 110
     assert super_1["num_pieces"] == 2
     assert super_1["pct_of_super"] == pytest.approx(100.0 * 110 / 190)
+
+
+def test_parse_agp_supers_gap_between_same_scaffold_pieces_is_not_a_new_piece(tmp_path):
+    # SCAFFOLD_A split by a gap (N row), then by another gap — still 1 piece,
+    # since nothing but the same scaffold's own sequence is on either side.
+    agp = tmp_path / "test.agp"
+    agp.write_text(
+        "SUPER_1\t1\t60\t1\tW\tSCAFFOLD_A\t1\t60\t+\n"
+        "SUPER_1\t61\t160\t2\tN\t100\tscaffold\tyes\tproximity_ligation\n"
+        "SUPER_1\t161\t210\t3\tW\tSCAFFOLD_A\t61\t110\t+\n"
+        "SUPER_1\t211\t310\t4\tN\t100\tscaffold\tyes\tproximity_ligation\n"
+        "SUPER_1\t311\t340\t5\tW\tSCAFFOLD_A\t111\t140\t+\n"
+    )
+
+    rows = _rows_by_super(_parse_agp_supers(agp))
+    super_1 = rows["SUPER_1"]
+
+    assert super_1["scaffold"] == "SCAFFOLD_A"
+    assert super_1["length"] == 60 + 50 + 30
+    assert super_1["num_pieces"] == 1
+    assert super_1["pct_of_super"] == pytest.approx(100.0 * (60 + 50 + 30) / 340)
 
 
 def test_parse_agp_supers_hap2_fixture_has_rows():
