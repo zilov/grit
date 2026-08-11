@@ -335,6 +335,51 @@ def reopen_cmd(ctx, ticket):
     print_done(f"{ticket} ({entry.get('tol_id', '')}) reopened — status set to in_curation.")
 
 
+@cli.command("remove")
+@click.option("--ticket", "-t", required=True, help="Ticket ID to permanently remove.")
+@click.option("--yes", is_flag=True, default=False, help="Skip the confirmation prompt.")
+@click.pass_context
+def remove_cmd(ctx, ticket, yes):
+    """Permanently delete a ticket's registry entry and its workdir. Cannot be undone."""
+    import shutil
+
+    from grit.core.registry import RegistryManager
+    from grit.utils.output import console, print_done
+
+    reg = RegistryManager()
+    entry = reg.find_ticket(ticket)
+    if entry is None:
+        click.echo(f"Ticket {ticket} not found in registry.", err=True)
+        raise SystemExit(1)
+
+    workdir = Path(entry["workdir"])
+    if workdir == Path.home() or workdir == Path("/") or len(workdir.parts) < 4:
+        click.echo(f"Refusing to remove {ticket}: workdir looks unsafe ({workdir}).", err=True)
+        raise SystemExit(1)
+
+    console.print(
+        f"[bold red]WARNING[/bold red]: this will permanently delete:\n"
+        f"  ticket:  {ticket}\n"
+        f"  tol_id:  {entry.get('tol_id', '')}\n"
+        f"  workdir: {workdir}\n"
+        f"This cannot be undone."
+    )
+
+    if not yes:
+        typed = click.prompt(f"Type the ticket ID ({ticket}) to confirm")
+        if typed != ticket:
+            click.echo("Confirmation did not match — aborting. Nothing was deleted.", err=True)
+            raise SystemExit(1)
+
+    if workdir.exists():
+        shutil.rmtree(workdir)
+    else:
+        log.info("Workdir %s already gone — nothing to remove on disk.", workdir)
+
+    reg.delete_ticket(ticket)
+    print_done(f"{ticket} ({entry.get('tol_id', '')}) removed — workdir and registry entry gone.")
+
+
 @cli.command("summary")
 @click.pass_context
 def summary_cmd(ctx):

@@ -118,6 +118,19 @@ class RegistryManager:
                 return
         log.warning("Registry: ticket %s not found (cannot mark cleaned_up)", ticket_id)
 
+    def delete_ticket(self, ticket_id: str) -> dict | None:
+        """Remove a ticket's entry from the registry entirely. Returns the removed
+        entry, or None if no ticket with that ID was found."""
+        tickets = self._load()
+        removed = next((t for t in tickets if t["ticket_id"] == ticket_id), None)
+        if removed is None:
+            log.warning("Registry: ticket %s not found (cannot delete)", ticket_id)
+            return None
+        tickets = [t for t in tickets if t["ticket_id"] != ticket_id]
+        self._save(tickets)
+        log.info("Registry: deleted ticket %s (%s)", ticket_id, removed.get("tol_id", ""))
+        return removed
+
     def find_ticket(self, ticket_id: str) -> dict | None:
         """Find any ticket by ID regardless of status."""
         return next((t for t in self._load() if t["ticket_id"] == ticket_id), None)

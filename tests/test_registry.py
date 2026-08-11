@@ -70,6 +70,30 @@ def test_mark_done_missing_ticket_warns(reg, caplog):
     assert "not found" in caplog.text
 
 
+def test_delete_ticket_removes_and_returns_entry(reg):
+    reg.add_ticket("RC-1234", "sDipInt39", "species", Path("/work"))
+    removed = reg.delete_ticket("RC-1234")
+
+    assert removed is not None
+    assert removed["ticket_id"] == "RC-1234"
+    assert reg.find_ticket("RC-1234") is None
+    assert reg.all_tickets() == []
+
+
+def test_delete_ticket_missing_returns_none_and_leaves_registry_untouched(reg, caplog):
+    import logging
+
+    reg.add_ticket("RC-1234", "sDipInt39", "species", Path("/work"))
+    before = reg._load()
+
+    with caplog.at_level(logging.WARNING):
+        removed = reg.delete_ticket("MISSING")
+
+    assert removed is None
+    assert "not found" in caplog.text
+    assert reg._load() == before
+
+
 def test_done_tickets_limit(reg):
     for i in range(10):
         reg.add_ticket(f"RC-{i:04d}", f"tol{i}", "species", Path(f"/work/{i}"))
