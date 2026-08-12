@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from rich.markup import escape
+
 from grit.core.context import CurationContext
 from grit.utils.output import console
 
@@ -42,7 +44,7 @@ def _run(cmd: str, print_only: bool = False, *, capture: bool = True) -> str:
 
     Returns stdout (stripped) when captured, otherwise an empty string.
     """
-    console.print(f"\n[yellow]Command:[/yellow] [green]{cmd}[/green]")
+    console.print(f"\n[yellow]Command:[/yellow] [green]{escape(cmd)}[/green]")
     if print_only:
         return ""
     if capture:
