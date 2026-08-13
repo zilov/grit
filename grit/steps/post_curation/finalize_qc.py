@@ -16,6 +16,7 @@ from grit.utils.helpers import (
     find_canonical_fa,
     find_canonical_haplotigs,
     find_latest_dir,
+    pta_curated_fa_exists,
 )
 from grit.utils.output import console, print_done, print_step_header
 
@@ -55,17 +56,13 @@ def _raise_if_yaml_pta_mismatch(ctx: CurationContext) -> None:
     """
     pta_dir = find_latest_dir(ctx, "pretext_to_asm")
     haplotig_keywords = ("all_haplotigs", "additional_haplotigs", "haplotigs")
-
-    def _has_curated_fa(token: str) -> bool:
-        return any(
-            not any(kw in f for kw in haplotig_keywords)
-            for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.{token}.*.curated.fa"))
-        )
+    has_hap1 = pta_curated_fa_exists(pta_dir, ctx.tol_id, "hap1")
+    has_hap2 = pta_curated_fa_exists(pta_dir, ctx.tol_id, "hap2")
 
     yaml_hint = f" ({ctx.yaml_path})" if ctx.yaml_path else ""
 
     if ctx.hap1_prefix in ("hap1", "hap2"):
-        if _has_curated_fa("hap1") or _has_curated_fa("hap2"):
+        if has_hap1 or has_hap2:
             return  # YAML dual-hap, pretext-to-asm output dual-hap — matches
 
         unprefixed = [
@@ -84,7 +81,7 @@ def _raise_if_yaml_pta_mismatch(ctx: CurationContext) -> None:
             )
         return  # neither dual-hap nor unprefixed output found — let downstream steps report it
 
-    if _has_curated_fa("hap1") and _has_curated_fa("hap2"):
+    if has_hap1 and has_hap2:
         raise ValueError(
             "YAML and pretext-to-asm assembly types don't match: YAML declares "
             "primary/alternate, but pretext-to-asm produced hap1/hap2 output. "

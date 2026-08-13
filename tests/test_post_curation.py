@@ -158,11 +158,14 @@ def test_run_pretext_to_asm_print_only_skips_checks(mock_run, mock_ctx, tmp_path
 
 
 def test_run_haplotig_files_creates_empty_for_hap1(mock_ctx, tmp_path):
+    """Dual-hap naming is driven by what pretext-to-asm actually produced on disk."""
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.assembly_type = "hap1"
     mock_ctx.hap1_prefix = "hap1"
     mock_ctx.release_version = 1
+
+    (tmp_path / "sDipInt39.hap1.1.primary.curated.fa").write_text(">seq\n")
 
     run_haplotig_files(mock_ctx)
 
@@ -177,10 +180,33 @@ def test_run_haplotig_files_creates_empty_for_primary(mock_ctx_primary, tmp_path
     mock_ctx_primary.assembly_type = "primary"
     mock_ctx_primary.release_version = 1
 
+    (tmp_path / "ilHelSara1.1.primary.curated.fa").write_text(">seq\n")
+
     run_haplotig_files(mock_ctx_primary)
 
     expected = tmp_path / "ilHelSara1.1.all_haplotigs.curated.fa"
     assert expected.exists()
+
+
+def test_run_haplotig_files_uses_disk_naming_over_yaml_when_mismatched(mock_ctx, tmp_path):
+    """yaml declares primary/alternate but pretext-to-asm produced hap1/hap2 output —
+    haplotig files must be named to match what's actually on disk, per-haplotype,
+    not the single unprefixed name the YAML would suggest."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "ilScoBasi3"
+    mock_ctx.assembly_type = "primary"
+    mock_ctx.hap1_prefix = "primary"
+    mock_ctx.hap2_prefix = "alternate"
+    mock_ctx.release_version = 1
+
+    (tmp_path / "ilScoBasi3.hap1.1.primary.curated.fa").write_text(">seq\n")
+    (tmp_path / "ilScoBasi3.hap2.1.primary.curated.fa").write_text(">seq\n")
+
+    run_haplotig_files(mock_ctx)
+
+    assert (tmp_path / "ilScoBasi3.hap1.1.all_haplotigs.curated.fa").exists()
+    assert (tmp_path / "ilScoBasi3.hap2.1.all_haplotigs.curated.fa").exists()
+    assert not (tmp_path / "ilScoBasi3.1.all_haplotigs.curated.fa").exists()
 
 
 def test_run_haplotig_files_nonempty_does_not_overwrite(mock_ctx, tmp_path):
@@ -191,6 +217,7 @@ def test_run_haplotig_files_nonempty_does_not_overwrite(mock_ctx, tmp_path):
     mock_ctx.hap1_prefix = "hap1"
     mock_ctx.release_version = 1
 
+    (tmp_path / "sDipInt39.hap1.1.primary.curated.fa").write_text(">seq\n")
     existing = tmp_path / "sDipInt39.hap1.1.all_haplotigs.curated.fa"
     existing.write_text("ACGT" * 50)  # non-empty (>10 bytes)
 
@@ -607,9 +634,9 @@ def test_finalize_for_qc_creates_curated_dir(
     mock_find_csv.return_value = chr_list
     # hap1 haplotig found; hap2 raises → touch
     mock_find_haplotigs.side_effect = [haplotig, FileNotFoundError("no haplotigs for hap2")]
-    # glob calls: yaml/pta mismatch check (hap1, hap2, unprefixed fallback),
-    # nfs_first_level, hap1 remapped pretext
-    mock_glob.side_effect = [[], [], [], [], [remapped]]
+    # glob calls: yaml/pta mismatch check (has_hap1=True, has_hap2 check still runs but
+    # is irrelevant once has_hap1 is True), nfs_first_level, hap1 remapped pretext
+    mock_glob.side_effect = [[f"{mock_ctx.tol_id}.hap1.1.curated.fa"], [], [], [remapped]]
     mock_run.return_value = ""
 
     finalize_for_qc(mock_ctx)
@@ -664,7 +691,8 @@ def test_finalize_for_qc_registers_curated_dir_output(
         tmp_path / "sDipInt39.1.haplotigs.fa",
         FileNotFoundError("no haplotigs for hap2"),
     ]
-    mock_glob.side_effect = [[], [], [], [], []]
+    # yaml/pta mismatch check (has_hap1=True), nfs, remapped
+    mock_glob.side_effect = [[f"{mock_ctx.tol_id}.hap1.1.curated.fa"], [], [], []]
     mock_run.return_value = ""
 
     override_dir = tmp_path / "custom_curated_dest"
@@ -719,7 +747,8 @@ def test_finalize_for_qc_assembly_override(
     custom_fa = Path("/custom/sDipInt39.hap1.renamed.fa")
     mock_find_csv.return_value = tmp_path / "chr.list.csv"
     mock_find_haplotigs.side_effect = FileNotFoundError("no haplotigs")
-    mock_glob.side_effect = [[], [], [], [], []]  # yaml/pta mismatch check x3, nfs, remapped
+    # yaml/pta mismatch check (has_hap1=True), nfs, remapped
+    mock_glob.side_effect = [[f"{mock_ctx.tol_id}.hap1.1.curated.fa"], [], [], []]
     mock_run.return_value = ""
 
     finalize_for_qc(mock_ctx, hap1_assembly=custom_fa)
@@ -760,13 +789,9 @@ def test_finalize_for_qc_hap2_map_copied_when_provided(
     mock_find_fa.side_effect = FileNotFoundError("no fa")
     mock_find_csv.side_effect = FileNotFoundError("no csv")
     mock_find_haplotigs.side_effect = FileNotFoundError("no haplotigs")
-    mock_glob.side_effect = [
-        [],
-        [],
-        [],
-        [],
-        [str(hap1_pretext)],
-    ]  # yaml/pta mismatch check x3, nfs, hap1 remapped
+    # yaml/pta mismatch check (has_hap1=True), nfs
+    # (hap1_map/hap2_map are both provided as overrides, so _copy_map never globs)
+    mock_glob.side_effect = [[f"{mock_ctx.tol_id}.hap1.1.curated.fa"], [], []]
     mock_run.return_value = ""
 
     finalize_for_qc(mock_ctx, hap1_map=hap1_pretext, hap2_map=hap2_pretext)
@@ -810,7 +835,9 @@ def test_finalize_for_qc_primary_alternate_assembly_single_hap_output(
     mock_find_fa.return_value = hap1_fa
     mock_find_csv.return_value = chr_list
     mock_find_haplotigs.return_value = haplotig
-    mock_glob.side_effect = [[], [], []]  # yaml/pta mismatch check (hap1), nfs, no remapped pretext
+    # yaml/pta mismatch check: no hap1/hap2-tokened curated fa on disk (has_hap1=False,
+    # has_hap2=False) → matches YAML; then nfs, no remapped pretext
+    mock_glob.side_effect = [[], [], [], []]
     mock_run.return_value = ""
 
     finalize_for_qc(mock_ctx)

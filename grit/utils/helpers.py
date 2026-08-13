@@ -257,6 +257,21 @@ def inputs_newer_than_curated_fa(
     return max(f.stat().st_mtime for f in input_files) > min(f.stat().st_mtime for f in curated_fas)
 
 
+_HAPLOTIG_FILENAME_KEYWORDS = ("all_haplotigs", "additional_haplotigs", "haplotigs")
+
+
+def pta_curated_fa_exists(pta_dir: Path, tol_id: str, hap_token: str) -> bool:
+    """
+    True if a non-haplotig curated FASTA named with the literal *hap_token*
+    ("hap1" or "hap2") exists in *pta_dir* — i.e. pretext-to-asm actually
+    produced dual-hap output, regardless of what the YAML declares.
+    """
+    return any(
+        not any(kw in f for kw in _HAPLOTIG_FILENAME_KEYWORDS)
+        for f in glob.glob(str(pta_dir / f"{tol_id}.{hap_token}.*.curated.fa"))
+    )
+
+
 def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
     Find the primary curated FASTA for *hap_prefix* in the latest pretext_to_asm run dir.
