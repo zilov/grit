@@ -43,10 +43,6 @@ def run_post_processing(ctx: CurationContext) -> None:
 
     script_lines = [
         f"source {_POST_PROC_CONF}",
-        # contamination_screen.conf prepends tola_production venv to PATH,
-        # but its python3 is not accessible; strip it so the conda snakemake is used instead
-        r"export PATH=$(echo \"$PATH\" | tr ':' '\n' | grep -v 'tola_production/.venv' "
-        r"| tr '\n' ':' | sed 's/:$//')",
         "shopt -s expand_aliases",
         f"cd {ctx.assembly_curated_dir}",
         f"post_process_rc {ctx.ticket_id}",
