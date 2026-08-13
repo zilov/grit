@@ -182,14 +182,6 @@ def finalize_for_qc(
             return f"{ctx.tol_id}.{ctx.release_version}.{suffix}"
         return f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.{suffix}"
 
-    # GritJiraIssue.get_curated_file_name_for_type() expects "all_haplotigs" only
-    # when combine_for_curation is set; otherwise it looks for "additional_haplotigs".
-    haplotig_suffix = (
-        "all_haplotigs.curated.fa"
-        if ctx.combine_for_curation
-        else "additional_haplotigs.curated.fa"
-    )
-
     # 1. mkdir
     _run(f"mkdir -p {dest_dir}", ctx.print_only)
     log.info("Curated dir: %s", dest_dir)
@@ -218,6 +210,21 @@ def finalize_for_qc(
                 src = find_canonical_haplotigs(ctx, hap_prefix)
             except FileNotFoundError:
                 src = None
+        # GritJiraIssue.get_curated_file_name_for_type() expects "all_haplotigs" only
+        # when the curated haplotigs were actually combined, otherwise it looks for
+        # "additional_haplotigs" — mirror whatever pretext-to-asm's real output on
+        # disk is named rather than trusting the YAML's combine_for_curation flag,
+        # which (like assembly type) can disagree with what the curator actually did.
+        if src and "additional_haplotigs" in src.name:
+            haplotig_suffix = "additional_haplotigs.curated.fa"
+        elif src and "all_haplotigs" in src.name:
+            haplotig_suffix = "all_haplotigs.curated.fa"
+        else:
+            haplotig_suffix = (
+                "all_haplotigs.curated.fa"
+                if ctx.combine_for_curation
+                else "additional_haplotigs.curated.fa"
+            )
         dest = dest_dir / _dest_name(hap_prefix, haplotig_suffix)
         if src:
             _run(f"cp {src} {dest}", ctx.print_only)

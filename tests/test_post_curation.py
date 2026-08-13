@@ -906,6 +906,49 @@ def test_finalize_for_qc_primary_alternate_uses_additional_haplotigs_when_not_co
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_haplotig_dest_name_mirrors_disk_over_combine_for_curation_flag(
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_bsub,
+    mock_ctx_primary,
+    tmp_path,
+):
+    """Even when the YAML sets combine_for_curation=True, if pretext-to-asm's real
+    output on disk is named "additional_haplotigs", the dest name must mirror
+    that — the YAML flag is only a fallback for when nothing is found at all."""
+    mock_ctx_primary.workdir = tmp_path
+    mock_ctx_primary.tol_id = "ilBrySene2"
+    mock_ctx_primary.release_version = 1
+    mock_ctx_primary.combine_for_curation = True
+    mock_ctx_primary.assembly_curated_dir = tmp_path / "curated" / "ilBrySene2.1"
+    mock_ctx_primary.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+
+    hap1_fa = tmp_path / "ilBrySene2.1.primary.curated.fa"
+    real_haplotigs = tmp_path / "ilBrySene2.1.additional_haplotigs.curated.fa"
+
+    mock_find_fa.return_value = hap1_fa
+    mock_find_csv.return_value = tmp_path / "chr.list.csv"
+    mock_find_haplotigs.return_value = real_haplotigs
+    mock_glob.side_effect = [[], [], [], []]  # yaml/pta mismatch check x2, nfs, no remapped
+    mock_run.return_value = ""
+
+    finalize_for_qc(mock_ctx_primary)
+
+    calls = [str(c) for c in mock_run.call_args_list]
+    expected_dest = "ilBrySene2.1.additional_haplotigs.curated.fa"
+    assert any(str(real_haplotigs) in c and expected_dest in c for c in calls)
+    assert not any("all_haplotigs" in c for c in calls)
+
+
+@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
 def test_finalize_for_qc_raises_on_yaml_pta_mismatch(
     mock_find_fa,
     mock_find_haplotigs,
