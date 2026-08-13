@@ -294,8 +294,10 @@ def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     # 2. pretext-to-asm alias (hap1/hap2 for primary/alternate assemblies)
     if not matches and hap_prefix in _PTA_ALIASES:
         matches = _search(_PTA_ALIASES[hap_prefix])
-    # 3. No-hap-prefix format: {tol_id}.{version}.primary.curated.fa (single hap / merged)
-    if not matches:
+    # 3. No-hap-prefix format: {tol_id}.{version}.primary.curated.fa (single hap / merged).
+    # Only valid for single-hap YAML prefixes — for a dual-hap ("hap1"/"hap2") prefix this
+    # fallback would match the same unprefixed file for both haplotypes.
+    if not matches and hap_prefix not in ("hap1", "hap2"):
         matches = [
             f
             for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.*.primary.curated.fa"))

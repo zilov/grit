@@ -1,8 +1,10 @@
 """Tests for the canonical-output priority chain in grit/utils/helpers.py."""
 
+import pytest
+
 from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
-from grit.utils.helpers import find_canonical_fa
+from grit.utils.helpers import find_canonical_fa, find_curated_fa
 
 
 def _make_tracker(tmp_path, ctx):
@@ -124,3 +126,27 @@ def test_untracking_blast_contaminants_falls_back_to_pretext_to_asm(mock_ctx, tm
 
     tracker.untrack("blast_contaminants")
     assert find_canonical_fa(mock_ctx, "hap1") == pta_fa
+
+
+def test_find_curated_fa_does_not_fall_back_to_unprefixed_for_dual_hap(mock_ctx, tmp_path):
+    """hap1/hap2 YAML but the curator never split haplotypes, so pretext-to-asm
+    produced only an unprefixed (primary-style) fa. Must raise, not silently
+    resolve both hap1 and hap2 to the same unprefixed file."""
+    mock_ctx.workdir = tmp_path
+    pta_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
+    _write(pta_dir / f"{mock_ctx.tol_id}.1.primary.curated.fa")
+
+    with pytest.raises(FileNotFoundError):
+        find_curated_fa(mock_ctx, "hap1")
+    with pytest.raises(FileNotFoundError):
+        find_curated_fa(mock_ctx, "hap2")
+
+
+def test_find_curated_fa_unprefixed_fallback_still_works_for_single_hap(mock_ctx_primary, tmp_path):
+    """primary/alternate YAML with only an unprefixed curated fa on disk must still
+    resolve via the single-hap fallback."""
+    mock_ctx_primary.workdir = tmp_path
+    pta_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
+    unprefixed_fa = _write(pta_dir / f"{mock_ctx_primary.tol_id}.1.primary.curated.fa")
+
+    assert find_curated_fa(mock_ctx_primary, "primary") == unprefixed_fa

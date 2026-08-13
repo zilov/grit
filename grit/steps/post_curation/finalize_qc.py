@@ -37,18 +37,22 @@ def _resolve_nfs_dest(nfs_base: Path, tol_id: str, print_only: bool) -> Path:
     return nfs_base / f"{tol_id[0]}_?" / f"{tol_id[1]}_?"
 
 
-def _warn_if_yaml_pta_mismatch(ctx: CurationContext) -> None:
+def _raise_if_yaml_pta_mismatch(ctx: CurationContext) -> None:
     """
-    Warn when the YAML declares a single-hap assembly (primary/alternate,
-    paternal/maternal) but the curator actually split into two haplotypes
-    (hap1/hap2) in PretextView — pretext-to-asm then names its output files
-    with the literal "hap1"/"hap2" tokens instead of the YAML's prefixes,
-    which breaks the single-hap copy logic below (only ``ctx.hap1_prefix``
-    is processed, so the second haplotype's assembly is silently dropped).
-    """
-    if ctx.hap1_prefix in ("hap1", "hap2"):
-        return  # YAML already declares a dual-hap assembly
+    Raises ValueError when the YAML's declared assembly type doesn't match what
+    pretext-to-asm actually produced:
 
+    - YAML declares a single-hap assembly (primary/alternate, paternal/maternal)
+      but the curator split into two haplotypes (hap1/hap2) in PretextView —
+      pretext-to-asm then names its output files with the literal "hap1"/"hap2"
+      tokens instead of the YAML's prefixes, which breaks the single-hap copy
+      logic below (only ``ctx.hap1_prefix`` is processed, so the second
+      haplotype's assembly is silently dropped).
+    - YAML declares a dual-hap assembly (hap1/hap2) but the curator didn't
+      split haplotypes, so pretext-to-asm produced a single unprefixed
+      ("primary"-style) curated FASTA — ``find_canonical_fa`` would then
+      silently resolve both haplotypes to that same file.
+    """
     pta_dir = find_latest_dir(ctx, "pretext_to_asm")
     haplotig_keywords = ("all_haplotigs", "additional_haplotigs", "haplotigs")
 
@@ -58,11 +62,33 @@ def _warn_if_yaml_pta_mismatch(ctx: CurationContext) -> None:
             for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.{token}.*.curated.fa"))
         )
 
+    yaml_hint = f" ({ctx.yaml_path})" if ctx.yaml_path else ""
+
+    if ctx.hap1_prefix in ("hap1", "hap2"):
+        if _has_curated_fa("hap1") or _has_curated_fa("hap2"):
+            return  # YAML dual-hap, pretext-to-asm output dual-hap — matches
+
+        unprefixed = [
+            f
+            for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.*.primary.curated.fa"))
+            if not any(kw in f for kw in haplotig_keywords)
+            and "hap1" not in Path(f).name
+            and "hap2" not in Path(f).name
+        ]
+        if unprefixed:
+            raise ValueError(
+                "YAML and pretext-to-asm assembly types don't match: YAML declares "
+                "hap1/hap2, but pretext-to-asm produced a single unprefixed "
+                f"(primary/alternate-style) output. Update the YAML{yaml_hint} to "
+                "primary/alternate to fix this."
+            )
+        return  # neither dual-hap nor unprefixed output found — let downstream steps report it
+
     if _has_curated_fa("hap1") and _has_curated_fa("hap2"):
-        log.warning(
+        raise ValueError(
             "YAML and pretext-to-asm assembly types don't match: YAML declares "
             "primary/alternate, but pretext-to-asm produced hap1/hap2 output. "
-            "Update the YAML to hap1/hap2 to fix this."
+            f"Update the YAML{yaml_hint} to hap1/hap2 to fix this."
         )
 
 
@@ -139,7 +165,7 @@ def finalize_for_qc(
     print_step_header(ctx.ticket_id, ctx.tol_id, "Finalize for QC")
 
     if not ctx.print_only:
-        _warn_if_yaml_pta_mismatch(ctx)
+        _raise_if_yaml_pta_mismatch(ctx)
 
     run_dir = (
         ctx.tracker.start("finalize_qc", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
