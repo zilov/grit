@@ -182,6 +182,14 @@ def finalize_for_qc(
             return f"{ctx.tol_id}.{ctx.release_version}.{suffix}"
         return f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.{suffix}"
 
+    # GritJiraIssue.get_curated_file_name_for_type() expects "all_haplotigs" only
+    # when combine_for_curation is set; otherwise it looks for "additional_haplotigs".
+    haplotig_suffix = (
+        "all_haplotigs.curated.fa"
+        if ctx.combine_for_curation
+        else "additional_haplotigs.curated.fa"
+    )
+
     # 1. mkdir
     _run(f"mkdir -p {dest_dir}", ctx.print_only)
     log.info("Curated dir: %s", dest_dir)
@@ -210,7 +218,7 @@ def finalize_for_qc(
                 src = find_canonical_haplotigs(ctx, hap_prefix)
             except FileNotFoundError:
                 src = None
-        dest = dest_dir / _dest_name(hap_prefix, "all_haplotigs.curated.fa")
+        dest = dest_dir / _dest_name(hap_prefix, haplotig_suffix)
         if src:
             _run(f"cp {src} {dest}", ctx.print_only)
         else:
