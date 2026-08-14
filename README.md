@@ -20,6 +20,12 @@ uv sync
 pip install -e .
 ```
 
+To pick up a newer version, pull the latest changes and reinstall the tool:
+
+```bash
+git pull && uv tool upgrade grit --reinstall
+```
+
 ## Configuration
 
 Run `grit init` to create `~/.grit/grit_curation_config.yaml`, pre-filled with your
