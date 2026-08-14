@@ -154,7 +154,7 @@ def init_cmd():
     username = getpass.getuser()
     if write_default_config(username):
         click.echo(f"Wrote {DEFAULT_CONFIG_PATH} (username={username}).")
-        click.echo("Review it, then you're ready to run: grit RC-1234 setup")
+        click.echo("Review it, then you're ready to run: grit setup -t RC-1234")
     else:
         click.echo(f"Config already exists at {DEFAULT_CONFIG_PATH} — leaving it untouched.")
 
