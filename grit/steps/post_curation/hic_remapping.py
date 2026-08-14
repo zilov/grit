@@ -107,6 +107,7 @@ def _submit_hic_remapping(
         f" --reads {ctx.long_reads_dir}/fasta"
         f" --read_type {ctx.read_type}"
         f" --outdir {run_dir}"
+        f" --split_telomere true"
     )
     if ctx.teloseq:
         hic_cmd += f" {ctx.teloseq}"

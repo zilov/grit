@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.1] - 2026-08-14
+
+### Changed
+
+- `hic-remapping` passes `--split_telomere true` to `curationpretext.sh`.
+
 ## [0.3.0] - 2026-08-14
 
 ### Added
