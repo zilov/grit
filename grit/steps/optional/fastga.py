@@ -26,8 +26,8 @@ from grit.utils.output import (
 
 log = logging.getLogger(__name__)
 
-_REPO_ROOT = Path(__file__).parent.parent.parent.parent
-_PAF_TOP_TARGETS_SCRIPT = _REPO_ROOT / "scripts" / "paf_top_targets_add_top_longest.py"
+_SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
+_PAF_TOP_TARGETS_SCRIPT = _SCRIPTS_DIR / "paf_top_targets_add_top_longest.py"
 
 # Downloadable outputs, picked up by the bsub -Ep epilogue (grit _state-update)
 # and surfaced as an scp tip in `grit status` — see build_scp_tip().
@@ -88,7 +88,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
         if ctx.tracker
         else ctx.workdir / "fastga" / "untracked"
     )
-    fastga_script = _REPO_ROOT / "scripts" / "FastGA_dot_dgenies_stats.sh"
+    fastga_script = _SCRIPTS_DIR / "FastGA_dot_dgenies_stats.sh"
 
     inner_cmd = (
         f"cd {run_dir} && "

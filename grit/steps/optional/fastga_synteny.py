@@ -21,14 +21,14 @@ from grit.utils.output import (
 
 log = logging.getLogger(__name__)
 
-_REPO_ROOT = Path(__file__).parent.parent.parent.parent
+_SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-# Path to the bundled plotting script (relative to repo root)
-_FASTGA_SYNTENY_SCRIPT = _REPO_ROOT / "scripts" / "fastga_synteny_format_and_plot.py"
+# Path to the bundled plotting script
+_FASTGA_SYNTENY_SCRIPT = _SCRIPTS_DIR / "fastga_synteny_format_and_plot.py"
 
 DEFAULT_MIN_ALIGN_LEN = 10_000
 
