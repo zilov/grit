@@ -10,6 +10,10 @@ curated_pretext_maps_nfs: /nfs/treeoflife-01/teams/grit/data/curated_pretext_map
 # Hostname of the farm submission node (used for SSH / bsub)
 farm_host: tol22-head2
 
+# Optional: email address for pipeline completion notifications
+# (e.g. curationpretext's --email). Leave blank to skip.
+email:
+
 # Absolute path to the directory that contains GritJiraIssue.py
 # (the module used to fetch ticket YAML from Jira)
 # Temporarily pinned to a known-working copy while the shared version at

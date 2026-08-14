@@ -294,6 +294,50 @@ def test_run_hic_remapping_includes_teloseq(mock_find_fa, mock_run, mock_ctx, tm
 
 @patch("grit.steps.post_curation.hic_remapping._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_includes_email_when_set(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.hic_dir = Path("/lustre/hic")
+    mock_ctx.long_reads_dir = Path("/lustre/pacbio")
+    mock_ctx.read_type = "hifi"
+    mock_ctx.teloseq = ""
+    mock_ctx.email = "curator@sanger.ac.uk"
+
+    mock_find_fa.return_value = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
+    mock_run.return_value = ""
+
+    run_hic_remapping(mock_ctx)
+
+    cmd = mock_run.call_args[0][0]
+    assert "--email curator@sanger.ac.uk" in cmd
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_omits_email_when_unset(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.hic_dir = Path("/lustre/hic")
+    mock_ctx.long_reads_dir = Path("/lustre/pacbio")
+    mock_ctx.read_type = "hifi"
+    mock_ctx.teloseq = ""
+    mock_ctx.email = ""
+
+    mock_find_fa.return_value = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
+    mock_run.return_value = ""
+
+    run_hic_remapping(mock_ctx)
+
+    cmd = mock_run.call_args[0][0]
+    assert "--email" not in cmd
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_raises_when_no_fasta(mock_find_fa, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"

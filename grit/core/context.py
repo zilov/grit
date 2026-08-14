@@ -26,6 +26,7 @@ class UserConfig:
     curated_pretext_maps_nfs: Path
     farm_host: str
     gritjiraissue_path: str
+    email: str = ""
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "UserConfig":
@@ -35,6 +36,7 @@ class UserConfig:
             curated_pretext_maps_nfs=Path(d["curated_pretext_maps_nfs"]),
             farm_host=d["farm_host"],
             gritjiraissue_path=d["gritjiraissue_path"],
+            email=d.get("email") or "",
         )
 
 
@@ -77,6 +79,7 @@ class CurationContext:
     # --- farm access ---
     farm_host: str
     username: str
+    email: str = ""
 
     # --- optional fields ---
     teloseq: str = ""  # "--teloseq TTAGG" or ""
@@ -173,6 +176,7 @@ class CurationContext:
             curated_pretext_maps_nfs=cfg.curated_pretext_maps_nfs,
             farm_host=cfg.farm_host,
             username=cfg.username,
+            email=cfg.email,
             teloseq=teloseq,
             release_version=release_version,
             print_only=print_only,

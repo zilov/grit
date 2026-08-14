@@ -111,6 +111,8 @@ def _submit_hic_remapping(
     )
     if ctx.teloseq:
         hic_cmd += f" {ctx.teloseq}"
+    if ctx.email:
+        hic_cmd += f" --email {ctx.email}"
     hic_cmd += " -resume"
 
     try:
