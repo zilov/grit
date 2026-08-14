@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "grit"
-version = "0.3.3"
+version = "0.3.4"
 description = "Genome curation pipeline CLI"
 requires-python = ">=3.10"
 dependencies = [
