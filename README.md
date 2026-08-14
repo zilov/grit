@@ -12,7 +12,7 @@ See [examples.md](examples.md) for a walkthrough of installation, the standard c
 
 ```bash
 # With uv (recommended) — installs the `grit` command globally as a uv tool
-uv tool install .
+uv tool install "grit @ git+ssh://git@github.com/zilov/grit.git"
 
 # For local development instead (editable install into a project-local .venv;
 # `grit` is only on PATH after `source .venv/bin/activate` or via `uv run grit`)
@@ -22,10 +22,10 @@ uv sync
 pip install -e .
 ```
 
-To pick up a newer version, pull the latest changes and reinstall the tool:
+To pick up a newer version:
 
 ```bash
-git pull && uv tool upgrade grit --reinstall
+uv tool upgrade grit --reinstall
 ```
 
 ## Configuration
