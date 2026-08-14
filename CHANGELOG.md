@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.2] - 2026-08-14
+
+### Added
+
+- Optional `email` field in `grit_curation_config.yaml`. When set, `hic-remapping` passes it to `curationpretext.sh` via `--email`.
+
+### Fixed
+
+- README/CLAUDE.md CLI usage examples now match the actual `-t/--ticket` syntax (`grit setup -t RC-1234`, not `grit RC-1234 setup`).
+
 ## [0.3.1] - 2026-08-14
 
 ### Changed

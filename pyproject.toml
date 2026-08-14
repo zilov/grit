@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "grit"
-version = "0.3.1"
-description = "Genome curation pipeline notebook library"
+version = "0.3.2"
+description = "Genome curation pipeline CLI"
 requires-python = ">=3.10"
 dependencies = [
     "biopython>=1.80",
