@@ -34,6 +34,7 @@ grit [--logging-level {DEBUG,INFO,WARNING,ERROR}] <command> ...
 import logging
 from rich.logging import RichHandler
 
+
 def configure_logging(logging_level: str) -> None:
     level = getattr(logging, logging_level.upper(), logging.INFO)
     show_path = level == logging.DEBUG
@@ -51,6 +52,7 @@ When used as a library the caller controls logging. If they configure nothing, r
 
 ```python
 import logging
+
 logging.basicConfig(level=logging.DEBUG)
 import grit
 ```
@@ -65,6 +67,7 @@ Each step function:
 ```python
 # In a step
 log = logging.getLogger(__name__)
+
 
 def run_pretext_to_asm(ctx: CurationContext) -> None:
     log.info("pretext-to-asm | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)

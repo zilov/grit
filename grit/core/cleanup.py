@@ -12,7 +12,7 @@ from rich.table import Table
 from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
 from grit.utils.helpers import _submit_bsub, build_bsub_opts
-from grit.utils.output import console
+from grit.utils.output import console, shorten_path
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +78,11 @@ def _is_fastk_index_file(name: str) -> bool:
     return ".ktab." in name or ".post." in name
 
 
+def _is_within(path: Path, ancestors: set[Path]) -> bool:
+    """True if any of *path*'s parent directories is already in *ancestors*."""
+    return any(parent in ancestors for parent in path.parents)
+
+
 def plan_cleanup(workdir: Path, tol_id: str, tracker: RunTracker) -> list[CleanupAction]:
     """Return a list of (kind, path) actions that would be applied for this workdir."""
     actions: list[CleanupAction] = []
@@ -95,10 +100,16 @@ def plan_cleanup(workdir: Path, tol_id: str, tracker: RunTracker) -> list[Cleanu
             if not subdir.is_dir():
                 continue
             if keep and subdir.resolve() == keep.resolve():
-                # Still delete work/ inside the kept run dir (Nextflow scratch)
+                # Still delete Nextflow scratch inside the kept run dir
                 work_dir = subdir / "work"
                 if work_dir.is_dir():
                     actions.append(("delete", work_dir))
+                nf_dir = subdir / ".nextflow"
+                if nf_dir.is_dir():
+                    actions.append(("delete", nf_dir))
+                for nf_log in subdir.glob(".nextflow.log*"):
+                    if nf_log.is_file():
+                        actions.append(("delete", nf_log))
             else:
                 actions.append(("delete", subdir))
 
@@ -131,14 +142,38 @@ def plan_cleanup(workdir: Path, tol_id: str, tracker: RunTracker) -> list[Cleanu
             if f.is_file() and f.stat().st_size > 0:
                 actions.append(("gzip", f))
 
-    # 2. Any remaining work/ dirs at any depth not already covered above
+    # 2. Any remaining Nextflow scratch (work/, .nextflow/, .nextflow.log*) at any
+    # depth not already covered above. Skip anything already nested under a path
+    # slated for full deletion in section 1 (e.g. work/ inside an old, non-kept
+    # run dir) — it'll be removed along with its parent and would otherwise error
+    # as "already gone" when the plan tries to delete it a second time.
     already_deleted = {p for kind, p in actions if kind == "delete"}
     for work_dir in workdir.rglob("work"):
-        if work_dir.is_dir() and work_dir not in already_deleted:
+        if (
+            work_dir.is_dir()
+            and work_dir not in already_deleted
+            and not _is_within(work_dir, already_deleted)
+        ):
             # Only include if it looks like a Nextflow work dir (has hash subdirs)
             children = list(work_dir.iterdir())
             if children and all(len(c.name) == 2 for c in children if c.is_dir()):
                 actions.append(("delete", work_dir))
+
+    for nf_dir in workdir.rglob(".nextflow"):
+        if (
+            nf_dir.is_dir()
+            and nf_dir not in already_deleted
+            and not _is_within(nf_dir, already_deleted)
+        ):
+            actions.append(("delete", nf_dir))
+
+    for nf_log in workdir.rglob(".nextflow.log*"):
+        if (
+            nf_log.is_file()
+            and nf_log not in already_deleted
+            and not _is_within(nf_log, already_deleted)
+        ):
+            actions.append(("delete", nf_log))
 
     # 3. workdir root files
     for fname in _WORKDIR_FILES_TO_DELETE:
@@ -149,9 +184,9 @@ def plan_cleanup(workdir: Path, tol_id: str, tracker: RunTracker) -> list[Cleanu
     return actions
 
 
-def run_cleanup(dry_run: bool = True) -> None:
+def run_cleanup(dry_run: bool = True, include_cleaned: bool = False) -> None:
     reg = RegistryManager()
-    done = reg.done_tickets(limit=None)
+    done = reg.done_tickets(limit=None, include_cleaned=include_cleaned)
 
     if not done:
         console.print("[yellow]No done tickets found in registry.[/yellow]")
@@ -165,6 +200,7 @@ def run_cleanup(dry_run: bool = True) -> None:
     table.add_column("Size", justify="right")
 
     all_targets: list[tuple[str, str, Path]] = []  # (ticket_id, kind, path)
+    processed_ticket_ids: list[str] = []
     total_bytes = 0
 
     for ticket in done:
@@ -174,16 +210,27 @@ def run_cleanup(dry_run: bool = True) -> None:
         if not workdir.exists():
             log.debug("Workdir missing, skipping: %s", workdir)
             continue
+        processed_ticket_ids.append(ticket_id)
         tracker = RunTracker(workdir)
         targets = plan_cleanup(workdir, tol_id, tracker)
         for kind, t in targets:
             num_bytes = _size_bytes(t)
-            table.add_row(kind, ticket_id, tol_id, str(t), _fmt_size(num_bytes))
+            table.add_row(kind, ticket_id, tol_id, shorten_path(t, workdir), _fmt_size(num_bytes))
             all_targets.append((ticket_id, kind, t))
             total_bytes += num_bytes or 0
 
+    # Tickets already fully clean (no actions planned) never need rescanning again.
+    already_clean_ticket_ids = {
+        ticket_id
+        for ticket_id in processed_ticket_ids
+        if not any(tid == ticket_id for tid, _, _ in all_targets)
+    }
+
     if not all_targets:
         console.print("[green]Nothing to clean up.[/green]")
+        if not dry_run:
+            for ticket_id in already_clean_ticket_ids:
+                reg.mark_cleaned_up(ticket_id)
         return
 
     table.add_row("", "", "", "[bold]Total[/bold]", f"[bold]{total_bytes / 1024**3:.2f} GB[/bold]")
@@ -200,6 +247,7 @@ def run_cleanup(dry_run: bool = True) -> None:
     gzip_submitted = 0
     errors = 0
     gzip_dirs_seen: set[Path] = set()
+    ticket_error_counts: dict[str, int] = dict.fromkeys(processed_ticket_ids, 0)
 
     for ticket_id, kind, path in all_targets:
         if kind == "delete":
@@ -213,6 +261,7 @@ def run_cleanup(dry_run: bool = True) -> None:
             except OSError as exc:
                 log.warning("Could not delete %s: %s", path, exc)
                 errors += 1
+                ticket_error_counts[ticket_id] += 1
         elif kind == "truncate":
             try:
                 path.write_bytes(b"")
@@ -221,6 +270,7 @@ def run_cleanup(dry_run: bool = True) -> None:
             except OSError as exc:
                 log.warning("Could not truncate %s: %s", path, exc)
                 errors += 1
+                ticket_error_counts[ticket_id] += 1
         elif kind == "gzip":
             parent = path.parent
             if parent in gzip_dirs_seen:
@@ -236,10 +286,21 @@ def run_cleanup(dry_run: bool = True) -> None:
                 run_dir=parent,
             )
             job_id = _submit_bsub(inner_cmd, bsub_opts, dry_run)
-            log.info("Submitted gzip job %s for %s", job_id, parent)
-            gzip_submitted += 1
+            if job_id:
+                log.info("Submitted gzip job %s for %s", job_id, parent)
+                gzip_submitted += 1
+            else:
+                log.warning("Failed to submit gzip job for %s", parent)
+                errors += 1
+                ticket_error_counts[ticket_id] += 1
         else:  # pragma: no cover - defensive
             log.warning("Unknown cleanup action kind %r for %s", kind, path)
+
+    for ticket_id in already_clean_ticket_ids:
+        reg.mark_cleaned_up(ticket_id)
+    for ticket_id, error_count in ticket_error_counts.items():
+        if error_count == 0 and ticket_id not in already_clean_ticket_ids:
+            reg.mark_cleaned_up(ticket_id)
 
     console.print(
         f"\n[green]Removed/truncated {removed} item(s).[/green]"
@@ -260,7 +321,13 @@ def run_cleanup(dry_run: bool = True) -> None:
     default=False,
     help="Actually delete files (default: dry run, just show what would be removed).",
 )
-def cleanup_cmd(yes):
+@click.option(
+    "--include-cleaned",
+    is_flag=True,
+    default=False,
+    help="Also rescan done tickets already marked cleaned_up (ignores the skip).",
+)
+def cleanup_cmd(yes, include_cleaned):
     """Free disk space for done tickets.
 
     For each workdir of tickets already marked as done:
@@ -269,8 +336,8 @@ def cleanup_cmd(yes):
       hic_remapping, hic_remapping_hap2, rename_and_orient, fastga, find_reference,
       qv), keeping only the latest canonical run per step — this already covers
       removing non-canonical pretext_to_asm run dirs, no separate mechanism needed.
-    - Deletes Nextflow work/ scratch dirs, both inside kept run dirs and anywhere
-      else under the workdir.
+    - Deletes Nextflow scratch (work/, .nextflow/, .nextflow.log*), both inside
+      kept run dirs and anywhere else under the workdir.
     - Deletes original.fa from the workdir root.
     - Deletes FastK .ktab/.post per-thread index files found inside any kept
       run dir.
@@ -281,6 +348,9 @@ def cleanup_cmd(yes):
     - In pretext_to_asm's kept run dir: gzips non-empty curated .fa files
       in place via a fire-and-forget bsub pigz job (one job per run dir).
 
+    Skips done tickets already marked cleaned_up from a prior successful run;
+    pass --include-cleaned to rescan them too.
+
     Runs as dry run by default — pass --yes to execute.
     """
-    run_cleanup(dry_run=not yes)
+    run_cleanup(dry_run=not yes, include_cleaned=include_cleaned)

@@ -208,15 +208,19 @@ class RunTracker:
         runs = self.history(step)
         invalidated_dirs = _invalidated_dirs(runs)
         success_runs = [
-            r for r in runs
-            if r.get("status") == "success" and r.get("run_dir")
+            r
+            for r in runs
+            if r.get("status") == "success"
+            and r.get("run_dir")
             and r["run_dir"] not in invalidated_dirs
         ]
         if success_runs:
             return Path(success_runs[-1]["run_dir"])
         started_runs = [
-            r for r in runs
-            if r.get("status") == "started" and r.get("run_dir")
+            r
+            for r in runs
+            if r.get("status") == "started"
+            and r.get("run_dir")
             and r["run_dir"] not in invalidated_dirs
         ]
         if started_runs:
@@ -233,8 +237,10 @@ class RunTracker:
         runs = self.history(step)
         inv_dirs = _invalidated_dirs(runs)
         success_runs = [
-            r for r in runs
-            if r.get("status") == "success" and r.get("outputs")
+            r
+            for r in runs
+            if r.get("status") == "success"
+            and r.get("outputs")
             and r.get("run_dir") not in inv_dirs
         ]
         if not success_runs:
@@ -268,7 +274,8 @@ class RunTracker:
             key = (r.get("step"), r.get("run_dir"))
             latest[key] = r.get("status", "")
         return [
-            r for r in all_records
+            r
+            for r in all_records
             if r.get("status") == "started"
             and r.get("job_id")
             and latest.get((r.get("step"), r.get("run_dir"))) not in terminal
@@ -330,6 +337,7 @@ class RunTracker:
     def _registry(self) -> "RegistryManager":
         if self._registry_obj is None:
             from grit.core.registry import RegistryManager
+
             self._registry_obj = RegistryManager()
         return self._registry_obj
 ```
@@ -537,13 +545,16 @@ def test_history_reads_from_registry(tmp_path, reg):
     workdir = tmp_path / "workdir"
     workdir.mkdir()
     reg.add_ticket("RC-9999", "xbTest1", "species", workdir)
-    reg.append_step(workdir, {
-        "step": "pretext_to_asm",
-        "timestamp": "2026-07-01T10_00_00",
-        "status": "success",
-        "run_dir": str(workdir / "pretext_to_asm" / "2026-07-01T10_00_00"),
-        "job_id": None,
-    })
+    reg.append_step(
+        workdir,
+        {
+            "step": "pretext_to_asm",
+            "timestamp": "2026-07-01T10_00_00",
+            "status": "success",
+            "run_dir": str(workdir / "pretext_to_asm" / "2026-07-01T10_00_00"),
+            "job_id": None,
+        },
+    )
 
     tracker = RunTracker(workdir, registry=reg)
 
@@ -713,49 +724,75 @@ This fixture is currently unused by any test (`grep -rn fake_workdir tests/*.py`
 In `tests/conftest.py`, replace:
 
 ```python
-    # .grit/runs.jsonl
-    grit_dir = tmp_path / ".grit"
-    grit_dir.mkdir()
-    runs = [
-        {"step": "setup_curation", "timestamp": "2025-06-02T10_00_00", "status": "success",
-         "ticket_id": mock_ctx.ticket_id, "tol_id": tol_id, "run_dir": str(tmp_path)},
-        {"step": "pretext_to_asm", "timestamp": pta_ts, "status": "success",
-         "ticket_id": mock_ctx.ticket_id, "tol_id": tol_id, "run_dir": str(pta_dir)},
-        {"step": "hic_remapping", "timestamp": hic_ts, "status": "success",
-         "ticket_id": mock_ctx.ticket_id, "tol_id": tol_id, "run_dir": str(hic_dir)},
-    ]
-    (grit_dir / "runs.jsonl").write_text("\n".join(json.dumps(r) for r in runs) + "\n")
+# .grit/runs.jsonl
+grit_dir = tmp_path / ".grit"
+grit_dir.mkdir()
+runs = [
+    {
+        "step": "setup_curation",
+        "timestamp": "2025-06-02T10_00_00",
+        "status": "success",
+        "ticket_id": mock_ctx.ticket_id,
+        "tol_id": tol_id,
+        "run_dir": str(tmp_path),
+    },
+    {
+        "step": "pretext_to_asm",
+        "timestamp": pta_ts,
+        "status": "success",
+        "ticket_id": mock_ctx.ticket_id,
+        "tol_id": tol_id,
+        "run_dir": str(pta_dir),
+    },
+    {
+        "step": "hic_remapping",
+        "timestamp": hic_ts,
+        "status": "success",
+        "ticket_id": mock_ctx.ticket_id,
+        "tol_id": tol_id,
+        "run_dir": str(hic_dir),
+    },
+]
+(grit_dir / "runs.jsonl").write_text("\n".join(json.dumps(r) for r in runs) + "\n")
 
-    # Attach a tracker pointing to the real tmp_path
-    from grit.core.run_tracker import RunTracker
-    mock_ctx.tracker = RunTracker(tmp_path)
+# Attach a tracker pointing to the real tmp_path
+from grit.core.run_tracker import RunTracker
 
-    return tmp_path
+mock_ctx.tracker = RunTracker(tmp_path)
+
+return tmp_path
 ```
 
 with:
 
 ```python
-    # Seed step history directly in an isolated registry
-    from grit.core.registry import RegistryManager
-    from grit.core.run_tracker import RunTracker
+# Seed step history directly in an isolated registry
+from grit.core.registry import RegistryManager
+from grit.core.run_tracker import RunTracker
 
-    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
-    reg.add_ticket(mock_ctx.ticket_id, tol_id, "species", tmp_path)
-    for step, ts, run_dir in [
-        ("setup_curation", "2025-06-02T10_00_00", tmp_path),
-        ("pretext_to_asm", pta_ts, pta_dir),
-        ("hic_remapping", hic_ts, hic_dir),
-    ]:
-        reg.append_step(tmp_path, {
-            "step": step, "timestamp": ts, "status": "success",
-            "ticket_id": mock_ctx.ticket_id, "tol_id": tol_id, "run_dir": str(run_dir),
-        })
+reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+reg.add_ticket(mock_ctx.ticket_id, tol_id, "species", tmp_path)
+for step, ts, run_dir in [
+    ("setup_curation", "2025-06-02T10_00_00", tmp_path),
+    ("pretext_to_asm", pta_ts, pta_dir),
+    ("hic_remapping", hic_ts, hic_dir),
+]:
+    reg.append_step(
+        tmp_path,
+        {
+            "step": step,
+            "timestamp": ts,
+            "status": "success",
+            "ticket_id": mock_ctx.ticket_id,
+            "tol_id": tol_id,
+            "run_dir": str(run_dir),
+        },
+    )
 
-    # Attach a tracker pointing to the real tmp_path
-    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+# Attach a tracker pointing to the real tmp_path
+mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
 
-    return tmp_path
+return tmp_path
 ```
 
 Also update the docstring's layout diagram — replace the line:

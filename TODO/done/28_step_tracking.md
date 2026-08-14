@@ -44,6 +44,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+
 class RunTracker:
     def __init__(self, workdir: Path) -> None:
         self.workdir = workdir
@@ -55,15 +56,22 @@ class RunTracker:
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H_%M_%S")
         run_dir = self.workdir / step / ts
         run_dir.mkdir(parents=True, exist_ok=True)
-        self._append({"step": step, "timestamp": ts, "status": "started",
-                      "ticket_id": ticket_id, "tol_id": tol_id, "run_dir": str(run_dir)})
+        self._append(
+            {
+                "step": step,
+                "timestamp": ts,
+                "status": "started",
+                "ticket_id": ticket_id,
+                "tol_id": tol_id,
+                "run_dir": str(run_dir),
+            }
+        )
         log.debug("Run started: step=%s run_dir=%s", step, run_dir)
         return run_dir
 
     def finish(self, step: str, run_dir: Path, status: str) -> None:
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H_%M_%S")
-        self._append({"step": step, "timestamp": ts, "status": status,
-                      "run_dir": str(run_dir)})
+        self._append({"step": step, "timestamp": ts, "status": status, "run_dir": str(run_dir)})
 
     def history(self, step: str | None = None) -> list[dict]:
         if not self.runs_log.exists():

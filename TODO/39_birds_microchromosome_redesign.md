@@ -75,7 +75,9 @@ same way `pretext_to_asm.py` wraps its own `_run` call:
 
 ```python
 run_dir = (
-    ctx.tracker.start("microchromosome_second_shot", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+    ctx.tracker.start(
+        "microchromosome_second_shot", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
+    )
     if ctx.tracker
     else ctx.workdir / "microchromosome_second_shot" / "untracked"
 )
@@ -91,7 +93,9 @@ try:
         outputs = collect_outputs(
             _OUTPUT_SPECS, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
         )
-        ctx.tracker.finish("microchromosome_second_shot", run_dir, "success", outputs=outputs or None)
+        ctx.tracker.finish(
+            "microchromosome_second_shot", run_dir, "success", outputs=outputs or None
+        )
 except Exception:
     if ctx.tracker:
         ctx.tracker.finish("microchromosome_second_shot", run_dir, "failed")
@@ -109,10 +113,10 @@ except Exception:
   `hap1_large_fa`/`hap1_large_chr_list`/`merged_small_fa` path templates):
   ```python
   _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
-      ("hap1_large_fa",   "*.hap1.large.fa",           []),
-      ("hap2_large_fa",   "*.hap2.large.fa",           []),
-      ("hap1_large_chr",  "*.hap1.large.chr_list.csv", []),
-      ("hap2_large_chr",  "*.hap2.large.chr_list.csv", []),
+      ("hap1_large_fa", "*.hap1.large.fa", []),
+      ("hap2_large_fa", "*.hap2.large.fa", []),
+      ("hap1_large_chr", "*.hap1.large.chr_list.csv", []),
+      ("hap2_large_chr", "*.hap2.large.chr_list.csv", []),
       ("merged_small_fa", "*_curated_small_merged.fa", []),
   ]
   ```
@@ -177,8 +181,8 @@ run produces per-hap curated fasta from a merged multi-hap input.
 - `_OUTPUT_SPECS`:
   ```python
   _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
-      ("hap1_fa",       "{tol_id}.{hap1}.*.fa",                []),
-      ("hap2_fa",       "{tol_id}.{hap2}.*.fa",                []),
+      ("hap1_fa", "{tol_id}.{hap1}.*.fa", []),
+      ("hap2_fa", "{tol_id}.{hap2}.*.fa", []),
       ("hap1_chr_list", "{tol_id}.{hap1}.chromosome.list.csv", []),
       ("hap2_chr_list", "{tol_id}.{hap2}.chromosome.list.csv", []),
   ]

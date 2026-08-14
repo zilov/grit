@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from rich.markup import escape
+
 from grit.core.context import CurationContext
 from grit.utils.output import console
 
@@ -42,7 +44,7 @@ def _run(cmd: str, print_only: bool = False, *, capture: bool = True) -> str:
 
     Returns stdout (stripped) when captured, otherwise an empty string.
     """
-    console.print(f"\n[yellow]Command:[/yellow] [green]{cmd}[/green]")
+    console.print(f"\n[yellow]Command:[/yellow] [green]{escape(cmd)}[/green]")
     if print_only:
         return ""
     if capture:
@@ -239,17 +241,35 @@ def build_less_tip(file: str | None, label: str) -> str | None:
     return f"Check {label}:\n[bold cyan]less {file}[/bold cyan]"
 
 
-def agp_newer_than_curated_fa(workdir: Path, tol_id: str, pta_dir: Path | None) -> bool:
-    """Return True if the AGP in workdir is newer than the curated FASTA in pta_dir."""
+def inputs_newer_than_curated_fa(
+    workdir: Path, tol_id: str, pta_dir: Path | None, extra_inputs: list[Path] = ()
+) -> bool:
+    """Return True if the AGP or any extra_inputs are newer than the curated FASTA in pta_dir."""
     curated_fas = list(pta_dir.glob(f"{tol_id}*.curated.fa")) if pta_dir else []
     if not curated_fas:
         return False
     agp_files = list(workdir.glob(f"{tol_id}*.pretext.agp_1")) or list(
         workdir.glob(f"{tol_id}*.agp*")
     )
-    if not agp_files:
+    input_files = agp_files + [p for p in extra_inputs if p.exists()]
+    if not input_files:
         return False
-    return max(f.stat().st_mtime for f in agp_files) > min(f.stat().st_mtime for f in curated_fas)
+    return max(f.stat().st_mtime for f in input_files) > min(f.stat().st_mtime for f in curated_fas)
+
+
+_HAPLOTIG_FILENAME_KEYWORDS = ("all_haplotigs", "additional_haplotigs", "haplotigs")
+
+
+def pta_curated_fa_exists(pta_dir: Path, tol_id: str, hap_token: str) -> bool:
+    """
+    True if a non-haplotig curated FASTA named with the literal *hap_token*
+    ("hap1" or "hap2") exists in *pta_dir* — i.e. pretext-to-asm actually
+    produced dual-hap output, regardless of what the YAML declares.
+    """
+    return any(
+        not any(kw in f for kw in _HAPLOTIG_FILENAME_KEYWORDS)
+        for f in glob.glob(str(pta_dir / f"{tol_id}.{hap_token}.*.curated.fa"))
+    )
 
 
 def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
@@ -289,8 +309,10 @@ def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     # 2. pretext-to-asm alias (hap1/hap2 for primary/alternate assemblies)
     if not matches and hap_prefix in _PTA_ALIASES:
         matches = _search(_PTA_ALIASES[hap_prefix])
-    # 3. No-hap-prefix format: {tol_id}.{version}.primary.curated.fa (single hap / merged)
-    if not matches:
+    # 3. No-hap-prefix format: {tol_id}.{version}.primary.curated.fa (single hap / merged).
+    # Only valid for single-hap YAML prefixes — for a dual-hap ("hap1"/"hap2") prefix this
+    # fallback would match the same unprefixed file for both haplotypes.
+    if not matches and hap_prefix not in ("hap1", "hap2"):
         matches = [
             f
             for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.*.primary.curated.fa"))
@@ -506,6 +528,45 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     if not matches:
         raise FileNotFoundError(
             f"No chromosome list for {hap_prefix!r} found in rename_and_orient or {pta_dir}."
+        )
+    return Path(sorted(matches)[-1])
+
+
+def find_hap_agp(ctx: "CurationContext", hap_prefix: str) -> Path:
+    """
+    Find the curated AGP for *hap_prefix* in the latest ``pretext_to_asm`` run dir.
+
+    Two pretext-to-asm output layouts exist:
+      - dual-window (hap1 and hap2 each curated separately):
+        {tol_id}.{hap_prefix}.*.curated.agp, hap_prefix literally "hap1"/"hap2"
+        (falls back to the primary→hap1 / alternate→hap2 alias when the YAML
+        key differs from the pretext-to-asm naming convention).
+      - single/combined window (e.g. ``combine_for_curation``, or a
+        primary/alternate assembly with only one curated window): no hap
+        token in the filename — {tol_id}.*.primary.curated.agp. Only matched
+        for hap1_prefix, since the combined AGP has no per-hap counterpart.
+
+    Raises FileNotFoundError if nothing is found.
+    """
+    _PTA_ALIASES: dict[str, str] = {"primary": "hap1", "alternate": "hap2"}
+
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+
+    def _search(token: str) -> list[str]:
+        return glob.glob(str(pta_dir / f"{ctx.tol_id}.{token}.*.curated.agp"))
+
+    matches = _search(hap_prefix)
+    if not matches and hap_prefix in _PTA_ALIASES:
+        matches = _search(_PTA_ALIASES[hap_prefix])
+    if not matches and hap_prefix == ctx.hap1_prefix:
+        matches = [
+            f
+            for f in glob.glob(str(pta_dir / f"{ctx.tol_id}.*.primary.curated.agp"))
+            if "hap1" not in Path(f).name and "hap2" not in Path(f).name
+        ]
+    if not matches:
+        raise FileNotFoundError(
+            f"No curated AGP for {hap_prefix!r} found in {pta_dir}. Run pretext-to-asm first."
         )
     return Path(sorted(matches)[-1])
 

@@ -139,6 +139,7 @@ def _submit_hic_remapping(
 def run_hic_remapping(
     ctx: CurationContext,
     *,
+    run_hap1: bool = True,
     run_hap2: bool = False,
     hic_dir: Path | None = None,
     hifi_dir: Path | None = None,
@@ -148,8 +149,9 @@ def run_hic_remapping(
     """
     Runs the HiC remapping pipeline (sanger-tol/curationpretext).
 
-    Submits hap1 by default. Pass ``run_hap2=True`` to also submit hap2
-    (tracked separately as ``hic_remapping_hap2``).
+    Submits hap1 when ``run_hap1=True`` (default) and/or hap2 when
+    ``run_hap2=True`` (tracked separately as ``hic_remapping_hap2``). Pass
+    ``run_hap1=False, run_hap2=True`` to submit hap2 only.
 
     ``hic_dir``, ``hifi_dir``, ``ont_dir`` override the values from the ticket
     YAML. If ``ont_dir`` is supplied, ``--read_type ont`` is used automatically.
@@ -172,7 +174,8 @@ def run_hic_remapping(
         log.info("Path overrides: %s", {k: str(v) for k, v in overrides.items()})
     print_step_header(ctx.ticket_id, ctx.tol_id, "HiC remapping")
 
-    _submit_hic_remapping(ctx, ctx.hap1_prefix, "hic_remapping", assembly=assembly)
+    if run_hap1:
+        _submit_hic_remapping(ctx, ctx.hap1_prefix, "hic_remapping", assembly=assembly)
 
     if run_hap2:
         print_step_header(ctx.ticket_id, ctx.tol_id, f"HiC remapping ({ctx.hap2_prefix})")
@@ -186,7 +189,11 @@ def run_hic_remapping(
 
 @click.command("hic-remapping", cls=GritCommand)
 @click.option(
-    "--hap2", "run_hap2", is_flag=True, default=False, help="Also submit HiC remapping for hap2."
+    "--hap2",
+    "run_hap2",
+    is_flag=True,
+    default=False,
+    help="Submit HiC remapping for hap2 instead of hap1.",
 )
 @click.option(
     "--hic-dir",
@@ -226,6 +233,7 @@ def hic_remapping_cmd(ctx, run_hap2, hic_dir, hifi_dir, ont_dir, assembly):
     try:
         run_hic_remapping(
             curation_ctx,
+            run_hap1=not run_hap2,
             run_hap2=run_hap2,
             hic_dir=Path(hic_dir) if hic_dir else None,
             hifi_dir=Path(hifi_dir) if hifi_dir else None,

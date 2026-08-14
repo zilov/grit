@@ -87,6 +87,7 @@ class CurationContext:
 
     # --- raw data ---
     yaml_data: dict[str, Any] = field(default_factory=dict)
+    yaml_path: Path | None = None  # filesystem path to the ticket's YAML, if known
 
     # --- run tracking (populated by from_yaml) ---
     tracker: RunTracker | None = field(default=None, repr=False, compare=False)
@@ -111,6 +112,7 @@ class CurationContext:
         print_only: bool = False,
         untracked: bool = False,
         bsub_ram: int | None = None,
+        yaml_path: Path | None = None,
     ) -> "CurationContext":
         """
         Build a CurationContext directly from a parsed YAML dict and user config.
@@ -177,6 +179,7 @@ class CurationContext:
             untracked=untracked,
             bsub_ram=bsub_ram,
             yaml_data=yaml_data,
+            yaml_path=yaml_path,
             tracker=RunTracker(workdir, print_only=print_only),
         )
 
@@ -197,6 +200,8 @@ class CurationContext:
         """
         cfg = UserConfig.from_dict(user_config)
 
+        yaml_path: Path | None = None
+
         if yaml_override is not None:
             yaml_data = yaml_override
             teloseq_raw = ""
@@ -209,6 +214,9 @@ class CurationContext:
             yaml_data = jira_issue.yaml
             teloseq_raw = jira_issue.issue_json["fields"].get("customfield_11650") or ""
 
+            raw_yaml_path = jira_issue.get_custom_field("yaml")
+            yaml_path = Path(raw_yaml_path) if raw_yaml_path else None
+
         teloseq = f"--teloseq {teloseq_raw}" if teloseq_raw else ""
 
         return cls.from_yaml(
@@ -219,6 +227,7 @@ class CurationContext:
             print_only=print_only,
             untracked=untracked,
             bsub_ram=bsub_ram,
+            yaml_path=yaml_path,
         )
 
 

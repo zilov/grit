@@ -15,7 +15,6 @@ from grit.utils.output import console, print_done, print_step_header
 log = logging.getLogger(__name__)
 
 _POST_PROC_CONF = "/software/grit/projects/contamination_screen/conf/contamination_screen.conf"
-_MODULES_INIT = "/etc/profile.d/modules.sh"
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -43,13 +42,7 @@ def run_post_processing(ctx: CurationContext) -> None:
     )
 
     script_lines = [
-        f". {_MODULES_INIT}",
-        "module purge",
         f"source {_POST_PROC_CONF}",
-        # contamination_screen.conf prepends tola_production venv to PATH,
-        # but its python3 is not accessible; strip it so the conda snakemake is used instead
-        r"export PATH=$(echo \"$PATH\" | tr ':' '\n' | grep -v 'tola_production/.venv' "
-        r"| tr '\n' ':' | sed 's/:$//')",
         "shopt -s expand_aliases",
         f"cd {ctx.assembly_curated_dir}",
         f"post_process_rc {ctx.ticket_id}",

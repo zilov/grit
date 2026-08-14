@@ -20,6 +20,12 @@ uv sync
 pip install -e .
 ```
 
+To pick up a newer version, pull the latest changes and reinstall the tool:
+
+```bash
+git pull && uv tool upgrade grit --reinstall
+```
+
 ## Configuration
 
 Run `grit init` to create `~/.grit/grit_curation_config.yaml`, pre-filled with your
@@ -68,7 +74,7 @@ from grit.core.context import CurationContext
 from grit.steps.pre_curation.setup import setup_curation
 from grit.steps.post_curation.pretext_to_asm import run_pretext_to_asm
 
-user_config = { ... }
+user_config = {...}
 ctx = CurationContext.from_ticket("RC-1234", user_config)
 
 setup_curation(ctx)

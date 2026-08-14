@@ -41,7 +41,7 @@ Options:
   the override in: `mem_mb = ctx.bsub_ram or STEP_DEFAULT_MEM`
 - Each step defines its default in a module-level constant:
   ```python
-  _DEFAULT_MEM_MB = 24000   # shown in click help as default
+  _DEFAULT_MEM_MB = 24000  # shown in click help as default
   ```
 
 ### Steps to update

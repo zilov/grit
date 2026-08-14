@@ -83,7 +83,9 @@ line alone, not from tracing an implicit `cd`.
 (no `cd` needed):
 
 ```python
-inner_cmd = f"bash {_BUSCO_SYNTENY_SCRIPT} -r {ref_reheader} -q {query_fa} -l {lineage} -p {ctx.workdir}"
+inner_cmd = (
+    f"bash {_BUSCO_SYNTENY_SCRIPT} -r {ref_reheader} -q {query_fa} -l {lineage} -p {ctx.workdir}"
+)
 ```
 
 So all of ref/query BUSCO output, the flattened full tables, and the circos

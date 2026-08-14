@@ -1,7 +1,9 @@
 """Pre-curation steps: workspace setup before manual curation."""
 
 import glob
+import gzip
 import logging
+import re
 from pathlib import Path
 
 import rich_click as click
@@ -17,6 +19,85 @@ from grit.utils.output import (
 )
 
 log = logging.getLogger(__name__)
+
+_SCAFFOLD_HEADER_RE = re.compile(r"^>(HAP\d+_)?SCAFFOLD_\d+")
+
+# ---------------------------------------------------------------------------
+# Decontaminated FASTA resolution
+# ---------------------------------------------------------------------------
+
+
+def _resolve_hap1_fasta(ctx: CurationContext) -> str:
+    """
+    Globs for the decontaminated hap1 FASTA in ``ctx.assembly_draft_dir``.
+
+    Falls back to a bare ``*.decontaminated.fa*`` pattern if the
+    ``hap1_prefix``-qualified pattern finds nothing.
+
+    Raises:
+        FileNotFoundError: if neither pattern matches.
+    """
+    hap1_pattern = str(
+        ctx.assembly_draft_dir / f"{ctx.tol_id}*{ctx.hap1_prefix}.decontaminated.fa*"
+    )
+    hap1_files = glob.glob(hap1_pattern)
+    if not hap1_files:
+        hap1_files = glob.glob(str(ctx.assembly_draft_dir / f"{ctx.tol_id}*.decontaminated.fa*"))
+    if not hap1_files:
+        raise FileNotFoundError(f"No decontaminated hap1 FASTA found at: {hap1_pattern}")
+    return _sort_by_mtime(hap1_files)[0]
+
+
+def _resolve_hap2_fasta(ctx: CurationContext) -> str:
+    """
+    Globs for the decontaminated hap2 FASTA in ``ctx.assembly_draft_dir``.
+
+    Falls back to a literal ``*haplotigs.decontaminated.fa*`` pattern — some
+    primary assemblies use "haplotigs" rather than the YAML-derived
+    ``hap2_prefix`` (e.g. "alternate") in their filenames.
+
+    Returns:
+        The resolved path, or "" if neither pattern matches (single-hap assembly).
+    """
+    hap2_pattern = str(
+        ctx.assembly_draft_dir / f"{ctx.tol_id}*{ctx.hap2_prefix}.decontaminated.fa*"
+    )
+    hap2_files = glob.glob(hap2_pattern)
+    if not hap2_files:
+        hap2_files = glob.glob(
+            str(ctx.assembly_draft_dir / f"{ctx.tol_id}*haplotigs.decontaminated.fa*")
+        )
+    if not hap2_files:
+        return ""
+    return _sort_by_mtime(hap2_files)[0]
+
+
+def _peek_first_fasta_header(fasta_path: str) -> str:
+    """Returns the first ``>``-prefixed header line of a (possibly gzipped) FASTA."""
+    opener = gzip.open if str(fasta_path).endswith(".gz") else open
+    with opener(fasta_path, "rt") as fh:
+        for line in fh:
+            if line.startswith(">"):
+                return line.strip()
+    return ""
+
+
+def _validate_scaffold_headers(fasta_path: str) -> None:
+    """
+    Raises ValueError if the first header of *fasta_path* isn't SCAFFOLD_N / HAP<N>_SCAFFOLD_N.
+
+    Catches decontamination pipelines that didn't rename contigs to the
+    curation-ready convention before setup_curation concatenates them into
+    original.fa.
+    """
+    header = _peek_first_fasta_header(fasta_path)
+    if not _SCAFFOLD_HEADER_RE.match(header):
+        raise ValueError(
+            f"{fasta_path} has unexpected header {header!r} — expected "
+            f"SCAFFOLD_N / HAP<N>_SCAFFOLD_N. Upstream decontamination likely "
+            f"didn't rename contigs; fix upstream before re-running setup."
+        )
+
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -35,10 +116,10 @@ def setup_curation(ctx: CurationContext) -> None:
 
                zcat {decont_hap1} [{decont_hap2}] > {ctx.workdir}/original.fa
 
-           Decontaminated files are found via glob in ``ctx.assembly_draft_dir``:
-           ``{assembly_draft_dir}/{tol_id}*{hap1_prefix}.decontaminated.fa*``
-           (``assembly_draft_dir`` already points to the versioned subdir)
-           If two files exist, the newest (by mtime) is chosen.
+           Decontaminated files are resolved via :func:`_resolve_hap1_fasta` /
+           :func:`_resolve_hap2_fasta`. If multiple files match, the newest
+           (by mtime) is chosen. Each file's first header is validated
+           against the SCAFFOLD_N / HAP<N>_SCAFFOLD_N convention before concatenation.
 
     Args:
         ctx: CurationContext for the ticket.
@@ -60,42 +141,26 @@ def setup_curation(ctx: CurationContext) -> None:
         log.info("original.fa already exists, skipping copy: %s", original_fa)
         return
 
-    # Glob for decontaminated hap1 FASTA
     # assembly_draft_dir already points to the versioned subdir,
     # e.g. .../assembly/draft/uoEpiScra1.20241115
-    hap1_pattern = str(
-        ctx.assembly_draft_dir / f"{ctx.tol_id}*{ctx.hap1_prefix}.decontaminated.fa*"
-    )
-    hap2_pattern = str(
-        ctx.assembly_draft_dir / f"{ctx.tol_id}*{ctx.hap2_prefix}.decontaminated.fa*"
-    )
-
     if ctx.print_only:
-        # In print-only mode show expected paths without checking the filesystem
-        decont_hap1 = hap1_pattern
-        decont_hap2 = hap2_pattern
-        log.info("hap1 FASTA (pattern): %s", decont_hap1)
-        log.info("hap2 FASTA (pattern): %s", decont_hap2)
+        # Resolve for real (read-only glob) so print-only reflects what a real
+        # run would pick, including the "haplotigs" fallback for hap2.
+        try:
+            decont_hap1 = _resolve_hap1_fasta(ctx)
+        except FileNotFoundError as exc:
+            decont_hap1 = f"<{exc}>"
+        decont_hap2 = _resolve_hap2_fasta(ctx) or "<no hap2 FASTA found>"
+        log.info("hap1 FASTA: %s", decont_hap1)
+        log.info("hap2 FASTA: %s", decont_hap2)
     else:
-        hap1_files = glob.glob(hap1_pattern)
-        if not hap1_files:
-            hap1_files = glob.glob(
-                str(ctx.assembly_draft_dir / f"{ctx.tol_id}*.decontaminated.fa*")
-            )
-        if not hap1_files:
-            raise FileNotFoundError(f"No decontaminated hap1 FASTA found at: {hap1_pattern}")
-        decont_hap1 = _sort_by_mtime(hap1_files)[0]
+        decont_hap1 = _resolve_hap1_fasta(ctx)
+        _validate_scaffold_headers(decont_hap1)
 
-        hap2_files = glob.glob(hap2_pattern)
-        if not hap2_files:
-            # some primary assemblies use 'haplotigs' rather than 'alternate'
-            hap2_files = glob.glob(
-                str(ctx.assembly_draft_dir / f"{ctx.tol_id}*haplotigs.decontaminated.fa*")
-            )
-        if hap2_files:
-            decont_hap2 = _sort_by_mtime(hap2_files)[0]
+        decont_hap2 = _resolve_hap2_fasta(ctx)
+        if decont_hap2:
+            _validate_scaffold_headers(decont_hap2)
         else:
-            decont_hap2 = ""
             log.warning("Alternate haplotype FASTA not found — creating single-hap original.fa")
 
     zcat_cmd = f"zcat {decont_hap1} {decont_hap2} > {original_fa}"

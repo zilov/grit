@@ -96,13 +96,13 @@ Each step declares a list of key output patterns. If these files exist in the st
 # grit/core/manifests.py
 
 STEP_MANIFESTS: dict[str, list[str]] = {
-    "setup_curation":   ["original.fa"],
-    "pretext_to_asm":   ["{tol_id}*.hap1.curated.fa", "{tol_id}*.agp"],
-    "haplotig_files":   ["{tol_id}*.all_haplotigs.curated.fa"],
-    "hic_remapping":    ["{tol_id}*hr.pretext"],
-    "qv":               ["{tol_id}*.merqury.qv"],
-    "validate_files":   [],   # no output files; success = exit code 0
-    "finalize_qc":      ["{tol_id}*.curated.fa"],
+    "setup_curation": ["original.fa"],
+    "pretext_to_asm": ["{tol_id}*.hap1.curated.fa", "{tol_id}*.agp"],
+    "haplotig_files": ["{tol_id}*.all_haplotigs.curated.fa"],
+    "hic_remapping": ["{tol_id}*hr.pretext"],
+    "qv": ["{tol_id}*.merqury.qv"],
+    "validate_files": [],  # no output files; success = exit code 0
+    "finalize_qc": ["{tol_id}*.curated.fa"],
 }
 ```
 

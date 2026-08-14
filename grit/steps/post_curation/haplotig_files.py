@@ -8,7 +8,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import find_latest_dir
+from grit.utils.helpers import find_latest_dir, pta_curated_fa_exists
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -51,12 +51,25 @@ def run_haplotig_files(ctx: CurationContext) -> None:
     # stay alongside the curated FA for that run.
     base_dir = find_latest_dir(ctx, "pretext_to_asm")
 
+    if ctx.print_only:
+        # Nothing on disk yet to inspect — preview using the YAML-declared type.
+        is_dual_hap = ctx.assembly_type in ("hap1", "paternal")
+    else:
+        # The curator decides during curation whether to split into hap1/hap2 in
+        # PretextView, so what pretext-to-asm actually produced on disk takes
+        # priority over the YAML's declared assembly type. pretext-to-asm always
+        # names dual-hap output with the literal "hap1"/"hap2" tokens, regardless
+        # of the YAML key (see find_curated_fa in helpers.py).
+        is_dual_hap = pta_curated_fa_exists(base_dir, ctx.tol_id, "hap1") or pta_curated_fa_exists(
+            base_dir, ctx.tol_id, "hap2"
+        )
+
     # hap1/hap2: {tol_id}.hap1.1.all_haplotigs.curated.fa
     # primary:   {tol_id}.1.all_haplotigs.curated.fa
-    if ctx.assembly_type in ("hap1", "paternal"):
+    if is_dual_hap:
         haplotig_names = [
-            f"{ctx.tol_id}.{ctx.hap1_prefix}.{ctx.release_version}.all_haplotigs.curated.fa",
-            f"{ctx.tol_id}.{ctx.hap2_prefix}.{ctx.release_version}.all_haplotigs.curated.fa",
+            f"{ctx.tol_id}.hap1.{ctx.release_version}.all_haplotigs.curated.fa",
+            f"{ctx.tol_id}.hap2.{ctx.release_version}.all_haplotigs.curated.fa",
         ]
     else:
         haplotig_names = [f"{ctx.tol_id}.{ctx.release_version}.all_haplotigs.curated.fa"]

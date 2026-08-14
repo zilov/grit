@@ -120,9 +120,13 @@ per file) — `pigz` is already on the compute nodes' `PATH` (no
 
 ```python
 inner_cmd = f"cd {ptoa_kept_dir} && pigz -p 8 *.fa"
-bsub_opts = build_bsub_opts(memory_mb=4000, cores=8, queue="normal",
-                             output=str(ptoa_kept_dir / "gzip_fa.out"),
-                             error=str(ptoa_kept_dir / "gzip_fa.err"))
+bsub_opts = build_bsub_opts(
+    memory_mb=4000,
+    cores=8,
+    queue="normal",
+    output=str(ptoa_kept_dir / "gzip_fa.out"),
+    error=str(ptoa_kept_dir / "gzip_fa.err"),
+)
 _submit_bsub(inner_cmd, bsub_opts, dry_run)
 ```
 

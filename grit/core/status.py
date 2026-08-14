@@ -7,7 +7,7 @@ from pathlib import Path
 
 from rich.table import Table
 
-from grit.utils.output import console, print_curation_results, print_tip
+from grit.utils.output import console, print_curation_results, print_tip, shorten_path
 from grit.utils.result_parsers import find_lsf_log, parse_lsf_exit_reason
 
 
@@ -169,7 +169,11 @@ def _print_canonical_files(ctx) -> None:
             try:
                 p = finder(ctx, hap)
                 found = "[green]✓[/green]"
-                path_str = str(p) if p.exists() else f"[yellow]{p}[/yellow]"
+                path_str = (
+                    shorten_path(p, ctx.workdir)
+                    if p.exists()
+                    else f"[yellow]{shorten_path(p, ctx.workdir)}[/yellow]"
+                )
             except FileNotFoundError:
                 found = "[red]✗[/red]"
                 path_str = "[dim]not found[/dim]"
@@ -339,13 +343,14 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
         # Enrich bsub job status from live bjobs query
         if status == "started" and job_id and job_id in live_job_statuses:
             bjobs_status = live_job_statuses[job_id]
-            if bjobs_status == "DONE":
-                status = "done (check)"
-            elif bjobs_status == "EXIT":
-                status = "failed (job exited)"
-            elif bjobs_status in ("RUN", "PEND"):
-                status = f"running ({bjobs_status})"
-            elif bjobs_status == "gone":
+            if bjobs_status in ("DONE", "gone"):
+                # LSF reports the job itself as finished, but for steps that
+                # shell out to an external pipeline (e.g. hic_remapping's
+                # curationpretext.sh) grit never submitted the job itself, so
+                # no -Ep epilogue was wired up to confirm real completion.
+                # Check for the expected output files now rather than waiting
+                # for the job to age out of `bjobs` history (which can take
+                # hours) before ever verifying.
                 if tracker.verify_outputs(step, tol_id, run_dir) in ("ok", "no_files"):
                     outputs = _auto_step_outputs(
                         step,
@@ -356,9 +361,14 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
                     )
                     tracker.finish(step, run_dir, "success", outputs=outputs or None)
                     entry["outputs"] = outputs
+                    entry["status"] = "success"
                     status = "success"
                 else:
-                    status = "unknown (gone)"
+                    status = "done (check)" if bjobs_status == "DONE" else "unknown (gone)"
+            elif bjobs_status == "EXIT":
+                status = "failed (job exited)"
+            elif bjobs_status in ("RUN", "PEND"):
+                status = f"running ({bjobs_status})"
 
         if status == "started":
             status = "running"
@@ -433,12 +443,14 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
         f"{farm_host}:{workdir}/[/bold cyan]"
     )
 
-    from grit.utils.helpers import agp_newer_than_curated_fa
+    from grit.utils.helpers import inputs_newer_than_curated_fa
 
     pta_dir = tracker.latest_run_dir("pretext_to_asm")
-    if agp_newer_than_curated_fa(workdir, tol_id, pta_dir):
+    if inputs_newer_than_curated_fa(
+        workdir, tol_id, pta_dir, extra_inputs=[workdir / "original.fa"]
+    ):
         print_tip(
-            f"AGP is newer than curated FASTA — re-run all post-curation steps:\n"
+            f"AGP or original.fa is newer than curated FASTA — re-run all post-curation steps:\n"
             f"[bold cyan]grit post-curation -t {ticket_id}[/bold cyan] "
             f"[dim](add --hap2 if you need to build both hap maps)[/dim]"
         )

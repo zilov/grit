@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "grit"
-version = "0.2.0"
+version = "0.3.0"
 description = "Genome curation pipeline notebook library"
 requires-python = ">=3.10"
 dependencies = [
@@ -24,6 +24,7 @@ grit = "grit.core.click_cli:cli"
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
+    "ruff>=0.15.3",
 ]
 
 [tool.ruff]

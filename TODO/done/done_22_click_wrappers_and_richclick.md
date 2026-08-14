@@ -37,6 +37,7 @@ import rich_click as click
 Можно добавить настройку в `click_cli.py`:
 ```python
 import rich_click as click
+
 click.rich_click.USE_RICH_MARKUP = True
 click.rich_click.SHOW_ARGUMENTS = True
 click.rich_click.GROUP_ARGUMENTS_OPTIONS = True
@@ -50,11 +51,13 @@ click.rich_click.GROUP_ARGUMENTS_OPTIONS = True
 ```python
 import rich_click as click
 
+
 @click.command("command-name")
 @click.pass_context
 def command_name_cmd(ctx):
     """Описание команды."""
     from curation_pipeline.core.click_cli import build_context
+
     state = ctx.obj
     curation_ctx = build_context(state)
     run_command_name(curation_ctx)
@@ -63,11 +66,12 @@ def command_name_cmd(ctx):
 ### Паттерн для команд с доп. параметрами (busco, fastga):
 ```python
 @click.command("busco-curated")
-@click.option('--lineage', required=True, help='BUSCO lineage (e.g. insecta_odb10)')
+@click.option("--lineage", required=True, help="BUSCO lineage (e.g. insecta_odb10)")
 @click.pass_context
 def busco_curated_cmd(ctx, lineage):
     """Run BUSCO on curated genome."""
     from curation_pipeline.core.click_cli import build_context
+
     state = ctx.obj
     curation_ctx = build_context(state)
     run_busco_curated(curation_ctx, lineage)

@@ -9,6 +9,7 @@ import rich_click as click
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.helpers import (
+    _check_bjobs,
     _state_update_epilogue,
     _submit_bsub,
     build_bsub_opts,
@@ -92,12 +93,29 @@ def run_sex_matcher(ctx: CurationContext) -> None:
                 print_done(f"Already done → {last['run_dir']}")
                 return
             if last["status"] == "started":
+                existing = glob.glob(str(ctx.workdir / "Best_match*"))
+                if existing:
+                    ctx.tracker.finish("sex_matcher", Path(last["run_dir"]), "success")
+                    print_done(f"Already done → {last['run_dir']}")
+                    return
+
+                job_id = last.get("job_id")
+                live_status = _check_bjobs([job_id])[job_id] if job_id else "gone"
+                if live_status in ("PEND", "RUN"):
+                    log.warning(
+                        "sex_matcher job already submitted and still running (%s) — skipping. "
+                        "Run dir: %s",
+                        live_status,
+                        last.get("run_dir"),
+                    )
+                    return
+
                 log.warning(
-                    "sex_matcher job already submitted and may still be running — skipping. "
-                    "Run dir: %s",
-                    last.get("run_dir"),
+                    "Previous sex_matcher job (%s) is no longer running and produced no "
+                    "output — marking failed and resubmitting.",
+                    job_id or "unknown",
                 )
-                return
+                ctx.tracker.finish("sex_matcher", Path(last["run_dir"]), "failed")
 
     run_dir = (
         ctx.tracker.start("sex_matcher", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
