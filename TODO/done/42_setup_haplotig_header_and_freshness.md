@@ -38,6 +38,7 @@ file and validates it against the expected convention:
 ```python
 _SCAFFOLD_HEADER_RE = re.compile(r"^>(HAPM_)?SCAFFOLD_\d+")
 
+
 def _validate_scaffold_headers(fasta_path: Path) -> None:
     first_header = _peek_first_fasta_header(fasta_path)  # zcat -c | head -1
     if not _SCAFFOLD_HEADER_RE.match(first_header):

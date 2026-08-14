@@ -122,8 +122,12 @@ def run_super_to_scaffold(ctx: CurationContext) -> None:
 
     if ctx.print_only:
         for hap_prefix in haps_to_process:
-            log.info("[%s] Would parse AGP: {pretext_to_asm run dir}/%s.%s.*.curated.agp",
-                      hap_prefix, ctx.tol_id, hap_prefix)
+            log.info(
+                "[%s] Would parse AGP: {pretext_to_asm run dir}/%s.%s.*.curated.agp",
+                hap_prefix,
+                ctx.tol_id,
+                hap_prefix,
+            )
         print_done("Would print super/scaffold table and save it as CSV.")
         return
 

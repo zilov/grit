@@ -74,7 +74,7 @@ from grit.core.context import CurationContext
 from grit.steps.pre_curation.setup import setup_curation
 from grit.steps.post_curation.pretext_to_asm import run_pretext_to_asm
 
-user_config = { ... }
+user_config = {...}
 ctx = CurationContext.from_ticket("RC-1234", user_config)
 
 setup_curation(ctx)

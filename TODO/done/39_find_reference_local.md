@@ -188,7 +188,9 @@ def test_local_ignores_number_with_warning(mock_run, mock_reheader, mock_ctx, tm
 
 @patch("grit.steps.pre_curation.find_reference._reheader_downloaded_references")
 @patch("grit.steps.pre_curation.find_reference._run")
-def test_download_path_unaffected_when_no_local_path(mock_run, mock_reheader_downloaded, mock_ctx, tmp_path):
+def test_download_path_unaffected_when_no_local_path(
+    mock_run, mock_reheader_downloaded, mock_ctx, tmp_path
+):
     mock_ctx.workdir = tmp_path / "workdir"
     mock_ctx.print_only = False
 
@@ -239,7 +241,11 @@ def find_closest_reference(
     log.info("find-reference | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Find closest reference")
 
-    run_dir = ctx.tracker.start("find_reference", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked) if ctx.tracker else ctx.workdir / "find_reference" / "untracked"
+    run_dir = (
+        ctx.tracker.start("find_reference", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else ctx.workdir / "find_reference" / "untracked"
+    )
     log.info("Reference dir: %s", run_dir)
 
     if local_path:

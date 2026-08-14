@@ -60,6 +60,8 @@ Problem with naive read-modify-write: crash mid-write corrupts the file.
 Solution: **atomic write via temp file + rename**
 ```python
 import os, tempfile, json
+
+
 def _save(data, path):
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2))

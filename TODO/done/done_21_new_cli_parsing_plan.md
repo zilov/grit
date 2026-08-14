@@ -45,18 +45,22 @@
 ```python
 # Файл: curation_pipeline/steps/pre_curation/sex_matcher.py
 
+
 def run_sex_matcher(ctx: CurationContext) -> None:
     """Бизнес-логика: работает с контекстом"""
     # ... логика с ctx.workdir, ctx.tol_id и т.д. ...
     pass
 
+
 import click
+
 
 @click.command("sex-matcher")
 @click.pass_context
 def sex_matcher_cmd(ctx):
     """CLI обёртка: строит контекст и вызывает логику"""
     from curation_pipeline.core.click_cli import build_context, GlobalState
+
     state = ctx.obj
     curation_ctx = build_context(state)
     run_sex_matcher(curation_ctx)
@@ -113,6 +117,7 @@ def sex_matcher_cmd(ctx):
 2.  **Python-код**:
     ```python
     from curation_pipeline.steps.pre_curation.sex_matcher import run_sex_matcher
+
     ctx = CurationContext.from_ticket("RC-123", user_config)
     run_sex_matcher(ctx)
     ```
