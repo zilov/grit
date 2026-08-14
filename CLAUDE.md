@@ -4,7 +4,7 @@ Genome curation pipeline CLI for the Sanger Tree of Life curation team. Wraps HP
 
 ## What it does
 
-Automates pre- and post-curation steps around manual genome assembly curation in PretextView. A curator runs `grit RC-1234 setup`, curates manually, then runs a chain of post-curation steps (`pretext-to-asm`, `hic-remapping`, `qv`, `finalize-qc`).
+Automates pre- and post-curation steps around manual genome assembly curation in PretextView. A curator runs `grit setup -t RC-1234`, curates manually, then runs a chain of post-curation steps (`pretext-to-asm`, `hic-remapping`, `qv`, `finalize-qc`).
 
 ## Architecture
 

@@ -41,31 +41,31 @@ The `grit` command is installed with the package:
 
 ```bash
 # Pre-curation
-grit RC-1234 setup
-grit RC-1234 sex-matcher
+grit setup -t RC-1234
+grit sex-matcher -t RC-1234
 
 # Post-curation
-grit RC-1234 pretext-to-asm
-grit RC-1234 haplotig-files
-grit RC-1234 hic-remapping
-grit RC-1234 qv
-grit RC-1234 finalize-qc
+grit pretext-to-asm -t RC-1234
+grit haplotig-files -t RC-1234
+grit hic-remapping -t RC-1234
+grit qv -t RC-1234
+grit finalize-qc -t RC-1234
 
 # Optional
-grit RC-1234 fastga
-grit RC-1234 blast-contaminants
-grit RC-1234 busco-curated
-grit RC-1234 busco-synteny
-grit RC-1234 rename-and-orient
+grit fastga -t RC-1234
+grit blast-contaminants -t RC-1234
+grit busco-curated -t RC-1234
+grit busco-synteny -t RC-1234
+grit rename-and-orient -t RC-1234
 
 # Dry run — print commands without executing
-grit RC-1234 --print-only setup
+grit setup -t RC-1234 --print-only
 
-# Use a local YAML instead of fetching from Jira
+# Use a local YAML instead of fetching from Jira (ticket_id is derived from the filename stem)
 grit --yaml ticket.yaml setup
 ```
 
-Pass a Jira ticket ID (e.g. `RC-1234`, `GRIT-567`) as the first argument — all metadata is fetched automatically. Use `--yaml` to provide a local YAML file instead. Use `--print-only` to preview commands before running.
+Pass a Jira ticket ID (e.g. `RC-1234`, `GRIT-567`) via `-t`/`--ticket` after the subcommand — all metadata is fetched automatically. Use `--yaml` to provide a local YAML file instead (omit `-t` in that case). Use `--print-only` to preview commands before running — either globally before the subcommand or as a per-command flag after it.
 
 ### Python API
 
