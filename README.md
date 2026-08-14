@@ -6,6 +6,8 @@ Genome curation pipeline CLI and library for the Tree of Life curation team.
 
 `grit` provides a set of command-line tools and Python functions for pre- and post-curation steps in genome assembly curation. It wraps HPC job submission (`bsub`), file operations, and external tools behind a consistent interface.
 
+See [examples.md](examples.md) for a walkthrough of installation, the standard curation workflow, optional steps, and `grit status`.
+
 ## Installation
 
 ```bash

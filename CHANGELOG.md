@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.3] - 2026-08-14
+
+### Added
+
+- `examples.md` with end-to-end usage examples: installation, the standard curation workflow, optional steps, and `grit status` / `grit status -t` output.
+
 ## [0.3.2] - 2026-08-14
 
 ### Added
