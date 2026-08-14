@@ -32,9 +32,9 @@ log = logging.getLogger(__name__)
 # tol_id prefixes that typically require sex-matching (insects and similar)
 _INSECT_PREFIXES = ("ic", "il", "id")
 
-# Path to the bundled sex-matcher script (relative to repo root)
-_REPO_ROOT = Path(__file__).parent.parent.parent.parent
-_SEX_MATCHER_SCRIPT = _REPO_ROOT / "scripts" / "sex-matcher.sh"
+# Path to the bundled sex-matcher script
+_SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
+_SEX_MATCHER_SCRIPT = _SCRIPTS_DIR / "sex-matcher.sh"
 
 
 # ---------------------------------------------------------------------------
