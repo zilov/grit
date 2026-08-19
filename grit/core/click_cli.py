@@ -125,8 +125,14 @@ from grit.steps.post_curation.microchromosome_combine import (  # noqa: E402
     microchromosome_combine_cmd,
 )
 from grit.steps.post_curation.post_curation import post_curation_cmd  # noqa: E402
+from grit.steps.post_curation.post_curation_recurate import (  # noqa: E402
+    post_curation_recurate_cmd,
+)
 from grit.steps.post_curation.post_processing import post_processing_cmd, pp_cmd  # noqa: E402
 from grit.steps.post_curation.pretext_to_asm import pretext_to_asm_cmd  # noqa: E402
+from grit.steps.post_curation.pretext_to_asm_recurate import (  # noqa: E402
+    pretext_to_asm_recurate_cmd,
+)
 from grit.steps.post_curation.qv import qv_cmd  # noqa: E402
 
 # Not yet tested via CLI / not current — disabled for initial release.
@@ -234,7 +240,9 @@ cli.add_command(setup_cmd)
 cli.add_command(haplotig_files_cmd)
 cli.add_command(hic_remapping_cmd)
 cli.add_command(post_curation_cmd)
+cli.add_command(post_curation_recurate_cmd)
 cli.add_command(pretext_to_asm_cmd)
+cli.add_command(pretext_to_asm_recurate_cmd)
 cli.add_command(qv_cmd)
 # cli.add_command(validate_files_cmd)  # disabled for initial release, not yet tested via CLI
 cli.add_command(blast_contaminants_cmd)

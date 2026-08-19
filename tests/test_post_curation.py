@@ -152,6 +152,102 @@ def test_run_pretext_to_asm_print_only_skips_checks(mock_run, mock_ctx, tmp_path
     assert any("pretext-to-asm" in c for c in calls)
 
 
+@patch("grit.steps.post_curation.pretext_to_asm._run")
+@patch("grit.steps.post_curation.pretext_to_asm.glob.glob")
+def test_run_pretext_to_asm_core_custom_agp_glob(mock_glob, mock_run, mock_ctx, tmp_path):
+    """A custom agp_glob overrides the default {tol_id}*.agp* pattern."""
+    from grit.steps.post_curation.pretext_to_asm import _run_pretext_to_asm_core
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    original_fa = tmp_path / "original.fa"
+    original_fa.write_text("")
+    agp = str(tmp_path / "sDipInt39.hap1.recurate.agp")
+    mock_glob.return_value = [agp]
+    mock_run.return_value = ""
+
+    _run_pretext_to_asm_core(
+        mock_ctx,
+        "pretext_to_asm_recurate",
+        original_fa,
+        "missing",
+        tmp_path,
+        "sDipInt39.fa",
+        [],
+        agp_glob="sDipInt39*hap1*.agp*",
+    )
+
+    glob_pattern = mock_glob.call_args[0][0]
+    assert glob_pattern == str(tmp_path / "sDipInt39*hap1*.agp*")
+
+
+@patch("grit.steps.post_curation.pretext_to_asm._run")
+@patch("grit.steps.post_curation.pretext_to_asm.glob.glob")
+def test_run_pretext_to_asm_core_default_agp_glob_unchanged(
+    mock_glob, mock_run, mock_ctx, tmp_path
+):
+    """Omitting agp_glob keeps today's {tol_id}*.agp* pattern (no regression)."""
+    from grit.steps.post_curation.pretext_to_asm import _run_pretext_to_asm_core
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    original_fa = tmp_path / "original.fa"
+    original_fa.write_text("")
+    agp = str(tmp_path / "sDipInt39.agp")
+    mock_glob.return_value = [agp]
+    mock_run.return_value = ""
+
+    _run_pretext_to_asm_core(
+        mock_ctx, "pretext_to_asm", original_fa, "missing", tmp_path, "sDipInt39.fa", []
+    )
+
+    glob_pattern = mock_glob.call_args[0][0]
+    assert glob_pattern == str(tmp_path / "sDipInt39*.agp*")
+
+
+@patch("grit.steps.post_curation.pretext_to_asm._run")
+@patch("grit.steps.post_curation.pretext_to_asm.glob.glob")
+def test_run_pretext_to_asm_core_output_transform_runs_before_collect_outputs(
+    mock_glob, mock_run, mock_ctx, tmp_path
+):
+    """output_transform can write a file that collect_outputs then picks up,
+    all within the single finish() call collect_outputs feeds into."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.post_curation.pretext_to_asm import _run_pretext_to_asm_core
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    original_fa = tmp_path / "original.fa"
+    original_fa.write_text("")
+    agp = str(tmp_path / "sDipInt39.agp")
+    mock_glob.return_value = [agp]
+    mock_run.return_value = ""
+
+    def _write_extra_file(run_dir):
+        (run_dir / "hap1.extra_output.fa").write_text(">seq\nACGT\n")
+
+    output_specs = [("hap1_extra", "hap1.extra_output.fa", [])]
+    run_dir = _run_pretext_to_asm_core(
+        mock_ctx,
+        "pretext_to_asm",
+        original_fa,
+        "missing",
+        tmp_path,
+        "sDipInt39.fa",
+        output_specs,
+        output_transform=_write_extra_file,
+    )
+
+    assert mock_ctx.tracker.get_output("pretext_to_asm", "hap1_extra") == str(
+        run_dir / "hap1.extra_output.fa"
+    )
+
+
 # ---------------------------------------------------------------------------
 # run_haplotig_files
 # ---------------------------------------------------------------------------
