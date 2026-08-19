@@ -183,7 +183,9 @@ def test_run_pretext_to_asm_core_custom_agp_glob(mock_glob, mock_run, mock_ctx, 
 
 @patch("grit.steps.post_curation.pretext_to_asm._run")
 @patch("grit.steps.post_curation.pretext_to_asm.glob.glob")
-def test_run_pretext_to_asm_core_default_agp_glob_unchanged(mock_glob, mock_run, mock_ctx, tmp_path):
+def test_run_pretext_to_asm_core_default_agp_glob_unchanged(
+    mock_glob, mock_run, mock_ctx, tmp_path
+):
     """Omitting agp_glob keeps today's {tol_id}*.agp* pattern (no regression)."""
     from grit.steps.post_curation.pretext_to_asm import _run_pretext_to_asm_core
 

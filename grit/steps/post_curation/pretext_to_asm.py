@@ -67,7 +67,11 @@ def _run_pretext_to_asm_core(
         prev_dir = ctx.tracker.latest_run_dir(step_name)
         if prev_dir and list(prev_dir.glob(f"{ctx.tol_id}*.curated.fa")):
             if inputs_newer_than_curated_fa(
-                agp_search_dir, ctx.tol_id, prev_dir, extra_inputs=[original_fa]
+                agp_search_dir,
+                ctx.tol_id,
+                prev_dir,
+                extra_inputs=[original_fa],
+                agp_glob=agp_glob,
             ):
                 log.info(
                     "AGP or original.fa is newer than curated FASTA — re-running %s", step_name
