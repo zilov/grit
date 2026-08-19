@@ -328,6 +328,33 @@ def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     return Path(sorted(matches)[-1])
 
 
+def _latest_tracked_output(
+    ctx: "CurationContext",
+    steps: list[str],
+    key_variants: list[str],
+) -> Path | None:
+    """
+    Among *steps* (tracker step names), return the Path with the newest
+    mtime whose tracker output for any of *key_variants* still exists on
+    disk. Steps with no matching output are skipped. Ties (equal mtime, or
+    only one candidate) resolve to the first-listed step in *steps*.
+    """
+    if not ctx.tracker:
+        return None
+    best: tuple[float, int, Path] | None = None  # (mtime, -priority_index, path)
+    for idx, step in enumerate(steps):
+        for k in key_variants:
+            val = ctx.tracker.get_output(step, k)
+            if val and Path(val).exists():
+                p = Path(val)
+                mtime = p.stat().st_mtime
+                candidate = (mtime, -idx, p)
+                if best is None or candidate[:2] > best[:2]:
+                    best = candidate
+                break
+    return best[2] if best else None
+
+
 def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
     Find the canonical assembly FASTA for *hap_prefix*.
@@ -350,17 +377,15 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     }
 
     if ctx.tracker:
-        for step in (
-            "rename_and_orient",
-            "rename_and_orient_hap2",
-            "blast_contaminants",
-            "microchromosome_combine",
-            "pretext_to_asm",
-        ):
-            for k in (f"{hap_prefix}_fa", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_fa"):
-                val = ctx.tracker.get_output(step, k)
-                if val and Path(val).exists():
-                    return Path(val)
+        keys = [f"{hap_prefix}_fa", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_fa"]
+        baseline = _latest_tracked_output(ctx, ["microchromosome_combine", "pretext_to_asm"], keys)
+        result = _latest_tracked_output(
+            ctx, ["rename_and_orient", "rename_and_orient_hap2", "blast_contaminants"], keys
+        )
+        if result and (baseline is None or result.stat().st_mtime > baseline.stat().st_mtime):
+            return result
+        if baseline:
+            return baseline
 
     rao_dir = ctx.workdir / "rename_and_orient"
     if rao_dir.exists():
@@ -489,19 +514,13 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     }
 
     if ctx.tracker:
-        for step in (
-            "rename_and_orient",
-            "rename_and_orient_hap2",
-            "microchromosome_combine",
-            "pretext_to_asm",
-        ):
-            for k in (
-                f"{hap_prefix}_chr_list",
-                f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_chr_list",
-            ):
-                val = ctx.tracker.get_output(step, k)
-                if val and Path(val).exists():
-                    return Path(val)
+        keys = [f"{hap_prefix}_chr_list", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_chr_list"]
+        baseline = _latest_tracked_output(ctx, ["microchromosome_combine", "pretext_to_asm"], keys)
+        result = _latest_tracked_output(ctx, ["rename_and_orient", "rename_and_orient_hap2"], keys)
+        if result and (baseline is None or result.stat().st_mtime > baseline.stat().st_mtime):
+            return result
+        if baseline:
+            return baseline
 
     def _search_dir(directory: Path, token: str) -> list[str]:
         return glob.glob(str(directory / f"{ctx.tol_id}.{token}.*.chromosome.list.csv"))
