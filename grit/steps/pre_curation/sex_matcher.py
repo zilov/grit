@@ -29,8 +29,8 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-# tol_id prefixes that typically require sex-matching (insects and similar)
-_INSECT_PREFIXES = ("ic", "il", "id")
+# tol_id prefixes that typically require sex-matching (insects, nematodes, and similar)
+_INSECT_PREFIXES = ("ic", "il", "id", "n")
 
 # Path to the bundled sex-matcher script
 _SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
@@ -47,7 +47,8 @@ def run_sex_matcher(ctx: CurationContext) -> None:
     Runs sex_matcher (``sex`` command) in the workdir and prints the BUSCO summary.
 
     Applicable for insects and similar clades (tol_id starting with ``ic``, ``il``,
-    ``id``).  Aborts with an error if the tol_id does not match a known insect prefix.
+    ``id``) and nematodes (tol_id starting with ``n``).  Aborts with an error if the
+    tol_id does not match a known prefix.
 
     Notebook source: ``pre_and_post_curation()`` — sex-matcher section.
 
@@ -76,8 +77,8 @@ def run_sex_matcher(ctx: CurationContext) -> None:
     tol_id_lower = ctx.tol_id.lower()
     if not any(tol_id_lower.startswith(p) for p in _INSECT_PREFIXES):
         log.error(
-            "tol_id '%s' does not start with a known insect prefix (%s). "
-            "Sex-matcher is only for insects — aborting.",
+            "tol_id '%s' does not start with a known prefix (%s). "
+            "Sex-matcher is only for insects and nematodes — aborting.",
             ctx.tol_id,
             ", ".join(_INSECT_PREFIXES),
         )
