@@ -5,6 +5,7 @@ from __future__ import annotations
 import glob
 import logging
 from pathlib import Path
+from typing import Callable
 
 import rich_click as click
 
@@ -44,16 +45,22 @@ def _run_pretext_to_asm_core(
     agp_search_dir: Path,
     out_fa_name: str,
     output_specs: list[tuple[str, str, list[str]]],
+    *,
+    agp_glob: str | None = None,
+    output_transform: Callable[[Path], None] | None = None,
 ) -> Path:
     """
     Runs pretext-to-asm for one (original_fa, agp) pair under a tracked step.
 
-    Looks for ``{tol_id}*.agp*`` in *agp_search_dir*, runs pretext-to-asm, and
+    Looks for *agp_glob* (default ``{tol_id}*.agp*``) in *agp_search_dir*, runs
+    pretext-to-asm, optionally calls *output_transform(run_dir)* to let the
+    caller write extra files into run_dir before outputs are collected, and
     records outputs via *output_specs* under *step_name*. Returns the run_dir
     (which may be a prior run's dir if the step was skipped as already done).
 
-    Shared by ``run_pretext_to_asm`` (main assembly) and
-    ``run_microchromosome_combine`` (micro-assembly small chromosomes).
+    Shared by ``run_pretext_to_asm`` (main assembly), ``run_microchromosome_combine``
+    (micro-assembly small chromosomes), and ``run_pretext_to_asm_recurate``
+    (re-curation of an already-remapped map).
     """
     # Check for existing successful run; re-run if AGP or original.fa is newer than curated FASTA
     if not ctx.print_only and ctx.tracker:
@@ -84,7 +91,7 @@ def _run_pretext_to_asm_core(
         raise FileNotFoundError(original_fa_missing_msg)
 
     # AGP is uploaded by the user to agp_search_dir
-    agp_pattern = str(agp_search_dir / f"{ctx.tol_id}*.agp*")
+    agp_pattern = str(agp_search_dir / (agp_glob or f"{ctx.tol_id}*.agp*"))
     if ctx.print_only:
         agp_path = agp_pattern
         log.info("AGP (pattern): %s", agp_path)
@@ -110,6 +117,8 @@ def _run_pretext_to_asm_core(
     )
     try:
         _run(cmd, ctx.print_only, capture=False)
+        if output_transform and not ctx.print_only:
+            output_transform(run_dir)
         if ctx.tracker:
             outputs = collect_outputs(
                 output_specs, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
