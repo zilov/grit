@@ -377,6 +377,14 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     }
 
     if ctx.tracker:
+        recurate_step = (
+            "pretext_to_asm_recurate_hap2" if hap_prefix == ctx.hap2_prefix else "pretext_to_asm_recurate"
+        )
+        val = ctx.tracker.get_output(recurate_step, f"{hap_prefix}_fa")
+        if val and Path(val).exists():
+            return Path(val)
+
+    if ctx.tracker:
         keys = [f"{hap_prefix}_fa", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_fa"]
         baseline = _latest_tracked_output(ctx, ["microchromosome_combine", "pretext_to_asm"], keys)
         result = _latest_tracked_output(
@@ -430,6 +438,14 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
         "alternate": "hap2",
         "maternal": "hap2",
     }
+
+    if ctx.tracker:
+        recurate_step = (
+            "pretext_to_asm_recurate_hap2" if hap_prefix == ctx.hap2_prefix else "pretext_to_asm_recurate"
+        )
+        val = ctx.tracker.get_output(recurate_step, f"{hap_prefix}_haplotigs")
+        if val and Path(val).exists():
+            return Path(val)
 
     if ctx.tracker:
         for step in ("pretext_to_asm",):
@@ -512,6 +528,14 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
         "alternate": "hap2",
         "maternal": "hap2",
     }
+
+    if ctx.tracker:
+        recurate_step = (
+            "pretext_to_asm_recurate_hap2" if hap_prefix == ctx.hap2_prefix else "pretext_to_asm_recurate"
+        )
+        val = ctx.tracker.get_output(recurate_step, f"{hap_prefix}_chr_list")
+        if val and Path(val).exists():
+            return Path(val)
 
     if ctx.tracker:
         keys = [f"{hap_prefix}_chr_list", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_chr_list"]

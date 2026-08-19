@@ -242,3 +242,82 @@ def test_result_tier_wins_mtime_tie_with_baseline_tier(mock_ctx, tmp_path):
     os.utime(bc_fa, (5000, 5000))
 
     assert find_canonical_fa(mock_ctx, "hap1") == bc_fa
+
+
+def test_recurate_wins_unconditionally_over_newer_rename_and_orient(mock_ctx, tmp_path):
+    """Recuration is a fixed top tier — it wins even if rename_and_orient is
+    re-run afterward with a newer mtime (unlike the mtime-tiered chain below it)."""
+    import os
+
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    recurate_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-01T00_00_00"
+    recurate_fa = _write(recurate_dir / f"{mock_ctx.tol_id}.1.primary.curated.fa")
+    tracker.finish(
+        "pretext_to_asm_recurate", recurate_dir, "success", outputs={"hap1_fa": str(recurate_fa)}
+    )
+
+    rao_dir = tmp_path / "rename_and_orient" / "2026-01-02T00_00_00"
+    rao_fa = _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+    tracker.finish("rename_and_orient", rao_dir, "success", outputs={"hap1_fa": str(rao_fa)})
+
+    os.utime(recurate_fa, (1000, 1000))
+    os.utime(rao_fa, (2000, 2000))  # newer, but must still lose to recurate
+
+    assert find_canonical_fa(mock_ctx, "hap1") == recurate_fa
+
+
+def test_recurate_absent_falls_through_to_existing_chain(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
+    pta_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_fa": str(pta_fa)})
+
+    assert find_canonical_fa(mock_ctx, "hap1") == pta_fa
+
+
+def test_recurate_is_per_hap_independent(mock_ctx, tmp_path):
+    """hap1 recurated, hap2 did not — hap2 must still resolve via the normal chain."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    recurate_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-01T00_00_00"
+    recurate_fa = _write(recurate_dir / f"{mock_ctx.tol_id}.1.primary.curated.fa")
+    tracker.finish(
+        "pretext_to_asm_recurate", recurate_dir, "success", outputs={"hap1_fa": str(recurate_fa)}
+    )
+
+    pta_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
+    pta_hap2_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap2.1.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap2_fa": str(pta_hap2_fa)})
+
+    assert find_canonical_fa(mock_ctx, "hap1") == recurate_fa
+    assert find_canonical_fa(mock_ctx, "hap2") == pta_hap2_fa
+
+
+def test_untracking_recurate_falls_back_to_pre_recuration_chain(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
+    pta_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_fa": str(pta_fa)})
+
+    recurate_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-02T00_00_00"
+    recurate_fa = _write(recurate_dir / f"{mock_ctx.tol_id}.1.primary.curated.fa")
+    tracker.finish(
+        "pretext_to_asm_recurate", recurate_dir, "success", outputs={"hap1_fa": str(recurate_fa)}
+    )
+    assert find_canonical_fa(mock_ctx, "hap1") == recurate_fa
+
+    tracker.untrack("pretext_to_asm_recurate")
+    assert find_canonical_fa(mock_ctx, "hap1") == pta_fa
+
+
+def test_recurate_hap2_step_name_used_for_hap2(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    recurate_dir = tmp_path / "pretext_to_asm_recurate_hap2" / "2026-01-01T00_00_00"
+    recurate_fa = _write(recurate_dir / f"{mock_ctx.tol_id}.1.primary.curated.fa")
+    tracker.finish(
+        "pretext_to_asm_recurate_hap2",
+        recurate_dir,
+        "success",
+        outputs={"hap2_fa": str(recurate_fa)},
+    )
+
+    assert find_canonical_fa(mock_ctx, "hap2") == recurate_fa
