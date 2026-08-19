@@ -382,7 +382,7 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
         result = _latest_tracked_output(
             ctx, ["rename_and_orient", "rename_and_orient_hap2", "blast_contaminants"], keys
         )
-        if result and (baseline is None or result.stat().st_mtime > baseline.stat().st_mtime):
+        if result and (baseline is None or result.stat().st_mtime >= baseline.stat().st_mtime):
             return result
         if baseline:
             return baseline
@@ -517,7 +517,7 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
         keys = [f"{hap_prefix}_chr_list", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_chr_list"]
         baseline = _latest_tracked_output(ctx, ["microchromosome_combine", "pretext_to_asm"], keys)
         result = _latest_tracked_output(ctx, ["rename_and_orient", "rename_and_orient_hap2"], keys)
-        if result and (baseline is None or result.stat().st_mtime > baseline.stat().st_mtime):
+        if result and (baseline is None or result.stat().st_mtime >= baseline.stat().st_mtime):
             return result
         if baseline:
             return baseline

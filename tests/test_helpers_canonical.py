@@ -222,3 +222,23 @@ def test_microchromosome_combine_rerun_after_blast_contaminants_wins(mock_ctx, t
     os.utime(combine_fa, (2000, 2000))
 
     assert find_canonical_fa(mock_ctx, "hap1") == combine_fa
+
+
+def test_result_tier_wins_mtime_tie_with_baseline_tier(mock_ctx, tmp_path):
+    """On an exact mtime tie between result tier and baseline tier, result tier wins."""
+    import os
+
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
+    pta_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_fa": str(pta_fa)})
+
+    bc_dir = tmp_path / "blast_contaminants" / "2026-01-02T00_00_00"
+    bc_fa = _write(bc_dir / f"{mock_ctx.tol_id}.hap1.1.decontaminated.fa")
+    tracker.finish("blast_contaminants", bc_dir, "success", outputs={"hap1_fa": str(bc_fa)})
+
+    # Set both to identical mtime
+    os.utime(pta_fa, (5000, 5000))
+    os.utime(bc_fa, (5000, 5000))
+
+    assert find_canonical_fa(mock_ctx, "hap1") == bc_fa
