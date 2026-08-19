@@ -30,6 +30,14 @@ STEP_MANIFESTS: dict[str, dict] = {
         "dir": "run_dir",
         "files": ["{tol_id}*.curated.fa", "{tol_id}*.agp"],
     },
+    "pretext_to_asm_recurate": {
+        "dir": "run_dir",
+        "files": ["{tol_id}*.curated.fa"],
+    },
+    "pretext_to_asm_recurate_hap2": {
+        "dir": "run_dir",
+        "files": ["{tol_id}*.curated.fa"],
+    },
     "haplotig_files": {
         "dir": "run_dir",
         "files": ["{tol_id}*haplotigs*.fa"],
@@ -90,6 +98,8 @@ STEP_TO_STATUS: dict[str, str] = {
     "agp_copied": "post_curation",
     "find_reference": "post_curation",
     "pretext_to_asm": "post_curation",
+    "pretext_to_asm_recurate": "post_curation",
+    "pretext_to_asm_recurate_hap2": "post_curation",
     "pretext_to_asm_micro": "post_curation",
     "microchromosome_combine": "post_curation",
     "haplotig_files": "post_curation",
