@@ -10,8 +10,11 @@ built (e.g. a KeyError in an f-string, a missing ctx field).
 
 Deliberately excludes commands that check for a prior step's real output
 even in --print-only mode (add-gap-track, add-telo-track, fastga,
-blast-contaminants, hic-remapping, rename-and-orient — each raises
-FileNotFoundError against genuine farm paths) and sex-matcher (this fixture's
+blast-contaminants, hic-remapping, rename-and-orient,
+pretext-to-asm-recurate, post-curation-recurate — each raises
+FileNotFoundError against genuine farm paths; the two recurate commands call
+find_canonical_fa even under --print-only, so they are covered by cheap --help
+tests instead) and sex-matcher (this fixture's
 tol_id is an algae, not an insect, so it correctly exits 1 by design). Those
 require actual prior pipeline output and are covered by
 tests/local_smoke_test.sh run manually on the farm, not by this hermetic test.
@@ -68,6 +71,8 @@ def test_primary_command_print_only(command):
     _assert_clean(_invoke(PRIMARY_YAML, command))
 
 
-def test_cli_help():
-    result = CliRunner().invoke(cli, ["--help"])
+@pytest.mark.parametrize("command", ["", "pretext-to-asm-recurate", "post-curation-recurate"])
+def test_cli_help(command):
+    args = [command, "--help"] if command else ["--help"]
+    result = CliRunner().invoke(cli, args)
     assert result.exit_code == 0
