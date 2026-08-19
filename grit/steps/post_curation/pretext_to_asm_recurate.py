@@ -30,19 +30,33 @@ _NEW_HAPLOTIGS_GLOBS = (
 )
 
 
-def _output_specs_for_hap(hap_prefix: str) -> list[tuple[str, str, list[str]]]:
+def _merged_haplotigs_name(ctx: CurationContext, hap_prefix: str) -> str:
+    """Filename for the merged (prior + new) haplotig FASTA of one haplotype."""
+    return f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.all_haplotigs.curated.fa"
+
+
+def _output_specs_for_hap(
+    ctx: CurationContext, hap_prefix: str
+) -> list[tuple[str, str, list[str]]]:
     return [
+        # hap-qualified naming first; the primary/unprefixed pattern below is only
+        # tried if this found nothing (collect_outputs dedups by key).
+        (
+            f"{hap_prefix}_fa",
+            f"{{tol_id}}.{hap_prefix}.*.curated.fa",
+            ["all_haplotigs", "additional_haplotigs"],
+        ),
         (
             f"{hap_prefix}_fa",
             "{tol_id}.*.primary.curated.fa",
             ["hap1", "hap2", "all_haplotigs", "additional_haplotigs"],
         ),
         (f"{hap_prefix}_chr_list", "{tol_id}.*.primary.chromosome.list.csv", []),
-        (f"{hap_prefix}_haplotigs", f"{hap_prefix}.recurate_haplotigs.fa", []),
+        (f"{hap_prefix}_haplotigs", _merged_haplotigs_name(ctx, hap_prefix), []),
     ]
 
 
-def _merge_haplotigs_transform(hap_prefix: str, prior_haplotigs: Path | None):
+def _merge_haplotigs_transform(merged_name: str, prior_haplotigs: Path | None):
     """Build the output_transform hook that merges haplotigs before collect_outputs runs."""
 
     def _transform(run_dir: Path) -> None:
@@ -63,7 +77,7 @@ def _merge_haplotigs_transform(hap_prefix: str, prior_haplotigs: Path | None):
         if not prior_nonempty and not new_nonempty:
             return  # nothing to track
 
-        merged_path = run_dir / f"{hap_prefix}.recurate_haplotigs.fa"
+        merged_path = run_dir / merged_name
         if prior_nonempty and new_nonempty:
             merged_path.write_text(prior_haplotigs.read_text() + new_haplotigs.read_text())
         elif prior_nonempty:
@@ -103,18 +117,39 @@ def run_pretext_to_asm_recurate(ctx: CurationContext, hap_prefix: str, step_name
 
     original_fa = find_canonical_fa(ctx, hap_prefix)
     agp_search_dir = ctx.workdir / "recurate"
+    if not ctx.print_only:
+        agp_search_dir.mkdir(parents=True, exist_ok=True)
+    print_tip(
+        "Expected AGP location and naming for this step:\n"
+        f"[bold cyan]{agp_search_dir}/{ctx.tol_id}.{hap_prefix}.recurate.agp[/bold cyan]\n"
+        f"(any filename matching {ctx.tol_id}*{hap_prefix}*.agp* works)"
+    )
 
-    return _run_pretext_to_asm_core(
+    merged_name = _merged_haplotigs_name(ctx, hap_prefix)
+    run_dir = _run_pretext_to_asm_core(
         ctx,
         step_name,
         original_fa,
         f"No canonical FASTA found for {hap_prefix!r}. Run pretext-to-asm first.",
         agp_search_dir,
         f"{ctx.tol_id}.fa",
-        _output_specs_for_hap(hap_prefix),
+        _output_specs_for_hap(ctx, hap_prefix),
         agp_glob=f"{ctx.tol_id}*{hap_prefix}*.agp*",
-        output_transform=_merge_haplotigs_transform(hap_prefix, prior_haplotigs),
+        output_transform=_merge_haplotigs_transform(merged_name, prior_haplotigs),
     )
+
+    # A missing FASTA output would silently leave canonical resolution pointing at
+    # pre-recuration data while this step reports success — fail loudly instead.
+    if not ctx.print_only and ctx.tracker:
+        if not ctx.tracker.get_output(step_name, f"{hap_prefix}_fa"):
+            raise FileNotFoundError(
+                f"pretext-to-asm-recurate produced no curated FASTA for {hap_prefix!r} in "
+                f"{run_dir}. Expected {ctx.tol_id}.{hap_prefix}.*.curated.fa or "
+                f"{ctx.tol_id}.*.primary.curated.fa — canonical file resolution would "
+                "silently fall back to pre-recuration output."
+            )
+
+    return run_dir
 
 
 # ---------------------------------------------------------------------------
