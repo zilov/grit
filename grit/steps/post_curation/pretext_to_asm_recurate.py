@@ -22,7 +22,8 @@ _RECURATE_TIP = (
     "blast-contaminants, rename-and-orient, or microchromosome-combine "
     "with stale input afterward. If you need to run those steps, "
     "it's now a supported forward-chain (no grit untrack needed).\n"
-    "To reverse this: grit untrack --step {step_name} -t <ticket>"
+    "To remove this recurate output from the pool entirely: "
+    "grit untrack --step {step_name} -t <ticket>"
 )
 
 _NEW_HAPLOTIGS_GLOBS = (
