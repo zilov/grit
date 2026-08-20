@@ -9,7 +9,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _clean_species_name, _run, find_curated_fa
+from grit.utils.helpers import _clean_species_name, _run, find_canonical_fa
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -35,9 +35,8 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     Run blast contaminants search in shrapnel scaffolds, once per haplotype.
 
     This step identifies potential contaminants in the curated assembly by blasting
-    scaffolds against a database and filtering based on taxonomic lineage. It always
-    reads the raw ``pretext_to_asm`` output as input (never a previous
-    ``blast_contaminants`` run's own output) and writes a distinctly-named
+    scaffolds against a database and filtering based on taxonomic lineage. It reads
+    whatever is currently canonical for this haplotype and writes a distinctly-named
     decontaminated FASTA into its own run_dir — the original curated FASTA is never
     modified or moved, so re-running or invalidating this step cannot lose data.
 
@@ -92,9 +91,10 @@ def _blast_contaminants_for_hap(
     target_phylum = lineage_parts[3] if len(lineage_parts) > 3 else "Unknown"
     log.info("[%s] Target phylum: %s", hap_prefix, target_phylum)
 
-    # 1. Find this haplotype's curated FASTA from pretext_to_asm — always the raw
-    #    output, never a previous blast_contaminants run's own decontaminated FASTA.
-    curated_fasta = find_curated_fa(ctx, hap_prefix)
+    # 1. Find this haplotype's currently canonical FASTA — whatever step most
+    #    recently produced it (pretext_to_asm, microchromosome_combine, a previous
+    #    rename_and_orient/blast_contaminants, or a recurate run).
+    curated_fasta = find_canonical_fa(ctx, hap_prefix)
     log.info("[%s] Curated FASTA: %s", hap_prefix, curated_fasta)
 
     # 2. Create blast.me file
@@ -109,6 +109,19 @@ def _blast_contaminants_for_hap(
         f"perl -nE 'say \"true,$1\" if /([HAP_\\d]*SCAFFOLD_\\d+)/i' {curated_fasta} >> {blast_me}"
     )
     _run(extract_cmd, ctx.print_only)
+
+    if not ctx.print_only:
+        lines = blast_me.read_text().splitlines()
+        has_scaffold_lines = len(lines) > 1
+        if not has_scaffold_lines:
+            log.warning(
+                "[%s] No scaffold IDs extracted from %s — its headers don't look like "
+                "pretext_to_asm SCAFFOLD names, so no contaminant scaffolds could be "
+                "identified. This will produce a copy of the input with no scaffolds "
+                "removed.",
+                hap_prefix,
+                curated_fasta,
+            )
 
     # 3. Run decon_blastBTK
     blast_out_dir = ctx.workdir / f"blast_out_dir_{hap_prefix}"

@@ -5,14 +5,12 @@ from unittest.mock import patch
 
 import pytest
 
-from grit.core.registry import RegistryManager
-from grit.core.run_tracker import RunTracker
 from grit.steps.optional.rename_and_orient import run_rename_and_orient
 
 
 @patch("grit.steps.optional.rename_and_orient._submit_bsub")
 @patch("grit.steps.optional.rename_and_orient.glob.glob")
-@patch("grit.steps.optional.rename_and_orient.find_curated_fa")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
 def test_run_rename_and_orient_submits_bsub(mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path / "workdir"
     mock_ctx.tol_id = "sDipInt39"
@@ -39,7 +37,7 @@ def test_run_rename_and_orient_submits_bsub(mock_find_fa, mock_glob, mock_bsub, 
 
 @patch("grit.steps.optional.rename_and_orient._submit_bsub")
 @patch("grit.steps.optional.rename_and_orient.glob.glob")
-@patch("grit.steps.optional.rename_and_orient.find_curated_fa")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
 def test_run_rename_and_orient_print_only_mode(
     mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path
 ):
@@ -61,7 +59,7 @@ def test_run_rename_and_orient_print_only_mode(
     assert mock_bsub.call_args[0][2] is True  # print_only argument
 
 
-@patch("grit.steps.optional.rename_and_orient.find_curated_fa")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
 def test_run_rename_and_orient_raises_when_no_curated_fasta(mock_find_fa, mock_ctx):
     mock_ctx.workdir = Path("/fake/workdir")
     mock_ctx.tol_id = "sDipInt39"
@@ -76,7 +74,7 @@ def test_run_rename_and_orient_raises_when_no_curated_fasta(mock_find_fa, mock_c
 
 
 @patch("grit.steps.optional.rename_and_orient.glob.glob")
-@patch("grit.steps.optional.rename_and_orient.find_curated_fa")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
 def test_run_rename_and_orient_raises_when_no_paf(mock_find_fa, mock_glob, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path / "workdir"
     mock_ctx.tol_id = "sDipInt39"
@@ -93,7 +91,7 @@ def test_run_rename_and_orient_raises_when_no_paf(mock_find_fa, mock_glob, mock_
 
 @patch("grit.steps.optional.rename_and_orient._submit_bsub")
 @patch("grit.steps.optional.rename_and_orient.glob.glob")
-@patch("grit.steps.optional.rename_and_orient.find_curated_fa")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
 def test_run_rename_and_orient_hap2_waits_for_mapping_tsv(
     mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path
 ):
@@ -117,7 +115,7 @@ def test_run_rename_and_orient_hap2_waits_for_mapping_tsv(
 
 @patch("grit.steps.optional.rename_and_orient._submit_bsub")
 @patch("grit.steps.optional.rename_and_orient.glob.glob")
-@patch("grit.steps.optional.rename_and_orient.find_curated_fa")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
 def test_run_rename_and_orient_hap2_submits_when_mapping_tsv_exists(
     mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path
 ):
@@ -148,43 +146,28 @@ def test_run_rename_and_orient_hap2_submits_when_mapping_tsv_exists(
 
 @patch("grit.steps.optional.rename_and_orient._submit_bsub")
 @patch("grit.steps.optional.rename_and_orient.glob.glob")
-@patch("grit.steps.optional.rename_and_orient.find_curated_fa")
-def test_run_rename_and_orient_prefers_blast_contaminants_output(
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_run_rename_and_orient_uses_canonical_fa(
     mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path
 ):
-    """When blast_contaminants has run, its decontaminated FASTA must be used
-    as --fasta instead of the raw pretext_to_asm output from find_curated_fa."""
+    """Input FASTA comes from find_canonical_fa — whatever is currently canonical
+    for this haplotype (pretext_to_asm, microchromosome_combine, blast_contaminants,
+    or a recurate output) — not a hand-rolled lookup local to this step."""
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.hap1_prefix = "hap1"
     mock_ctx.hap2_prefix = "hap2"
     mock_ctx.print_only = False
 
-    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
-    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
-    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
-
-    decontaminated_fa = (
-        tmp_path
-        / "blast_contaminants"
-        / "2026-01-01T00_00_00"
-        / "sDipInt39.hap1.1.decontaminated.fa"
-    )
-    decontaminated_fa.parent.mkdir(parents=True)
-    decontaminated_fa.write_text(">seq\n")
-    bc_run_dir = tmp_path / "blast_contaminants" / "2026-01-01T00_00_00"
-    mock_ctx.tracker.finish(
-        "blast_contaminants", bc_run_dir, "success", outputs={"hap1_fa": str(decontaminated_fa)}
-    )
-
-    # find_curated_fa (the raw pretext_to_asm fallback) must NOT be used here
-    mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
+    canonical_fa = tmp_path / "sDipInt39.hap1.1.decontaminated.fa"
+    canonical_fa.write_text(">seq\n")
+    mock_find_fa.return_value = canonical_fa
     paf_file = tmp_path / "fastga" / "sDipInt39_vs_ref.FastGA.paf"
     mock_glob.return_value = [str(paf_file)]
     mock_bsub.return_value = "12345"
 
     run_rename_and_orient(mock_ctx)
 
-    mock_find_fa.assert_not_called()
+    mock_find_fa.assert_called_once_with(mock_ctx, "hap1")
     cmd = mock_bsub.call_args[0][0]
-    assert str(decontaminated_fa) in cmd
+    assert str(canonical_fa) in cmd
