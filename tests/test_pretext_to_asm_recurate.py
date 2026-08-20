@@ -216,7 +216,7 @@ def test_prints_ordering_tip(mock_find_fa, mock_glob, mock_run, mock_ctx, tmp_pa
     run_pretext_to_asm_recurate(mock_ctx, "hap1", "pretext_to_asm_recurate")
 
     out = capsys.readouterr().out
-    assert "canonical priority" in out
+    assert "flat mtime" in out
 
 
 @patch("grit.steps.post_curation.pretext_to_asm._run")
