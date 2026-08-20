@@ -128,6 +128,42 @@ def test_untracking_blast_contaminants_falls_back_to_pretext_to_asm(mock_ctx, tm
     assert find_canonical_fa(mock_ctx, "hap1") == pta_fa
 
 
+def test_untracking_microchromosome_combine_falls_back_to_pretext_to_asm(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
+    pta_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_fa": str(pta_fa)})
+
+    combine_dir = tmp_path / "microchromosome_combine" / "2026-01-02T00_00_00"
+    combine_fa = _write(combine_dir / f"{mock_ctx.tol_id}.hap1.fa")
+    tracker.finish(
+        "microchromosome_combine", combine_dir, "success", outputs={"hap1_fa": str(combine_fa)}
+    )
+    assert find_canonical_fa(mock_ctx, "hap1") == combine_fa
+
+    tracker.untrack("microchromosome_combine")
+    assert find_canonical_fa(mock_ctx, "hap1") == pta_fa
+
+
+def test_untracking_rename_and_orient_falls_back_to_next_freshest(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
+    pta_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_fa": str(pta_fa)})
+
+    bc_dir = tmp_path / "blast_contaminants" / "2026-01-02T00_00_00"
+    bc_fa = _write(bc_dir / f"{mock_ctx.tol_id}.hap1.1.decontaminated.fa")
+    tracker.finish("blast_contaminants", bc_dir, "success", outputs={"hap1_fa": str(bc_fa)})
+
+    rao_dir = tmp_path / "rename_and_orient" / "2026-01-03T00_00_00"
+    rao_fa = _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+    tracker.finish("rename_and_orient", rao_dir, "success", outputs={"hap1_fa": str(rao_fa)})
+    assert find_canonical_fa(mock_ctx, "hap1") == rao_fa
+
+    tracker.untrack("rename_and_orient")
+    assert find_canonical_fa(mock_ctx, "hap1") == bc_fa
+
+
 def test_find_curated_fa_does_not_fall_back_to_unprefixed_for_dual_hap(mock_ctx, tmp_path):
     """hap1/hap2 YAML but the curator never split haplotypes, so pretext-to-asm
     produced only an unprefixed (primary-style) fa. Must raise, not silently
@@ -224,8 +260,9 @@ def test_microchromosome_combine_rerun_after_blast_contaminants_wins(mock_ctx, t
     assert find_canonical_fa(mock_ctx, "hap1") == combine_fa
 
 
-def test_result_tier_wins_mtime_tie_with_baseline_tier(mock_ctx, tmp_path):
-    """On an exact mtime tie between result tier and baseline tier, result tier wins."""
+def test_pool_tie_break_favors_first_listed_step(mock_ctx, tmp_path):
+    """On an exact mtime tie between two pool members, the first-listed step
+    (pretext_to_asm, earlier in the flat pool order) wins."""
     import os
 
     tracker = _make_tracker(tmp_path, mock_ctx)
@@ -241,12 +278,34 @@ def test_result_tier_wins_mtime_tie_with_baseline_tier(mock_ctx, tmp_path):
     os.utime(pta_fa, (5000, 5000))
     os.utime(bc_fa, (5000, 5000))
 
+    assert find_canonical_fa(mock_ctx, "hap1") == pta_fa
+
+
+def test_blast_contaminants_after_recurate_with_newer_mtime_wins(mock_ctx, tmp_path):
+    """blast_contaminants run after pretext_to_asm_recurate, with a newer mtime,
+    correctly becomes canonical — recuration is no longer an unconditional top tier."""
+    import os
+
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    recurate_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-01T00_00_00"
+    recurate_fa = _write(recurate_dir / f"{mock_ctx.tol_id}.1.primary.curated.fa")
+    tracker.finish(
+        "pretext_to_asm_recurate", recurate_dir, "success", outputs={"hap1_fa": str(recurate_fa)}
+    )
+
+    bc_dir = tmp_path / "blast_contaminants" / "2026-01-02T00_00_00"
+    bc_fa = _write(bc_dir / f"{mock_ctx.tol_id}.hap1.1.decontaminated.fa")
+    tracker.finish("blast_contaminants", bc_dir, "success", outputs={"hap1_fa": str(bc_fa)})
+
+    os.utime(recurate_fa, (1000, 1000))
+    os.utime(bc_fa, (2000, 2000))
+
     assert find_canonical_fa(mock_ctx, "hap1") == bc_fa
 
 
-def test_recurate_wins_unconditionally_over_newer_rename_and_orient(mock_ctx, tmp_path):
-    """Recuration is a fixed top tier — it wins even if rename_and_orient is
-    re-run afterward with a newer mtime (unlike the mtime-tiered chain below it)."""
+def test_rename_and_orient_after_recurate_with_newer_mtime_wins(mock_ctx, tmp_path):
+    """rename_and_orient run after pretext_to_asm_recurate, with a newer mtime,
+    correctly becomes canonical."""
     import os
 
     tracker = _make_tracker(tmp_path, mock_ctx)
@@ -261,9 +320,31 @@ def test_recurate_wins_unconditionally_over_newer_rename_and_orient(mock_ctx, tm
     tracker.finish("rename_and_orient", rao_dir, "success", outputs={"hap1_fa": str(rao_fa)})
 
     os.utime(recurate_fa, (1000, 1000))
-    os.utime(rao_fa, (2000, 2000))  # newer, but must still lose to recurate
+    os.utime(rao_fa, (2000, 2000))
 
-    assert find_canonical_fa(mock_ctx, "hap1") == recurate_fa
+    assert find_canonical_fa(mock_ctx, "hap1") == rao_fa
+
+
+def test_pretext_to_asm_rerun_after_recurate_with_newer_mtime_wins(mock_ctx, tmp_path):
+    """A fresh pretext_to_asm re-run correctly wins back over a stale recurate
+    output, matching the recency-wins model applied to the rest of the pool."""
+    import os
+
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    recurate_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-01T00_00_00"
+    recurate_fa = _write(recurate_dir / f"{mock_ctx.tol_id}.1.primary.curated.fa")
+    tracker.finish(
+        "pretext_to_asm_recurate", recurate_dir, "success", outputs={"hap1_fa": str(recurate_fa)}
+    )
+
+    pta_dir = tmp_path / "pretext_to_asm" / "2026-01-02T00_00_00"
+    pta_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_fa": str(pta_fa)})
+
+    os.utime(recurate_fa, (1000, 1000))
+    os.utime(pta_fa, (2000, 2000))
+
+    assert find_canonical_fa(mock_ctx, "hap1") == pta_fa
 
 
 def test_recurate_absent_falls_through_to_existing_chain(mock_ctx, tmp_path):
