@@ -2,10 +2,17 @@
 
 from unittest.mock import patch
 
+from grit.core.context import CurationContext
 from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
-from grit.core.status import _print_less_tips, _print_scp_tips, show_ticket_history
-from tests.conftest import TEST_USER_CONFIG
+from grit.core.status import (
+    _canonical_haps,
+    _print_less_tips,
+    _print_scp_tips,
+    _resolve_canonical_files,
+    show_ticket_history,
+)
+from tests.conftest import TEST_USER_CONFIG, TEST_YAML_HAP1
 
 
 @patch("grit.core.status.print_tip")
@@ -301,3 +308,104 @@ def test_show_ticket_history_resolves_done_job_without_waiting_for_gone(
 
     history = tracker.history("hic_remapping")
     assert history[-1]["status"] == "success"
+
+
+def test_canonical_haps_dual_hap():
+    ctx = CurationContext.from_yaml("RC-1234", TEST_YAML_HAP1, TEST_USER_CONFIG)
+    assert _canonical_haps(ctx) == ["hap1", "hap2"]
+
+
+def test_resolve_canonical_files_missing_returns_none_per_type(mock_ctx):
+    mock_ctx.tracker = None  # no tracker, no filesystem outputs anywhere
+
+    resolved = _resolve_canonical_files(mock_ctx, _canonical_haps(mock_ctx))
+
+    assert set(resolved.keys()) == {"hap1", "hap2"}
+    for by_type in resolved.values():
+        assert by_type == {"fa": None, "haplotigs": None, "chr_list": None}
+
+
+def test_resolve_canonical_files_finds_curated_fa(tmp_path, mock_ctx):
+    mock_ctx.tracker = None
+    mock_ctx.workdir = tmp_path
+    pta_dir = tmp_path / "pretext_to_asm" / "2025-06-02T14_00_00"
+    pta_dir.mkdir(parents=True)
+    fa_file = pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa"
+    fa_file.write_text(">seq\nACGT\n")
+
+    resolved = _resolve_canonical_files(mock_ctx, ["hap1"])
+
+    assert resolved["hap1"]["fa"] == fa_file
+    # No haplotigs/chr-list files were created here.
+    assert resolved["hap1"]["haplotigs"] is None
+    assert resolved["hap1"]["chr_list"] is None
+
+
+def _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id="sDipInt39"):
+    """Build a workdir + registry + a CurationContext wired to the same tracker,
+    and patch CurationContext.from_ticket (as called inside show_ticket_history)
+    to return it — avoiding real Jira access."""
+    registry_dir = tmp_path / ".grit_reg"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=registry_dir)
+    reg.add_ticket("RC-1234", tol_id, "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+
+    ctx = CurationContext.from_yaml("RC-1234", TEST_YAML_HAP1, TEST_USER_CONFIG)
+    ctx.workdir = workdir
+    ctx.tol_id = tol_id
+    ctx.tracker = RunTracker(workdir, registry=reg)
+
+    monkeypatch.setattr(
+        "grit.core.context.CurationContext.from_ticket",
+        classmethod(lambda cls, *a, **kw: ctx),
+    )
+    return reg, tracker
+
+
+def test_show_ticket_history_marks_step_holding_canonical_output(tmp_path, monkeypatch, capsys):
+    tol_id = "sDipInt39"
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    pta_dir = tracker.start("pretext_to_asm", "RC-1234", tol_id)
+    fa_file = pta_dir / f"{tol_id}.hap1.1.curated.fa"
+    fa_file.write_text(">seq\nACGT\n")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_fa": str(fa_file)})
+
+    fastga_dir = tracker.start("fastga", "RC-1234", tol_id)
+    other_file = fastga_dir / "other.paf"
+    other_file.write_text("x")
+    tracker.finish("fastga", fastga_dir, "success", outputs={"paf": str(other_file)})
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    lines = out.splitlines()
+
+    pta_line = next(line for line in lines if "pretext_to_asm" in line and "success" in line)
+    fastga_line = next(line for line in lines if "fastga" in line and "success" in line)
+
+    assert "★" in pta_line
+    assert "★" not in fastga_line
+
+
+def test_show_ticket_history_no_marker_when_no_outputs_recorded(tmp_path, monkeypatch, capsys):
+    tol_id = "sDipInt39"
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    run_dir = tracker.start("setup_curation", "RC-1234", tol_id)
+    tracker.finish("setup_curation", run_dir, "success")
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    lines = out.splitlines()
+
+    setup_line = next(line for line in lines if "setup_curation" in line)
+    agp_line = next(line for line in lines if "agp_copied" in line)
+
+    assert "★" not in setup_line
+    assert "★" not in agp_line

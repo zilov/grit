@@ -139,44 +139,72 @@ def show_summary(registry) -> None:
     )
 
 
-def _print_canonical_files(ctx) -> None:
-    """Print a table of canonical output files found for this ticket."""
+def _canonical_haps(ctx) -> list[str]:
+    """Haplotype prefixes to resolve canonical files for, given this ticket's assembly type."""
+    return (
+        [ctx.hap1_prefix]
+        if ctx.hap1_prefix in ("primary", "paternal")
+        else [ctx.hap1_prefix, ctx.hap2_prefix]
+    )
+
+
+def _resolve_canonical_files(ctx, haps: list[str]) -> dict[str, dict[str, Path | None]]:
+    """
+    Resolve the canonical fa/haplotigs/chr_list path per haplotype, keyed by
+    hap then by "fa"/"haplotigs"/"chr_list". A value is None when the
+    corresponding finder raised FileNotFoundError (nothing resolved yet).
+    """
     from grit.utils.helpers import (
         find_canonical_chr_list,
         find_canonical_fa,
         find_canonical_haplotigs,
     )
 
-    haps = (
-        [ctx.hap1_prefix]
-        if ctx.hap1_prefix in ("primary", "paternal")
-        else [ctx.hap1_prefix, ctx.hap2_prefix]
-    )
+    finders = {
+        "fa": find_canonical_fa,
+        "haplotigs": find_canonical_haplotigs,
+        "chr_list": find_canonical_chr_list,
+    }
 
+    resolved: dict[str, dict[str, Path | None]] = {}
+    for hap in haps:
+        resolved[hap] = {}
+        for key, finder in finders.items():
+            try:
+                resolved[hap][key] = finder(ctx, hap)
+            except FileNotFoundError:
+                resolved[hap][key] = None
+    return resolved
+
+
+_CANONICAL_TYPE_LABELS = {
+    "fa": "assembly FA",
+    "haplotigs": "haplotigs FA",
+    "chr_list": "chr list",
+}
+
+
+def _print_canonical_files(ctx, resolved: dict[str, dict[str, Path | None]]) -> None:
+    """Print a table of canonical output files found for this ticket."""
     table = Table(title="Canonical files", show_header=True, header_style="bold cyan")
     table.add_column("Hap")
     table.add_column("Type")
     table.add_column("File")
     table.add_column("Found", justify="center")
 
-    checks = [
-        ("assembly FA", find_canonical_fa),
-        ("haplotigs FA", find_canonical_haplotigs),
-        ("chr list", find_canonical_chr_list),
-    ]
-    for hap in haps:
-        for label, finder in checks:
-            try:
-                p = finder(ctx, hap)
+    for hap, by_type in resolved.items():
+        for key, label in _CANONICAL_TYPE_LABELS.items():
+            p = by_type.get(key)
+            if p is None:
+                found = "[red]✗[/red]"
+                path_str = "[dim]not found[/dim]"
+            else:
                 found = "[green]✓[/green]"
                 path_str = (
                     shorten_path(p, ctx.workdir)
                     if p.exists()
                     else f"[yellow]{shorten_path(p, ctx.workdir)}[/yellow]"
                 )
-            except FileNotFoundError:
-                found = "[red]✗[/red]"
-                path_str = "[dim]not found[/dim]"
             table.add_row(hap, label, path_str, found)
 
     console.print(table)
@@ -293,12 +321,17 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     except Exception as exc:
         console.print(f"[dim]Could not build curation context: {exc}[/dim]")
 
+    canonical_paths: set[str] = set()
     if ctx:
         from grit.steps.pre_curation.setup import print_curation_summary
 
         print_curation_summary(ctx)
         console.print()
-        _print_canonical_files(ctx)
+        resolved_canonical = _resolve_canonical_files(ctx, _canonical_haps(ctx))
+        _print_canonical_files(ctx, resolved_canonical)
+        canonical_paths = {
+            str(p) for by_type in resolved_canonical.values() for p in by_type.values() if p
+        }
 
     tracker = RunTracker(workdir)
     history = tracker.history()
@@ -330,6 +363,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     table.add_column("Runs", justify="right")
     table.add_column("Last Run")
     table.add_column("Status")
+    table.add_column("Canonical", justify="center")
     table.add_column("Job ID")
 
     memlimit_steps: list[str] = []
@@ -392,11 +426,15 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
         elif status == "untracked":
             style = "dim"
 
+        outputs = entry.get("outputs") or {}
+        is_canonical = any(v in canonical_paths for v in outputs.values())
+
         table.add_row(
             step,
             str(step_counts.get(step, 1)),
             ts,
             f"[{style}]{status}[/{style}]" if style else status,
+            "[green]★[/green]" if is_canonical else "",
             job_id,
         )
 
@@ -405,9 +443,9 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
         agp_mtime = datetime.datetime.fromtimestamp(agp_files[-1].stat().st_mtime).strftime(
             "%Y-%m-%dT%H:%M:%S"
         )
-        table.add_row("agp_copied", "-", agp_mtime, "[green]found[/green]", "")
+        table.add_row("agp_copied", "-", agp_mtime, "[green]found[/green]", "", "")
     else:
-        table.add_row("agp_copied", "-", "", "[yellow]missing[/yellow]", "")
+        table.add_row("agp_copied", "-", "", "[yellow]missing[/yellow]", "", "")
 
     console.print(table)
     console.print()
