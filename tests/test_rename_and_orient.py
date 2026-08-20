@@ -1,7 +1,7 @@
 """Tests for rename_and_orient step."""
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -171,3 +171,43 @@ def test_run_rename_and_orient_uses_canonical_fa(
     mock_find_fa.assert_called_once_with(mock_ctx, "hap1")
     cmd = mock_bsub.call_args[0][0]
     assert str(canonical_fa) in cmd
+
+
+@patch("grit.steps.optional.rename_and_orient._submit_bsub")
+@patch("grit.steps.optional.rename_and_orient.glob.glob")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_rerun_on_fresher_canonical_input_produces_new_tracked_output(
+    mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path
+):
+    """A deliberate rerun (e.g. after a recurate round) must still call
+    ctx.tracker.start and submit a job — the pre-tracker "already done"
+    guard must not short-circuit the second submission."""
+    mock_ctx.workdir = tmp_path / "workdir"
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.print_only = False
+
+    mock_tracker = MagicMock()
+    mock_tracker.start.side_effect = [
+        tmp_path / "workdir" / "rename_and_orient" / "run1",
+        tmp_path / "workdir" / "rename_and_orient" / "run2",
+    ]
+    mock_ctx.tracker = mock_tracker
+
+    paf_file = tmp_path / "workdir" / "fastga" / "sDipInt39_vs_ref.FastGA.paf"
+    mock_glob.return_value = [str(paf_file)]
+    mock_bsub.return_value = "12345"
+
+    first_canonical_fa = tmp_path / "workdir" / "sDipInt39.hap1.1.decontaminated.fa"
+    second_canonical_fa = tmp_path / "workdir" / "sDipInt39.hap1.2.decontaminated.fa"
+    mock_find_fa.side_effect = [first_canonical_fa, second_canonical_fa]
+
+    run_rename_and_orient(mock_ctx)
+    run_rename_and_orient(mock_ctx)
+
+    assert mock_tracker.start.call_count == 2
+    assert mock_bsub.call_count == 2
+    cmds = [call[0][0] for call in mock_bsub.call_args_list]
+    assert str(first_canonical_fa) in cmds[0]
+    assert str(second_canonical_fa) in cmds[1]

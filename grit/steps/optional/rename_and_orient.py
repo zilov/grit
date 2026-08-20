@@ -58,14 +58,6 @@ def _submit_rename_and_orient_for_hap(
     outdir = ctx.workdir / "rename_and_orient"
     prefix = f"{ctx.tol_id}.{hap_prefix}.primary.renamed"
 
-    # Skip if output already exists
-    if not ctx.print_only and (outdir / f"{prefix}.fa").exists():
-        log.info("rename-and-orient output already exists — skipping %s", hap_prefix)
-        from grit.utils.output import print_done
-
-        print_done(f"Already done → {outdir / f'{prefix}.fa'}")
-        return None
-
     # Read whatever is currently canonical for this haplotype.
     input_fa = find_canonical_fa(ctx, hap_prefix)
     log.info("Curated %s FASTA: %s", hap_prefix, input_fa)
