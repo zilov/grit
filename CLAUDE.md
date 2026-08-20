@@ -71,6 +71,12 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
   it (that belongs in the commit message, not the code)
 - **`console.print()`** for structured step output (headers, tips, done messages) via `grit/utils/output.py`
 - **Assembly type detection** — `_detect_assembly_type(yaml_data)` maps YAML keys to `(assembly_type, hap1_prefix, hap2_prefix)`: `hap1/hap2`, `primary/alternate`
+- **Canonical FASTA priority** — `find_canonical_fa`/`find_canonical_chr_list`/`find_canonical_haplotigs`
+  (`grit/utils/helpers.py`) resolve "the current canonical assembly" per haplotype through a tiered
+  priority chain (`pretext_to_asm_recurate` unconditional top tier → mtime-compared
+  `rename_and_orient`/`blast_contaminants` vs `microchromosome_combine`/`pretext_to_asm` → filesystem
+  fallback). See `recuration-canonical-priority.md` for the full curator-facing decision path and a
+  flowchart — read it before touching any of these three functions or the recurate step
 - **`GritJiraIssue`** is a shared server library injected via `sys.path` (path in user config), not a pip dependency
 
 ## Planning / design docs
