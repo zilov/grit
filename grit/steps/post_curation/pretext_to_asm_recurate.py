@@ -17,11 +17,11 @@ log = logging.getLogger(__name__)
 
 _RECURATE_TIP = (
     "This uses the current canonical FASTA as input. The recuration output "
-    "is one entry in the flat mtime pool—freshest tracked output wins. "
+    "is one entry in the flat mtime pool — freshest tracked output wins. "
     "If you want the recurate output to remain canonical, avoid rerunning "
     "blast-contaminants, rename-and-orient, or microchromosome-combine "
-    "with stale input afterward. If you need to run those steps, "
-    "it's now a supported forward-chain (no grit untrack needed).\n"
+    "afterward — doing so will make their output canonical instead, a "
+    "supported forward-chain, not an error (no grit untrack needed).\n"
     "To remove this recurate output from the pool entirely: "
     "grit untrack --step {step_name} -t <ticket>"
 )

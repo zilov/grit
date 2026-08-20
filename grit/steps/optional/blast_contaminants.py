@@ -41,7 +41,7 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     modified or moved, so re-running or invalidating this step cannot lose data.
 
     Requires:
-        - Curated FASTA file(s) from ``pretext_to_asm`` in the workdir.
+        - A resolvable canonical FASTA for each haplotype — run ``pretext-to-asm`` first.
         - Access to ~mh6/decon_blastBTK and related scripts.
 
     Prints:

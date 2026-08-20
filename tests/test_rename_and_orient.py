@@ -5,7 +5,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from grit.steps.optional.rename_and_orient import run_rename_and_orient
+from grit.core.registry import RegistryManager
+from grit.core.run_tracker import RunTracker
+from grit.steps.optional.rename_and_orient import _OUTPUT_SPECS, run_rename_and_orient
+from grit.utils.helpers import collect_outputs
 
 
 @patch("grit.steps.optional.rename_and_orient._submit_bsub")
@@ -120,9 +123,9 @@ def test_run_rename_and_orient_hap2_submits_when_mapping_tsv_exists(
     mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path
 ):
     """hap2 should submit when hap1 mapping.tsv is present."""
-    outdir = tmp_path / "workdir" / "rename_and_orient"
-    outdir.mkdir(parents=True)
-    mapping_tsv = outdir / "sDipInt39.hap1.primary.renamed.mapping.tsv"
+    hap1_run_dir = tmp_path / "workdir" / "rename_and_orient" / "2026-01-01T00_00_00"
+    hap1_run_dir.mkdir(parents=True)
+    mapping_tsv = hap1_run_dir / "sDipInt39.hap1.primary.renamed.mapping.tsv"
     mapping_tsv.touch()
 
     mock_ctx.workdir = tmp_path / "workdir"
@@ -211,3 +214,48 @@ def test_rerun_on_fresher_canonical_input_produces_new_tracked_output(
     cmds = [call[0][0] for call in mock_bsub.call_args_list]
     assert str(first_canonical_fa) in cmds[0]
     assert str(second_canonical_fa) in cmds[1]
+
+
+@patch("grit.steps.optional.rename_and_orient._submit_bsub")
+@patch("grit.steps.optional.rename_and_orient.glob.glob")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_tracked_output_resolves_after_successful_run(
+    mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path
+):
+    """The bsub job writes its FASTA into --output-dir. Simulate that landing in
+    the real run_dir (as the epilogue's collect_outputs() would see it) and
+    confirm the tracker actually finds it — proving output-dir/run_dir no
+    longer diverge."""
+    mock_ctx.workdir = tmp_path / "workdir"
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.print_only = False
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(mock_ctx.workdir, registry=reg)
+
+    canonical_fa = tmp_path / "workdir" / "sDipInt39.hap1.primary.curated.fa"
+    mock_find_fa.return_value = canonical_fa
+    paf_file = tmp_path / "workdir" / "fastga" / "sDipInt39_vs_ref.FastGA.paf"
+    mock_glob.return_value = [str(paf_file)]
+    mock_bsub.return_value = "12345"
+
+    run_rename_and_orient(mock_ctx)
+
+    run_dir = mock_ctx.tracker.latest_run_dir("rename_and_orient")
+    assert run_dir is not None
+
+    # Simulate the external tool writing its output into --output-dir, which
+    # is now run_dir itself rather than a shared flat directory.
+    written_fa = run_dir / "sDipInt39.hap1.primary.renamed.fa"
+    written_fa.write_text(">seq\n")
+
+    outputs = collect_outputs(_OUTPUT_SPECS, run_dir, mock_ctx.tol_id)
+    mock_ctx.tracker.finish("rename_and_orient", run_dir, "success", outputs=outputs)
+
+    resolved = mock_ctx.tracker.get_output("rename_and_orient", "hap1_fa")
+    assert resolved is not None
+    assert Path(resolved).exists()
+    assert Path(resolved) == written_fa

@@ -388,7 +388,7 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
          ``rename_and_orient``, ``rename_and_orient_hap2``, this haplotype's
          ``pretext_to_asm_recurate``), compared by mtime — the freshest
          existing file wins outright, ties going to the first-listed step.
-      2. Filesystem glob in {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.fa
+      2. Filesystem glob in {workdir}/rename_and_orient*/*/{tol_id}.{hap_prefix}.*.fa
       3. ``pretext_to_asm`` output via find_curated_fa (excludes haplotig files)
 
     Dot-delimited token matching avoids "primary" prefix colliding with the
@@ -416,21 +416,17 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
         if canonical:
             return canonical
 
-    rao_dir = ctx.workdir / "rename_and_orient"
-    if rao_dir.exists():
+    def _rao_search(token: str) -> list[str]:
+        rao_pattern = ctx.workdir / "rename_and_orient*" / "*" / f"{ctx.tol_id}.{token}.*.fa"
+        return [
+            f for f in glob.glob(str(rao_pattern)) if not any(kw in f for kw in _HAPLOTIG_KEYWORDS)
+        ]
 
-        def _rao_search(token: str) -> list[str]:
-            return [
-                f
-                for f in glob.glob(str(rao_dir / f"{ctx.tol_id}.{token}.*.fa"))
-                if not any(kw in f for kw in _HAPLOTIG_KEYWORDS)
-            ]
-
-        matches = _rao_search(hap_prefix)
-        if not matches and hap_prefix in _PTA_ALIASES:
-            matches = _rao_search(_PTA_ALIASES[hap_prefix])
-        if matches:
-            return Path(sorted(matches)[-1])
+    matches = _rao_search(hap_prefix)
+    if not matches and hap_prefix in _PTA_ALIASES:
+        matches = _rao_search(_PTA_ALIASES[hap_prefix])
+    if matches:
+        return Path(sorted(matches)[-1])
     return find_curated_fa(ctx, hap_prefix)
 
 
@@ -531,7 +527,7 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
          ``pretext_to_asm_recurate``), compared by mtime — the freshest
          existing file wins outright, ties going to the first-listed step.
       2. ``rename_and_orient`` output —
-         {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.chromosome.list.csv
+         {workdir}/rename_and_orient*/*/{tol_id}.{hap_prefix}.*.chromosome.list.csv
       3. ``pretext_to_asm`` output — {tol_id}.{hap_prefix}.*.chromosome.list.csv
       4. ``pretext_to_asm`` no-hap-prefix format (single hap / merged) —
          {tol_id}.{version}.primary.chromosome.list.csv
@@ -566,13 +562,17 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     def _search_dir(directory: Path, token: str) -> list[str]:
         return glob.glob(str(directory / f"{ctx.tol_id}.{token}.*.chromosome.list.csv"))
 
-    rao_dir = ctx.workdir / "rename_and_orient"
-    if rao_dir.exists():
-        matches = _search_dir(rao_dir, hap_prefix)
-        if not matches and hap_prefix in _PTA_ALIASES:
-            matches = _search_dir(rao_dir, _PTA_ALIASES[hap_prefix])
-        if matches:
-            return Path(sorted(matches)[-1])
+    def _search_rao(token: str) -> list[str]:
+        rao_pattern = (
+            ctx.workdir / "rename_and_orient*" / "*" / f"{ctx.tol_id}.{token}.*.chromosome.list.csv"
+        )
+        return glob.glob(str(rao_pattern))
+
+    matches = _search_rao(hap_prefix)
+    if not matches and hap_prefix in _PTA_ALIASES:
+        matches = _search_rao(_PTA_ALIASES[hap_prefix])
+    if matches:
+        return Path(sorted(matches)[-1])
 
     pta_dir = find_latest_dir(ctx, "pretext_to_asm")
     matches = _search_dir(pta_dir, hap_prefix)

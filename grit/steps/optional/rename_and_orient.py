@@ -55,12 +55,17 @@ def _submit_rename_and_orient_for_hap(
 
     Returns the bsub job ID (or None in print_only mode).
     """
-    outdir = ctx.workdir / "rename_and_orient"
     prefix = f"{ctx.tol_id}.{hap_prefix}.primary.renamed"
 
     # Read whatever is currently canonical for this haplotype.
     input_fa = find_canonical_fa(ctx, hap_prefix)
     log.info("Curated %s FASTA: %s", hap_prefix, input_fa)
+
+    run_dir = (
+        ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else ctx.workdir / step_name / "untracked"
+    )
 
     source_arg = f"--mapping-table {mapping_table}" if mapping_table else f"--paf {paf_file}"
 
@@ -69,14 +74,8 @@ def _submit_rename_and_orient_for_hap(
         f"{_RENAME_AND_ORIENT_CMD} "
         f"--fasta {input_fa} "
         f"{source_arg} "
-        f"--output-dir {outdir} "
+        f"--output-dir {run_dir} "
         f"--output-prefix {prefix}"
-    )
-
-    run_dir = (
-        ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
-        if ctx.tracker
-        else ctx.workdir / step_name / "untracked"
     )
 
     bsub_opts = build_bsub_opts(
@@ -117,8 +116,8 @@ def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> No
     (i.e. hap1 has completed). If not, a message is printed asking to re-run
     with ``--hap2`` after hap1 finishes.
 
-    Output files land in ``{workdir}/rename_and_orient/``.
-    Tracked as ``rename_and_orient`` (hap1) and ``rename_and_orient_hap2`` (hap2).
+    Output files land in each run's own tracked run_dir under
+    ``{workdir}/rename_and_orient/`` (hap1) or ``{workdir}/rename_and_orient_hap2/`` (hap2).
     """
     log.info("rename-and-orient | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Rename and orient to reference")
@@ -137,9 +136,9 @@ def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> No
 
     if run_hap2:
         print_step_header(ctx.ticket_id, ctx.tol_id, f"Rename and orient ({ctx.hap2_prefix})")
-        outdir = ctx.workdir / "rename_and_orient"
+        hap1_run_dir = find_latest_dir(ctx, "rename_and_orient")
         hap1_prefix = f"{ctx.tol_id}.{ctx.hap1_prefix}.primary.renamed"
-        mapping_tsv = outdir / f"{hap1_prefix}.mapping.tsv"
+        mapping_tsv = hap1_run_dir / f"{hap1_prefix}.mapping.tsv"
 
         if not ctx.print_only and not mapping_tsv.exists():
             console.print(
@@ -156,7 +155,7 @@ def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> No
             mapping_table=mapping_tsv,
         )
 
-    print_done(f"Job(s) submitted — output → {ctx.workdir / 'rename_and_orient'}")
+    print_done(f"Job(s) submitted — output → {ctx.workdir / 'rename_and_orient*'}")
 
 
 # ---------------------------------------------------------------------------
