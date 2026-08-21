@@ -94,10 +94,12 @@ def run_microchromosome_combine(ctx: CurationContext) -> None:
             # microchromosome-second-shot's own tooling always names dual-hap
             # outputs with the literal "hap1"/"hap2" token regardless of YAML
             # key — but a single-hap (primary/alternate) assembly never has a
-            # genuine second haplotype to combine, so drop the hap2 stub to
-            # match what a real run would actually produce.
-            outputs.pop("hap2_fa", None)
-            outputs.pop("hap2_chr_list", None)
+            # genuine second haplotype to combine, so drop the hap2 stub AND
+            # delete the file itself, matching what a real run would produce.
+            for key in ("hap2_fa", "hap2_chr_list"):
+                path = outputs.pop(key, None)
+                if path:
+                    Path(path).unlink(missing_ok=True)
         ctx.tracker.finish("microchromosome_combine", run_dir, "success", outputs=outputs)
         dest = outputs.get("hap1_fa", run_dir)
         print_done(f"[dry-run] Microchromosome combine complete. Final merged FASTAs → {dest}")

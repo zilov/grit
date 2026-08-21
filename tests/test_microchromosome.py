@@ -275,10 +275,17 @@ def test_dry_run_single_hap_tracks_only_hap1(mock_find_dir, mock_run, mock_ctx_p
     mock_run.assert_not_called()
     mock_find_dir.assert_not_called()
 
-    outputs = mock_ctx_primary.tracker.history("microchromosome_combine")[-1]["outputs"]
+    last_run = mock_ctx_primary.tracker.history("microchromosome_combine")[-1]
+    outputs = last_run["outputs"]
     assert set(outputs) == {"hap1_fa", "hap1_chr_list"}
     assert "hap2_fa" not in outputs
     assert "hap2_chr_list" not in outputs
+
+    # Popping the tracker keys isn't enough — a leftover file would still be
+    # findable by any glob-based (not tracker-based) hap2 detection downstream.
+    run_dir = last_run["run_dir"]
+    assert list(Path(run_dir).glob("*.hap2.*")) == []
+    assert list(Path(run_dir).glob("*.alternate.*")) == []
 
 
 def test_dry_run_output_resolves_via_find_canonical_fa(mock_ctx, tmp_path):

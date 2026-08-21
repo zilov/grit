@@ -203,10 +203,18 @@ def test_run_pretext_to_asm_dry_run_single_hap_omits_hap2_outputs(mock_ctx_prima
 
     run_pretext_to_asm(mock_ctx_primary)
 
-    tracked_outputs = mock_ctx_primary.tracker.history("pretext_to_asm")[-1]["outputs"]
+    last_run = mock_ctx_primary.tracker.history("pretext_to_asm")[-1]
+    tracked_outputs = last_run["outputs"]
     assert "hap1_fa" in tracked_outputs
     assert "hap2_fa" not in tracked_outputs
     assert "hap2_haplotigs" not in tracked_outputs
+    assert "hap2_chr_list" not in tracked_outputs
+
+    # Popping the tracker keys isn't enough — a leftover file would still be
+    # findable by any glob-based (not tracker-based) hap2 detection downstream.
+    run_dir = last_run["run_dir"]
+    assert list(Path(run_dir).glob("*.hap2.*")) == []
+    assert list(Path(run_dir).glob("*.alternate.*")) == []
     assert "hap2_chr_list" not in tracked_outputs
 
 

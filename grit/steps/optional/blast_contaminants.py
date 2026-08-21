@@ -74,10 +74,12 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
         )
         if is_single_hap(ctx):
             # write_fake_outputs always writes both _OUTPUT_SPECS entries (keyed
-            # "hap1_fa"/"hap2_fa" regardless of assembly_type); drop the hap2 one so
-            # a single-hap dry-run's tracked outputs match what a real run would
-            # actually produce.
-            outputs.pop("hap2_fa", None)
+            # "hap1_fa"/"hap2_fa" regardless of assembly_type); drop the hap2 key
+            # AND delete the file itself, so a single-hap dry-run's tracked outputs
+            # and on-disk state both match what a real run would actually produce.
+            path = outputs.pop("hap2_fa", None)
+            if path:
+                Path(path).unlink(missing_ok=True)
         ctx.tracker.finish("blast_contaminants", run_dir, "success", outputs=outputs)
         dest = outputs.get("hap1_fa", run_dir)
         print_done(f"[dry-run] Decontaminated FASTA → {dest}")

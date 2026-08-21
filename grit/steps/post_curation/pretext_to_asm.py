@@ -186,11 +186,15 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
         )
         if is_single_hap(ctx):
             # write_fake_outputs writes every _OUTPUT_SPECS entry regardless of
-            # assembly_type; drop the hap2 keys so a single-hap dry-run's tracked
-            # outputs match what a real run would actually produce.
-            outputs.pop("hap2_fa", None)
-            outputs.pop("hap2_haplotigs", None)
-            outputs.pop("hap2_chr_list", None)
+            # assembly_type; drop the hap2 keys AND delete the files themselves,
+            # so a single-hap dry-run's tracked outputs and on-disk state both
+            # match what a real run would actually produce — a leftover file
+            # here would still be findable by any glob-based (not tracker-based)
+            # hap2 detection downstream.
+            for key in ("hap2_fa", "hap2_haplotigs", "hap2_chr_list"):
+                path = outputs.pop(key, None)
+                if path:
+                    Path(path).unlink(missing_ok=True)
         ctx.tracker.finish("pretext_to_asm", run_dir, "success", outputs=outputs)
         print_done(f"[dry-run] Curated FASTA → {outputs.get('hap1_fa', run_dir)}")
         return
