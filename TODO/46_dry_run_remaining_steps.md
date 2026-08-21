@@ -92,9 +92,10 @@ established conventions)
 `grit/steps/optional/fastga.py` (the `fastga` command only, not `fastga-stats` —
 that's Task 2), `grit/steps/pre_curation/microchromosome_second_shot.py`,
 `grit/core/base_command.py` (the allowlist), plus each step's existing test file
-(`tests/test_fastga_synteny.py`, `tests/test_fastga.py`, `tests/test_microchromosome.py`
-— check whether `busco_synteny` has its own test file or is covered elsewhere before
-assuming a filename).
+(`tests/test_fastga_synteny.py`, `tests/test_fastga.py`, `tests/test_microchromosome.py`).
+`busco_synteny` has **no dedicated test file** — its coverage lives in
+`tests/test_post_curation.py` alongside `hic_remapping`/`qv`/`finalize_qc`/
+`post_processing`/`haplotig_files`/`post_curation`; add its dry-run tests there.
 
 These four steps' `_OUTPUT_SPECS`/`_OUTPUT_SPECS_HAP2` constants are already
 registered in `_get_step_specs()`'s `_MAP` (`grit/utils/helpers.py`) — no map
@@ -107,7 +108,7 @@ reached).
 - `busco_synteny`/`fastga_synteny`: no hap gating, no content realism needed
   (plain stubs — `*.png`/summary files are never content-parsed).
 - `fastga`: no hap gating. **Content realism matters**: `fastga-stats`
-  (Task 2) parses `*.top1_targets.tsv` as tab-separated `(super, ref_chr, len)`
+  (Task 3) parses `*.top1_targets.tsv` as tab-separated `(super, ref_chr, len)`
   rows filtered to names starting `"SUPER_"` — pass a `content=` override with a
   header line plus at least one `SUPER_1\t<chr>\t<len>` row, e.g.
   `b"super\ttop_longest_ref_chr\tlen\nSUPER_1\tchr1\t1000000\n"`.
@@ -189,17 +190,20 @@ which is independent, but `validate_files` reads `qv`'s output — see the note 
 Add to `_DRY_RUN_SUPPORTED_COMMANDS`:
 - `"fastga-stats"` — synchronous, read-only, no subprocess/tracker call of its
   own; already works correctly against `fastga`'s fake output from Task 1 (its
-  content-realism requirement was satisfied there).
+  content-realism requirement was satisfied there). Test file: `tests/test_fastga.py`
+  (same file `fastga`'s own tests live in).
 - `"haplotig-files"` — synchronous, no external tool call, no tracker call;
   already works correctly against `pretext_to_asm`'s existing fake output
   (confirmed: `pta_curated_fa_exists`'s literal `"hap1"`/`"hap2"` token check
   correctly matches the dry-run FASTA's naming for dual-hap tickets and correctly
-  fails for single-hap ones).
+  fails for single-hap ones). Test file: `tests/test_post_curation.py`.
 - `"validate-files"` — synchronous, read-only, untracked by design. Note: it reads
   `ctx.tracker.get_output("qv", ...)`, so its own dry-run smoke path is only fully
-  exercisable once Task 4 (`qv`) lands — but `validate_files` itself needs no code
+  exercisable once Task 5 (`qv`) lands — but `validate_files` itself needs no code
   change either way; add the allowlist entry now, the "qv output missing" case is
-  already handled gracefully (reports MISSING) if run before Task 4.
+  already handled gracefully (reports MISSING) if run before Task 5. **No test file
+  exists for `validate_files.py` at all today** — create
+  `tests/test_validate_files.py` for its new CLI-level dry-run test.
 
 **Tests:** one CLI-level test per command (via `CliRunner`, following
 `tests/test_click_cli.py`'s pattern) confirming `--dry-run <cmd>` no longer raises
@@ -216,7 +220,13 @@ content-realism choice paid off end-to-end, not just in isolation).
 **Scope:** `grit/steps/optional/super_to_scaffold.py`, `grit/steps/optional/busco_curated.py`,
 `grit/steps/pre_curation/find_reference.py`, `grit/steps/pre_curation/sex_matcher.py`,
 `grit/utils/helpers.py` (one new `_OUTPUT_SPECS`/map entry, for `super_to_scaffold`
-only), `grit/core/base_command.py` (allowlist), plus each step's existing test file.
+only), `grit/core/base_command.py` (allowlist), plus each step's test file.
+`tests/test_super_to_scaffold.py` exists but **only tests internal helpers**
+(`_parse_agp_supers`/`_natural_super_key`/`find_hap_agp`) — there is no existing
+test of `run_super_to_scaffold` itself to extend, add fresh test functions there.
+`busco_curated` has no dedicated test file — its coverage lives in
+`tests/test_post_curation.py`. `find_reference`/`sex_matcher` have their own
+existing files (`tests/test_find_reference.py`/`tests/test_sex_matcher.py`).
 These four are grouped because each needs its own small, independent fake-writer
 with no cross-dependency on each other — same shape of work, different files.
 
@@ -265,7 +275,8 @@ single-hap test for `super_to_scaffold` using `mock_ctx_primary`.
 ## Task 5: `qv` + `finalize_qc` (finalize_qc depends on qv)
 
 **Scope:** `grit/steps/post_curation/qv.py`, `grit/steps/post_curation/finalize_qc.py`,
-`grit/core/base_command.py` (allowlist), plus their existing test files. These two
+`grit/core/base_command.py` (allowlist), plus `tests/test_post_curation.py` (both
+steps' coverage lives there, no dedicated file for either). These two
 are grouped because `finalize_qc`'s dry-run branch must call the now-dry-run-aware
 `run_qv(ctx)` internally (matching its real behavior of calling `run_qv` when a
 `merquryk` dir is missing), so `qv` must land first within this same task.
@@ -305,7 +316,8 @@ path was never reached.
 ## Task 6: `post_processing`/`pp` (the registry hazard) + `CLAUDE.md` doc update
 
 **Scope:** `grit/steps/post_curation/post_processing.py`, `grit/core/base_command.py`
-(allowlist), `CLAUDE.md`, plus its existing test file. Depends on nothing else in
+(allowlist), `CLAUDE.md`, plus `tests/test_post_curation.py` (no dedicated file).
+Depends on nothing else in
 this plan (independent), but scheduled last since it's the one step with a real
 safety hazard worth extra care, and the doc update should describe the final,
 complete state of every task above.
