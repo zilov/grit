@@ -30,6 +30,20 @@ _BUSCO_LINEAGES = "/lustre/scratch122/tol/resources/busco/latest/lineages"
 
 
 # ---------------------------------------------------------------------------
+# Dry-run
+# ---------------------------------------------------------------------------
+
+
+def _dry_run_busco_curated(ctx: CurationContext) -> Path:
+    """Write a placeholder BUSCO output dir/file directly under ctx.workdir."""
+    output_dir = ctx.workdir / f"{ctx.tol_id}_busco_singularity"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    placeholder = output_dir / "placeholder.txt"
+    placeholder.write_text("fake\n")
+    return output_dir
+
+
+# ---------------------------------------------------------------------------
 # Public step functions
 # ---------------------------------------------------------------------------
 
@@ -61,6 +75,15 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     """
     log.info("busco-curated | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO on curated genome")
+
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start(
+            "busco_curated", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
+        )
+        output_dir = _dry_run_busco_curated(ctx)
+        ctx.tracker.finish("busco_curated", run_dir, "success")
+        print_done(f"[dry-run] BUSCO on curated genome → {output_dir}")
+        return
 
     # --- find curated FASTA ---
     # haplotig-files writes *.curated.fa into the pretext_to_asm run dir, not workdir root

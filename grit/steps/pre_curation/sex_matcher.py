@@ -74,6 +74,16 @@ def run_sex_matcher(ctx: CurationContext) -> None:
     log.info("sex-matcher | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run sex-matcher")
 
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start(
+            "sex_matcher", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
+        )
+        placeholder = run_dir / "Best_match_1"
+        placeholder.write_text("fake\n")
+        ctx.tracker.finish("sex_matcher", run_dir, "success")
+        print_done(f"[dry-run] Sex-matcher → {run_dir}")
+        return
+
     tol_id_lower = ctx.tol_id.lower()
     if not any(tol_id_lower.startswith(p) for p in _INSECT_PREFIXES):
         log.error(

@@ -826,6 +826,10 @@ def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
             "grit.steps.post_curation.microchromosome_combine",
             "_OUTPUT_SPECS",
         ),
+        "super_to_scaffold": (
+            "grit.steps.optional.super_to_scaffold",
+            "_OUTPUT_SPECS",
+        ),
     }
     if step not in _MAP:
         return []

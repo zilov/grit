@@ -72,18 +72,32 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
   instead of running any real command. As of now `setup`, `pretext-to-asm`,
   `blast-contaminants`, `rename-and-orient`, `microchromosome-combine`,
   `pretext-to-asm-recurate`, `busco-synteny`, `fastga-synteny`, `fastga`,
-  `microchromosome-second-shot`, and `hic-remapping` have a dry-run branch
+  `microchromosome-second-shot`, `hic-remapping`, `fastga-stats`,
+  `haplotig-files`, `validate-files`, `super-to-scaffold`, `busco-curated`,
+  `find-reference`, and `sex-matcher` have a dry-run branch
   (`_DRY_RUN_SUPPORTED_COMMANDS` in `grit/core/base_command.py`); the composite
   commands `post-curation` and `post-curation-recurate` are also allowlisted since
   they only call already-dry-run-aware sub-functions and do no I/O of their own.
+  `super_to_scaffold`, `busco_curated`, `find_reference`, and `sex_matcher` each
+  needed their own small local dry-run writer rather than the shared
+  `write_fake_outputs()`/`_get_step_specs()` pattern: `busco_curated`'s real
+  output dir is a sibling of its tracked `run_dir` (directly under
+  `ctx.workdir`), `find_reference`'s and `sex_matcher`'s real paths never pass
+  `outputs=` to `tracker.finish()` (their outputs are discovered later by
+  re-globbing), and `sex_matcher`'s dry-run branch sits immediately after
+  `print_step_header`, before its substantial pre-submission idempotency/
+  polling logic (including the tol_id-format validation check) — not just
+  before its `_submit_bsub()` call. `super_to_scaffold` is the exception: its
+  real output is now tracked via `_OUTPUT_SPECS`/`_get_step_specs()` like the
+  original six steps, so its dry-run branch uses `write_fake_outputs()` directly.
   `hic_remapping`'s real (non-dry-run) success path never calls
   `ctx.tracker.finish(..., "success")` itself (only on exception or an
   already-done skip) — its dry-run branch calls `tracker.finish(..., "success")`
   anyway, a deliberate choice for consistency with every other async step's
   dry-run pattern, not a copy of that one step's unusual real-path omission.
   `GritCommand.invoke()` refuses `--dry-run` up front for every other step
-  (`fastga-stats`, `qv`, `finalize-qc`, `busco-curated`, etc.) with a
-  `UsageError` rather than silently proceeding as a real run.
+  (`qv`, `finalize-qc`, etc.) with a `UsageError` rather than silently
+  proceeding as a real run.
   `--print-only` always takes precedence over `--dry-run` when both are set — resolved
   once in `CurationContext.from_yaml` (`dry_run = dry_run and not print_only`) and
   independently in `GritCommand.invoke()` for the pre-callback guard, since that check

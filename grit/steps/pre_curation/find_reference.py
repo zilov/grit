@@ -142,6 +142,16 @@ def find_closest_reference(
     log.info("find-reference | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Find closest reference")
 
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start(
+            "find_reference", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
+        )
+        placeholder = run_dir / f"{ctx.tol_id}_reheader.fna"
+        placeholder.write_text(">fake\nACGT\n")
+        ctx.tracker.finish("find_reference", run_dir, "success")
+        print_done(f"[dry-run] Reference prepared in {run_dir}")
+        return
+
     run_dir = (
         ctx.tracker.start("find_reference", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
         if ctx.tracker

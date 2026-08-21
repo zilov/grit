@@ -1360,6 +1360,38 @@ def test_run_busco_synteny_dry_run_short_circuits(
 
 
 # ---------------------------------------------------------------------------
+# run_busco_curated — dry-run
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.optional.busco_curated._submit_bsub")
+@patch("grit.steps.optional.busco_curated.find_latest_dir")
+def test_run_busco_curated_dry_run_short_circuits(
+    mock_find_latest_dir, mock_bsub, mock_ctx, tmp_path
+):
+    """dry_run must skip curated-FASTA lookup + bsub submission entirely and
+    write the placeholder output dir as a sibling of the tracked run_dir."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.optional.busco_curated import run_busco_curated
+
+    mock_ctx.workdir = tmp_path
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+    mock_ctx.dry_run = True
+
+    run_busco_curated(mock_ctx, lineage="insecta_odb10")
+
+    mock_bsub.assert_not_called()
+    mock_find_latest_dir.assert_not_called()
+
+    output_dir = tmp_path / f"{mock_ctx.tol_id}_busco_singularity"
+    assert output_dir.is_dir()
+    assert any(output_dir.iterdir())
+
+
+# ---------------------------------------------------------------------------
 # run_post_curation — dry-run end to end
 # ---------------------------------------------------------------------------
 
