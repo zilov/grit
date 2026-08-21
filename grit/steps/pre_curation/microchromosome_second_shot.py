@@ -1,6 +1,7 @@
 """Microchromosome second-shot curation: pre-curation step."""
 
 import logging
+from pathlib import Path
 
 import rich_click as click
 
@@ -80,10 +81,14 @@ def run_microchromosome_second_shot(ctx: CurationContext) -> None:
         outputs = write_fake_outputs("microchromosome_second_shot", run_dir, ctx.tol_id)
         if is_single_hap(ctx):
             # write_fake_outputs always writes both hap1/hap2 _OUTPUT_SPECS entries;
-            # drop the hap2 ones so a single-hap dry-run's tracked outputs match what
-            # a real run would actually produce.
-            outputs.pop("hap2_large_fa", None)
-            outputs.pop("hap2_large_chr", None)
+            # drop the hap2 ones (and delete the files it wrote) so a single-hap
+            # dry-run leaves neither a tracked key nor an on-disk file that a later
+            # real microchromosome-combine's filesystem glob could mistake for a
+            # genuine hap2.
+            for key in ("hap2_large_fa", "hap2_large_chr"):
+                path = outputs.pop(key, None)
+                if path:
+                    Path(path).unlink(missing_ok=True)
         ctx.tracker.finish("microchromosome_second_shot", run_dir, "success", outputs=outputs)
         print_done(f"[dry-run] Microchromosome second-shot curation complete → {run_dir}")
         return

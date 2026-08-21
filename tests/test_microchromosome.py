@@ -135,6 +135,9 @@ def test_run_microchromosome_second_shot_dry_run_single_hap_omits_hap2(
     assert "hap2_large_fa" not in outputs
     assert "hap2_large_chr" not in outputs
 
+    run_dir = mock_ctx_primary.tracker.history("microchromosome_second_shot")[-1]["run_dir"]
+    assert list(Path(run_dir).glob("*.hap2.*")) == []
+
 
 # ---------------------------------------------------------------------------
 # run_microchromosome_combine
