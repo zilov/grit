@@ -21,11 +21,11 @@
 # The --dry-run pass near the end exercises setup/pretext-to-asm/
 # blast-contaminants/rename-and-orient/status/untrack end to end against the
 # isolated ~/.grit/dry_run/ sandbox — no farm/NFS output required for those
-# commands themselves. `grit status`'s canonical-file/★ resolution still does
-# a live Jira lookup for whatever ticket you pass as the second argument
-# (dry_run_ticket) independent of --yaml/--dry-run, so pass a real ticket ID
-# to exercise that path for real; see the comment at that section for a
-# known gap that currently makes it a no-op regardless.
+# commands themselves. `grit status`'s canonical-file/★ resolution builds its
+# CurationContext from the same --yaml FILE given on the group-level flag
+# (threaded through as yaml_override), not a live Jira lookup — so the second
+# argument (dry_run_ticket) can be any string; it only needs to be the ticket_id
+# used consistently across the --dry-run commands below, not a real Jira key.
 #
 # Exit code: 0 if all commands print without error, non-zero otherwise.
 
@@ -93,25 +93,28 @@ $GRIT_DRY rename-and-orient -t "$DRY_RUN_TICKET" --dry-run  && ok "rename-and-or
 # only takes effect for them as a GROUP-level flag, before the subcommand
 # name (`grit --dry-run status ...`), never after it.
 #
-# KNOWN GAP (not fixed here — out of this task's scope): show_global_status
-# and show_ticket_history (grit/core/status.py) build their RunTracker via
-# `RunTracker(workdir)`, which defaults to the real ~/.grit/grit_registry.json
-# instead of threading through the dry-run registry that grit status already
-# selected. So the step-history table below currently comes back empty for a
-# dry-run ticket — the ★ marker this section is meant to demonstrate moving
-# from rename_and_orient to blast_contaminants cannot be observed via `grit
-# status` today, regardless of Jira access. Printing the output here anyway
-# so a human can confirm/refute that once status.py's registry threading is
-# fixed in a follow-up task.
+# The step-history table below, including the canonical-files table and the
+# ★ marker, is fully observable here. rename-and-orient only ran for hap1
+# above (no --hap2), so blast_contaminants stays canonical for hap2
+# throughout (★ on both rows before untrack); untracking rename_and_orient's
+# hap1 run below reverts hap1's canonical FASTA back to blast_contaminants too.
 echo ""
 echo "--- grit --dry-run status (before untrack) ---"
-$GRIT_DRY --dry-run status -t "$DRY_RUN_TICKET"
+before_status=$($GRIT_DRY --dry-run status -t "$DRY_RUN_TICKET")
+echo "$before_status"
+echo "$before_status" | grep "rename_and_orient" | grep -q "★" \
+    && ok "★ marks rename_and_orient as canonical before untrack" \
+    || fail "★ marker missing on rename_and_orient row before untrack"
 
 $GRIT_DRY --dry-run untrack -t "$DRY_RUN_TICKET" --step rename_and_orient && ok "untrack rename_and_orient --dry-run"
 
 echo ""
 echo "--- grit --dry-run status (after untrack) ---"
-$GRIT_DRY --dry-run status -t "$DRY_RUN_TICKET"
+after_status=$($GRIT_DRY --dry-run status -t "$DRY_RUN_TICKET")
+echo "$after_status"
+echo "$after_status" | grep "blast_contaminants" | grep -q "★" \
+    && ok "★ moves to blast_contaminants after untracking rename_and_orient" \
+    || fail "★ marker missing on blast_contaminants row after untrack"
 
 rm -rf ~/.grit/dry_run
 ok "dry-run sandbox cleaned up"

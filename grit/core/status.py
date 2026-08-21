@@ -297,8 +297,19 @@ def _print_less_tips(step_latest: dict[str, dict]) -> None:
             print_tip(tip)
 
 
-def show_ticket_history(registry, ticket_id: str, user_config: dict, dry_run: bool = False) -> None:
-    """Print per-step run history and curation results for a single ticket."""
+def show_ticket_history(
+    registry,
+    ticket_id: str,
+    user_config: dict,
+    dry_run: bool = False,
+    yaml_override: dict | None = None,
+) -> None:
+    """Print per-step run history and curation results for a single ticket.
+
+    *yaml_override*, when set (from the group-level ``--yaml FILE`` option),
+    bypasses the real Jira fetch when building the CurationContext — required
+    for a synthetic dry-run ticket that has no real Jira issue to look up.
+    """
     from grit.core.run_tracker import RunTracker
     from grit.utils.helpers import _check_bjobs
 
@@ -312,12 +323,23 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict, dry_run: bo
         console.print(f"[yellow]Workdir not found: {workdir}[/yellow]")
         return
 
-    # Build CurationContext for summary + canonical files (requires Jira access)
+    # Build CurationContext for summary + canonical files (requires Jira access
+    # unless yaml_override is set)
     ctx = None
     try:
         from grit.core.context import CurationContext
 
-        ctx = CurationContext.from_ticket(ticket_id, user_config, print_only=True, dry_run=dry_run)
+        # print_only=True guards a real (non-dry-run) ticket from any accidental
+        # side effect; for a dry-run ticket it must be False, since print_only
+        # takes precedence over dry_run (CurationContext.from_yaml) and would
+        # otherwise silently resolve ctx.workdir to the real, non-sandboxed path.
+        ctx = CurationContext.from_ticket(
+            ticket_id,
+            user_config,
+            yaml_override=yaml_override,
+            print_only=not dry_run,
+            dry_run=dry_run,
+        )
     except Exception as exc:
         console.print(f"[dim]Could not build curation context: {exc}[/dim]")
 
