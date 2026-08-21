@@ -353,7 +353,11 @@ def run_setup(ctx: CurationContext) -> None:
             hap1_prefix=ctx.hap1_prefix,
             hap2_prefix=ctx.hap2_prefix,
         )
+        run_dir = ctx.tracker.start(
+            "setup_curation", ctx.ticket_id, ctx.tol_id, create_dir=False, untracked=ctx.untracked
+        )
         (ctx.workdir / "original.fa").write_bytes(b">fake\nACGT\n")
+        ctx.tracker.finish("setup_curation", run_dir, "success")
         print_done(f"[dry-run] ticket registered, workdir → {ctx.workdir}")
         return
 
