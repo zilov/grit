@@ -15,6 +15,7 @@ from grit.utils.helpers import (
     _run,
     collect_outputs,
     inputs_newer_than_curated_fa,
+    is_single_hap,
     write_fake_outputs,
 )
 from grit.utils.modules import module_cmd
@@ -183,6 +184,13 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
                 "hap2_fa": b">HAP_SCAFFOLD_1\nACGTACGTACGT\n",
             },
         )
+        if is_single_hap(ctx):
+            # write_fake_outputs writes every _OUTPUT_SPECS entry regardless of
+            # assembly_type; drop the hap2 keys so a single-hap dry-run's tracked
+            # outputs match what a real run would actually produce.
+            outputs.pop("hap2_fa", None)
+            outputs.pop("hap2_haplotigs", None)
+            outputs.pop("hap2_chr_list", None)
         ctx.tracker.finish("pretext_to_asm", run_dir, "success", outputs=outputs)
         print_done(f"[dry-run] Curated FASTA → {outputs.get('hap1_fa', run_dir)}")
         return

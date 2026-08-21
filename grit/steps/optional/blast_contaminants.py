@@ -9,7 +9,13 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _clean_species_name, _run, find_canonical_fa, write_fake_outputs
+from grit.utils.helpers import (
+    _clean_species_name,
+    _run,
+    find_canonical_fa,
+    is_single_hap,
+    write_fake_outputs,
+)
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -56,8 +62,6 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     print_step_header(ctx.ticket_id, ctx.tol_id, "Blast contaminants search")
 
     if ctx.dry_run:
-        is_single_hap = ctx.hap1_prefix in ("primary", "paternal")
-
         run_dir = ctx.tracker.start(
             "blast_contaminants", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
         )
@@ -68,7 +72,7 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
             hap1=ctx.hap1_prefix,
             hap2=ctx.hap2_prefix,
         )
-        if is_single_hap:
+        if is_single_hap(ctx):
             # write_fake_outputs always writes both _OUTPUT_SPECS entries (keyed
             # "hap1_fa"/"hap2_fa" regardless of assembly_type); drop the hap2 one so
             # a single-hap dry-run's tracked outputs match what a real run would
@@ -85,8 +89,9 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
         else None
     )
 
-    is_single_hap = ctx.hap1_prefix in ("primary", "paternal")
-    haps_to_process = [ctx.hap1_prefix] if is_single_hap else [ctx.hap1_prefix, ctx.hap2_prefix]
+    haps_to_process = (
+        [ctx.hap1_prefix] if is_single_hap(ctx) else [ctx.hap1_prefix, ctx.hap2_prefix]
+    )
 
     try:
         outputs: dict[str, str] = {}

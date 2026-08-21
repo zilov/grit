@@ -138,7 +138,7 @@ def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> No
         if run_hap2:
             print_step_header(ctx.ticket_id, ctx.tol_id, f"Rename and orient ({ctx.hap2_prefix})")
             _dry_run_rename_and_orient_for_hap(ctx, "rename_and_orient_hap2")
-        print_done(f"[dry-run] Renamed FASTA → {outputs.get(f'{ctx.hap1_prefix}_fa', ctx.workdir)}")
+        print_done(f"[dry-run] Renamed FASTA → {outputs.get('hap1_fa', ctx.workdir)}")
         return
 
     # --- find FastGA PAF ---

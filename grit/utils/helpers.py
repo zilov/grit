@@ -17,6 +17,11 @@ from grit.utils.output import console
 log = logging.getLogger(__name__)
 
 
+def is_single_hap(ctx: CurationContext) -> bool:
+    """True if this ticket's assembly has no genuine second haplotype (primary/paternal)."""
+    return ctx.hap1_prefix in ("primary", "paternal")
+
+
 def require_workdir(ctx: CurationContext) -> None:
     """
     Abort with a helpful message if ctx.workdir does not exist on disk.
@@ -774,7 +779,12 @@ def write_fake_outputs(
     hap2: str = "hap2",
     content: dict[str, bytes] | None = None,
 ) -> dict[str, str]:
-    """Write one placeholder file per _OUTPUT_SPECS entry for *step*, returning {key: path}."""
+    """
+    Write one placeholder file per _OUTPUT_SPECS entry for *step*, returning {key: path}.
+
+    Any ``*``/``?`` wildcard in a spec's glob pattern is filled with the fixed
+    placeholder token ``"1"`` to produce a concrete filename.
+    """
     outputs: dict[str, str] = {}
     for key, pattern, _excludes in _get_step_specs(step):
         if key in outputs:  # already written via earlier spec (fallback skip)

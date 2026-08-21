@@ -183,6 +183,32 @@ def test_run_pretext_to_asm_dry_run_writes_fake_fasta_with_scaffold_headers(
     assert "HAP_SCAFFOLD_1" in Path(hap2_fa_path).read_text()
 
 
+def test_run_pretext_to_asm_dry_run_single_hap_omits_hap2_outputs(mock_ctx_primary, tmp_path):
+    """A primary/alternate (single-hap) ticket's dry-run must not fabricate hap2
+    outputs — same class of bug already fixed once in blast_contaminants."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx_primary.workdir = tmp_path
+    mock_ctx_primary.dry_run = True
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(
+        mock_ctx_primary.ticket_id,
+        mock_ctx_primary.tol_id,
+        mock_ctx_primary.species,
+        mock_ctx_primary.workdir,
+    )
+    mock_ctx_primary.tracker = RunTracker(tmp_path, registry=registry)
+
+    run_pretext_to_asm(mock_ctx_primary)
+
+    tracked_outputs = mock_ctx_primary.tracker.history("pretext_to_asm")[-1]["outputs"]
+    assert "hap1_fa" in tracked_outputs
+    assert "hap2_fa" not in tracked_outputs
+    assert "hap2_haplotigs" not in tracked_outputs
+    assert "hap2_chr_list" not in tracked_outputs
+
+
 def test_run_pretext_to_asm_dry_run_output_resolves_via_find_canonical_fa(mock_ctx, tmp_path):
     """The fake FASTA written in dry-run mode must resolve through the real
     canonical-FASTA resolution pool, not just via tracker bookkeeping."""

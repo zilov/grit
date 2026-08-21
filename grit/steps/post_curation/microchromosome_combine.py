@@ -9,7 +9,13 @@ import rich_click as click
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.steps.post_curation.pretext_to_asm import _run_pretext_to_asm_core
-from grit.utils.helpers import _run, collect_outputs, find_latest_dir, write_fake_outputs
+from grit.utils.helpers import (
+    _run,
+    collect_outputs,
+    find_latest_dir,
+    is_single_hap,
+    write_fake_outputs,
+)
 from grit.utils.output import print_done, print_step_header
 
 log = logging.getLogger(__name__)
@@ -80,12 +86,11 @@ def run_microchromosome_combine(ctx: CurationContext) -> None:
     print_step_header(ctx.ticket_id, ctx.tol_id, "Microchromosome combine")
 
     if ctx.dry_run:
-        is_single_hap = ctx.hap1_prefix in ("primary", "paternal")
         run_dir = ctx.tracker.start(
             "microchromosome_combine", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
         )
         outputs = write_fake_outputs("microchromosome_combine", run_dir, ctx.tol_id)
-        if is_single_hap:
+        if is_single_hap(ctx):
             # microchromosome-second-shot's own tooling always names dual-hap
             # outputs with the literal "hap1"/"hap2" token regardless of YAML
             # key — but a single-hap (primary/alternate) assembly never has a
