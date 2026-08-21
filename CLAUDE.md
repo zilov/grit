@@ -65,79 +65,52 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
 - **`print_only` everywhere** — every step respects `ctx.print_only`; `_run()` enforces it
 - **`--dry-run`** — a separate mode from `print_only`, for exercising step-sequencing/
   tracking/canonical-resolution logic through the real CLI without HPC/NFS access.
-  `ctx.dry_run` isolates both the registry and every ticket's workdir under
-  `~/.grit/dry_run/` (see `dry_run_root()` in `grit/core/registry.py`) — never the
-  real `~/.grit/grit_registry.json` or a real farm workdir — and each supporting step
-  writes placeholder outputs via `write_fake_outputs()` (`grit/utils/helpers.py`)
-  instead of running any real command. As of now `setup`, `pretext-to-asm`,
-  `blast-contaminants`, `rename-and-orient`, `microchromosome-combine`,
-  `pretext-to-asm-recurate`, `busco-synteny`, `fastga-synteny`, `fastga`,
-  `microchromosome-second-shot`, `hic-remapping`, `fastga-stats`,
-  `haplotig-files`, `validate-files`, `super-to-scaffold`, `busco-curated`,
-  `find-reference`, `sex-matcher`, `qv`, `finalize-qc`, and `post-processing`
-  (aliased as `pp` — same underlying `run_post_processing()`, two distinct Click
-  command names, so both need their own entry) have a dry-run branch
-  (`_DRY_RUN_SUPPORTED_COMMANDS` in `grit/core/base_command.py`); the composite
-  commands `post-curation` and `post-curation-recurate` are also allowlisted since
-  they only call already-dry-run-aware sub-functions and do no I/O of their own.
-  `post_processing` is the one step in this set with a real safety hazard: on
-  success it unconditionally calls `RegistryManager().mark_done(ctx.ticket_id)` —
-  the real, non-dry-run-isolated default registry, not `dry_run_root()` — after
-  shelling out via raw `subprocess.run(["bash"], ...)` (not `_run()`). Its
-  dry-run branch returns immediately after `tracker.start()`/`tracker.finish()`,
-  strictly before both the `subprocess.run()` call and the `mark_done()` call, so
-  neither real side effect is ever reachable when `ctx.dry_run` is set.
-  `add_pretext_view_tracks.py` deliberately has no dry-run branch and is not in
-  `_DRY_RUN_SUPPORTED_COMMANDS` — it mutates a `.pretext` binary in place via
-  `PretextGraph`, has no tracked output to fake, and plays no part in the
-  canonical-resolution/step-sequencing logic this feature exists to exercise.
-  `super_to_scaffold`, `busco_curated`, `find_reference`, and `sex_matcher` each
-  needed their own small local dry-run writer rather than the shared
-  `write_fake_outputs()`/`_get_step_specs()` pattern: `busco_curated`'s real
-  output dir is a sibling of its tracked `run_dir` (directly under
-  `ctx.workdir`), `find_reference`'s and `sex_matcher`'s real paths never pass
-  `outputs=` to `tracker.finish()` (their outputs are discovered later by
-  re-globbing), and `sex_matcher`'s dry-run branch sits immediately after
-  `print_step_header`, before its substantial pre-submission idempotency/
-  polling logic (including the tol_id-format validation check) — not just
-  before its `_submit_bsub()` call. `super_to_scaffold` is the exception: its
-  real output is now tracked via `_OUTPUT_SPECS`/`_get_step_specs()` like the
-  original six steps, so its dry-run branch uses `write_fake_outputs()` directly.
-  `hic_remapping`'s real (non-dry-run) success path never calls
-  `ctx.tracker.finish(..., "success")` itself (only on exception or an
-  already-done skip) — its dry-run branch calls `tracker.finish(..., "success")`
-  anyway, a deliberate choice for consistency with every other async step's
-  dry-run pattern, not a copy of that one step's unusual real-path omission.
-  `qv`'s dry-run branch writes stub `{tol_id}.qv`/`{tol_id}.completeness.stats`
-  files into the real `ctx.assembly_curated_dir/merquryk/` (not `run_dir`), then
-  reuses the real `_find_qv_outputs(ctx)` glob helper to build `tracker.finish()`'s
-  outputs — deliberately not `write_fake_outputs()`, since qv's outputs live under
-  `assembly_curated_dir`, not the tracked run dir. `finalize_qc`'s dry-run branch
-  skips the real-filesystem `_raise_if_yaml_pta_mismatch(ctx)` check entirely (not
-  just under `print_only`), writes placeholder curated FASTAs for whichever
-  haplotype(s) the shared `is_single_hap(ctx)` helper selects (its own hand-rolled
-  `_IS_SINGLE_HAP` check was replaced with this helper in both the dry-run and real
-  paths), and — matching its real behavior of calling `run_qv(ctx)` whenever
-  `dest_dir/merquryk` doesn't exist yet — calls the now-dry-run-aware `run_qv(ctx)`
-  under the same condition, so a dry-run `finalize-qc` cascades into qv's dry-run
-  branch rather than ever reaching a real subprocess.
+  `ctx.dry_run` isolates the registry, every ticket's workdir, and
+  `ctx.assembly_curated_dir` under `~/.grit/dry_run/` (see `dry_run_root()` in
+  `grit/core/registry.py`) — never the real `~/.grit/grit_registry.json`, a real
+  farm workdir, or the real curated-release directory — and each supporting step
+  writes placeholder outputs via `write_fake_outputs()` (`grit/utils/helpers.py`,
+  or a small local writer for steps whose real output isn't tracked via
+  `_OUTPUT_SPECS`) instead of running any real command. `--print-only` always
+  takes precedence over `--dry-run` when both are set — resolved once in
+  `CurationContext.from_yaml` (`dry_run = dry_run and not print_only`) and
+  independently in `GritCommand.invoke()`'s pre-callback guard, since that check
+  runs before a `CurationContext` exists.
+
+  `setup`, `pretext-to-asm`, `blast-contaminants`, `rename-and-orient`,
+  `microchromosome-combine`, `pretext-to-asm-recurate`, `busco-synteny`,
+  `fastga-synteny`, `fastga`, `microchromosome-second-shot`, `hic-remapping`,
+  `fastga-stats`, `haplotig-files`, `super-to-scaffold`, `busco-curated`,
+  `find-reference`, `sex-matcher`, `qv`, `finalize-qc`, `post-processing`
+  (aliased as `pp`), `post-curation`, and `post-curation-recurate` have a
+  dry-run branch (`_DRY_RUN_SUPPORTED_COMMANDS` in `grit/core/base_command.py`).
   `GritCommand.invoke()` refuses `--dry-run` up front for every other (not yet
-  ported) step with a `UsageError` rather than silently proceeding as a real run.
-  `--print-only` always takes precedence over `--dry-run` when both are set — resolved
-  once in `CurationContext.from_yaml` (`dry_run = dry_run and not print_only`) and
-  independently in `GritCommand.invoke()` for the pre-callback guard, since that check
-  runs before a `CurationContext` exists. `status`/`untrack`/`done`/`reopen`/`remove`/
-  `summary`/`cleanup` are plain `@cli.command`s rather than `GritCommand`-based:
-  `status`/`untrack` support `--dry-run` as a group-level flag (`grit --dry-run status
-  -t <ticket>`, never per-command) by explicitly threading it into their own
-  `RegistryManager(registry_dir=dry_run_root())`; the other five have no dry-run
-  support and raise `UsageError` if `--dry-run` is passed, since they mutate the real
-  registry/workdir (including `remove`'s `shutil.rmtree()`) and isolating them isn't
-  useful. Reset the sandbox with `rm -rf ~/.grit/dry_run`. See
-  `tests/local_smoke_test.sh`'s dry-run section for a real chained example.
+  ported) step with a `UsageError`. `status`/`untrack` support `--dry-run` as a
+  group-level flag (`grit --dry-run status -t <ticket>`, never per-command); the
+  other plain `@cli.command`s (`done`/`reopen`/`remove`/`summary`/`cleanup`)
+  have no dry-run support and raise `UsageError` if `--dry-run` is passed, since
+  they mutate the real registry/workdir. Reset the sandbox with
+  `rm -rf ~/.grit/dry_run`. See `tests/local_smoke_test.sh`'s dry-run section
+  for a real chained example.
+
+  `validate-files` is allowlisted in `_DRY_RUN_SUPPORTED_COMMANDS` for when it's
+  eventually registered on the CLI group, but its Click command is currently
+  commented out in `click_cli.py` (pre-existing, unrelated gap) — `grit
+  validate-files`/`grit --dry-run validate-files` are not reachable today.
+
+  `add_pretext_view_tracks.py` deliberately has no dry-run branch and is not in
+  `_DRY_RUN_SUPPORTED_COMMANDS` — it mutates a `.pretext` binary in place, has
+  no tracked output to fake, and plays no part in the canonical-resolution/
+  step-sequencing logic this feature exists to exercise.
+
+  Per-step design rationale and historical context for each dry-run branch
+  lives in `TODO/done/45_dry_run_mode.md` and `TODO/46_dry_run_remaining_steps.md`,
+  not here.
 - **`is_single_hap(ctx)`** (`grit/utils/helpers.py`) — true for a `primary`/`paternal`
-  (single-hap) assembly; the shared check for gating hap2-fabrication bugs in
-  `pretext_to_asm`/`blast_contaminants`/`microchromosome_combine`'s dry-run branches.
+  (single-hap) assembly; the shared check for gating hap2-fabrication bugs, used by
+  `pretext_to_asm`, `blast_contaminants`, `microchromosome_combine`,
+  `super_to_scaffold`, `microchromosome_second_shot`, and `finalize_qc` (in both
+  their dry-run branches and their real paths).
 - **`require_workdir(ctx)`** — guards steps that need an existing workdir; skipped in print_only mode
 - **`log.*` not `print()`** — use Python `logging`; `RichHandler` formats output
 - **Minimal docstrings** — one line stating what the function returns/does, only
