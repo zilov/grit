@@ -1394,6 +1394,16 @@ def test_finalize_for_qc_dry_run_dual_hap(mock_run, mock_qv_run, mock_ctx, tmp_p
     dest_dir = mock_ctx.assembly_curated_dir
     assert (dest_dir / "sDipInt39.hap1.1.primary.curated.fa").exists()
     assert (dest_dir / "sDipInt39.hap2.1.primary.curated.fa").exists()
+    # haplotig + chromosome-list placeholders, matching the real path's naming
+    haplotig_suffix = (
+        "all_haplotigs.curated.fa"
+        if mock_ctx.combine_for_curation
+        else "additional_haplotigs.curated.fa"
+    )
+    assert (dest_dir / f"sDipInt39.hap1.1.{haplotig_suffix}").exists()
+    assert (dest_dir / f"sDipInt39.hap2.1.{haplotig_suffix}").exists()
+    assert (dest_dir / "sDipInt39.hap1.1.primary.chromosome.list.csv").exists()
+    assert (dest_dir / "sDipInt39.hap2.1.primary.chromosome.list.csv").exists()
 
     # qv's dry-run branch ran as part of finalize_qc's dry-run branch
     qv_file = mock_ctx.tracker.get_output("qv", "qv")
@@ -1430,6 +1440,13 @@ def test_finalize_for_qc_dry_run_single_hap(mock_run, mock_qv_run, mock_ctx_prim
 
     dest_dir = mock_ctx_primary.assembly_curated_dir
     assert (dest_dir / "ilHelSara1.1.primary.curated.fa").exists()
+    haplotig_suffix = (
+        "all_haplotigs.curated.fa"
+        if mock_ctx_primary.combine_for_curation
+        else "additional_haplotigs.curated.fa"
+    )
+    assert (dest_dir / f"ilHelSara1.1.{haplotig_suffix}").exists()
+    assert (dest_dir / "ilHelSara1.1.primary.chromosome.list.csv").exists()
     # no hap2 file for a single-hap assembly
     assert not any(dest_dir.glob("ilHelSara1.*.hap2.*"))
 
@@ -1614,3 +1631,30 @@ def test_run_post_processing_dry_run_skips_subprocess_and_mark_done(
 
     status = registry.find_ticket(mock_ctx.ticket_id)["status"]
     assert status != "done"
+
+
+@patch("grit.core.registry.RegistryManager.mark_done")
+@patch("grit.steps.post_curation.post_processing.subprocess.run")
+def test_run_post_processing_dry_run_succeeds_without_existing_workdir(
+    mock_subprocess_run, mock_mark_done, mock_ctx, tmp_path
+):
+    """dry_run must not require ctx.workdir to already exist on disk — every
+    other dry-run step creates its own directories on demand via
+    tracker.start(create_dir=True), so post_processing shouldn't be the one
+    exception that needs `grit --dry-run setup` to have run first."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.post_curation.post_processing import run_post_processing
+
+    mock_ctx.workdir = tmp_path / "does_not_exist_yet"
+    assert not mock_ctx.workdir.exists()
+
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(mock_ctx.workdir, registry=registry)
+    mock_ctx.dry_run = True
+
+    run_post_processing(mock_ctx)
+
+    mock_subprocess_run.assert_not_called()
+    mock_mark_done.assert_not_called()

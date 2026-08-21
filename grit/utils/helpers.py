@@ -26,9 +26,9 @@ def require_workdir(ctx: CurationContext) -> None:
     """
     Abort with a helpful message if ctx.workdir does not exist on disk.
 
-    Skipped in print_only mode (workdir may not exist yet during dry-runs).
+    Skipped in print_only and dry_run mode (workdir may not exist yet).
     """
-    if ctx.print_only:
+    if ctx.print_only or ctx.dry_run:
         return
     if not ctx.workdir.exists():
         log.error(
