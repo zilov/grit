@@ -211,3 +211,22 @@ def test_dry_run_workdir_isolated_from_real_workdir(tmp_path, monkeypatch):
     # tracker's underlying registry points at the monkeypatched dry_run_root, not ~/.grit
     assert dry_ctx.tracker._registry.dir == tmp_path
     assert dry_ctx.tracker.workdir == dry_ctx.workdir
+
+
+def test_print_only_takes_precedence_over_dry_run(tmp_path, monkeypatch):
+    """Per the binding global constraint: if both --print-only and --dry-run are
+    set, --print-only wins — dry_run resolves to False and the real (non-sandboxed)
+    workdir is used, not dry_run_root()."""
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+
+    ctx = CurationContext.from_ticket(
+        "RC-1234",
+        TEST_USER_CONFIG,
+        yaml_override=TEST_YAML_HAP1,
+        print_only=True,
+        dry_run=True,
+    )
+
+    assert ctx.dry_run is False
+    assert "assembly/draft" not in str(ctx.workdir)
+    assert tmp_path not in ctx.workdir.parents and ctx.workdir != tmp_path

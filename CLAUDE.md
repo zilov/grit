@@ -71,14 +71,25 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
   writes placeholder outputs via `write_fake_outputs()` (`grit/utils/helpers.py`)
   instead of running any real command. As of now only `setup`, `pretext-to-asm`,
   `blast-contaminants`, `rename-and-orient`, `microchromosome-combine`, and
-  `pretext-to-asm-recurate` have a dry-run branch; every other step (`hic-remapping`,
-  `fastga`, `qv`, `finalize-qc`, `busco-*`, etc.) has no `ctx.dry_run` check at all, so
-  passing `--dry-run` to one of those today silently proceeds as a real run instead of
-  erroring — a known footgun, not yet fixed. `status`/`untrack` are plain
-  `@cli.command`s rather than `GritCommand`-based, so `--dry-run` only works for them as
-  a group-level flag (`grit --dry-run status -t <ticket>`), never per-command. Reset the
-  sandbox with `rm -rf ~/.grit/dry_run`. See `tests/local_smoke_test.sh`'s dry-run
-  section for a real chained example.
+  `pretext-to-asm-recurate` have a dry-run branch (`_DRY_RUN_SUPPORTED_COMMANDS` in
+  `grit/core/base_command.py`). `GritCommand.invoke()` refuses `--dry-run` up front
+  for every other step (`hic-remapping`, `fastga`, `qv`, `finalize-qc`, `busco-*`,
+  etc.) with a `UsageError` rather than silently proceeding as a real run.
+  `--print-only` always takes precedence over `--dry-run` when both are set — resolved
+  once in `CurationContext.from_yaml` (`dry_run = dry_run and not print_only`) and
+  independently in `GritCommand.invoke()` for the pre-callback guard, since that check
+  runs before a `CurationContext` exists. `status`/`untrack`/`done`/`reopen`/`remove`/
+  `summary`/`cleanup` are plain `@cli.command`s rather than `GritCommand`-based:
+  `status`/`untrack` support `--dry-run` as a group-level flag (`grit --dry-run status
+  -t <ticket>`, never per-command) by explicitly threading it into their own
+  `RegistryManager(registry_dir=dry_run_root())`; the other five have no dry-run
+  support and raise `UsageError` if `--dry-run` is passed, since they mutate the real
+  registry/workdir (including `remove`'s `shutil.rmtree()`) and isolating them isn't
+  useful. Reset the sandbox with `rm -rf ~/.grit/dry_run`. See
+  `tests/local_smoke_test.sh`'s dry-run section for a real chained example.
+- **`is_single_hap(ctx)`** (`grit/utils/helpers.py`) — true for a `primary`/`paternal`
+  (single-hap) assembly; the shared check for gating hap2-fabrication bugs in
+  `pretext_to_asm`/`blast_contaminants`/`microchromosome_combine`'s dry-run branches.
 - **`require_workdir(ctx)`** — guards steps that need an existing workdir; skipped in print_only mode
 - **`log.*` not `print()`** — use Python `logging`; `RichHandler` formats output
 - **Minimal docstrings** — one line stating what the function returns/does, only

@@ -126,6 +126,11 @@ class CurationContext:
         """
         cfg = UserConfig.from_dict(user_config)
 
+        # print_only takes precedence over dry_run — resolved once, here, so every
+        # downstream dry_run-conditional branch (below, and in every step's
+        # `if ctx.dry_run:` check) automatically inherits the correct precedence.
+        dry_run = dry_run and not print_only
+
         assembly_type, hap1_prefix, hap2_prefix = _detect_assembly_type(yaml_data)
 
         tol_id: str = yaml_data["specimen"]
