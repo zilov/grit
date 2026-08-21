@@ -225,8 +225,8 @@ echo "$s3" | sed -n '/Canonical files/,/Step history/p' | grep -q "│ alternate
     && fail "[S3] a single-hap ticket's canonical-files table has a fabricated 'alternate' row" \
     || ok "[S3] canonical-files table shows only 'primary', no fabricated 'alternate' row"
 
-primary_workdir=$(find ~/.grit/dry_run -maxdepth 1 -iname "xbLimHian1*" | head -1)
-[ -n "$primary_workdir" ] || fail "[S3] could not locate the primary ticket's sandbox workdir"
+primary_workdir="$HOME/.grit/dry_run/$T3"  # dry-run workdirs are keyed by ticket_id
+[ -d "$primary_workdir" ] || fail "[S3] could not locate the primary ticket's sandbox workdir: $primary_workdir"
 leftover=$(find "$primary_workdir" \( -iname "*hap2*" -o -iname "*alternate*" \) 2>/dev/null || true)
 [ -z "$leftover" ] \
     && ok "[S3] no hap2/alternate files anywhere on disk for the single-hap ticket" \
@@ -254,16 +254,13 @@ $GRIT_DRY --dry-run untrack -t "$T1" --step blast_contaminants --undo && ok "[S4
 s4=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s4" hap1 "assembly FA" "blast_contaminants/" "[S4] hap1 canonical returns to blast_contaminants after --undo"
 
-# NOTE — a real gotcha this whole file exists to surface: the dry-run sandbox
-# is keyed by tol_id alone (dry_run_root() / tol_id), NOT by ticket_id. Two
-# different --dry-run "tickets" that share a YAML fixture (hence the same
-# tol_id) share the exact same sandboxed workdir/tracker history — running a
-# second dry-run scenario against the same YAML after the first has already
-# mutated canonical_fa does NOT start from a clean slate. This is why every
-# scenario above reuses the single ticket $T1 for the hap YAML rather than
-# inventing a fresh ticket ID per scenario (a fresh ticket ID would not have
-# given a fresh sandbox) — the $DRY_RUN_TICKET CLI argument is still accepted
-# for backward compatibility but is no longer used by this script.
+# The dry-run sandbox is keyed by ticket_id, not tol_id — two --dry-run
+# "tickets" that share a YAML fixture (hence the same tol_id, exactly what
+# every scenario above does) each still get their own isolated workdir/tracker
+# history, so a fresh scenario could use its own ticket ID here. Every
+# scenario above reuses $T1 anyway, since Scenarios 1/2/4 are deliberately
+# chained on top of each other. The $DRY_RUN_TICKET CLI argument is still
+# accepted for backward compatibility but is no longer used by this script.
 
 rm -rf ~/.grit/dry_run
 ok "dry-run sandbox cleaned up"

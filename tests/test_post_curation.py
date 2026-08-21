@@ -1603,7 +1603,9 @@ def test_cli_haplotig_files_dry_run_chains_after_pretext_to_asm_dry_run(tmp_path
     result_haplotig = runner.invoke(cli, [*common_args, "haplotig-files"])
     assert result_haplotig.exit_code == 0, result_haplotig.output
 
-    workdir = tmp_path / "uoEpiScra1"
+    # --ticket wasn't given, so the ticket_id (and dry-run workdir, which is
+    # keyed by ticket_id, not tol_id) is derived from the --yaml filename stem.
+    workdir = tmp_path / "uoEpiScra1_hap1_hap2"
     pta_run_dir = Path(next((workdir / "pretext_to_asm").iterdir()))
     assert list(pta_run_dir.glob("uoEpiScra1.hap1.*.all_haplotigs.curated.fa"))
     assert list(pta_run_dir.glob("uoEpiScra1.hap2.*.all_haplotigs.curated.fa"))

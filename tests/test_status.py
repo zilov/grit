@@ -519,13 +519,14 @@ def test_show_ticket_history_dry_run_with_yaml_override_builds_ctx_and_shows_sta
     the real CurationContext build succeed against the dry-run-isolated workdir
     — the canonical files table and ★ marker must then actually be produced."""
     tol_id = "ilHelSara1"
+    ticket_id = "RC-DRY"
     dry_dir = tmp_path / "dry_run_root"
     monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: dry_dir)
 
-    workdir = dry_dir / tol_id
+    workdir = dry_dir / ticket_id  # dry-run workdirs are keyed by ticket_id, not tol_id
     workdir.mkdir(parents=True)
     reg = RegistryManager(registry_dir=dry_dir)
-    reg.add_ticket("RC-DRY", tol_id, "species", workdir)
+    reg.add_ticket(ticket_id, tol_id, "species", workdir)
     tracker = RunTracker(workdir, registry=reg)
 
     run_dir = tracker.start("pretext_to_asm", "RC-DRY", tol_id)

@@ -246,3 +246,19 @@ def test_dry_run_isolates_every_writable_path(tmp_path, monkeypatch):
     assert tmp_path in ctx.assembly_curated_dir.parents or ctx.assembly_curated_dir == tmp_path
     assert ctx.assembly_curated_dir != ctx.workdir
     assert "assembly/curated" not in str(ctx.assembly_curated_dir)
+
+
+def test_dry_run_workdir_is_keyed_by_ticket_id_not_tol_id(tmp_path, monkeypatch):
+    """Two dry-run tickets sharing a YAML fixture (hence the same tol_id) must
+    get independent sandboxes — a real curator never runs two tickets for the
+    same tol_id at once, but a developer testing two different --dry-run
+    pipeline orderings against the same species fixture does exactly that."""
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+
+    ctx_a = CurationContext.from_yaml("scenario-a", TEST_YAML_HAP1, TEST_USER_CONFIG, dry_run=True)
+    ctx_b = CurationContext.from_yaml("scenario-b", TEST_YAML_HAP1, TEST_USER_CONFIG, dry_run=True)
+
+    assert ctx_a.tol_id == ctx_b.tol_id  # same species/YAML fixture
+    assert ctx_a.workdir != ctx_b.workdir
+    assert ctx_a.workdir == tmp_path / "scenario-a"
+    assert ctx_a.assembly_curated_dir != ctx_b.assembly_curated_dir
