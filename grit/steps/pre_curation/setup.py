@@ -341,6 +341,22 @@ def run_setup(ctx: CurationContext) -> None:
     """
     log.info("setup | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
 
+    if ctx.dry_run:
+        from grit.core.registry import RegistryManager, dry_run_root
+
+        ctx.workdir.mkdir(parents=True, exist_ok=True)
+        RegistryManager(registry_dir=dry_run_root()).add_ticket(
+            ctx.ticket_id,
+            ctx.tol_id,
+            ctx.species,
+            ctx.workdir,
+            hap1_prefix=ctx.hap1_prefix,
+            hap2_prefix=ctx.hap2_prefix,
+        )
+        (ctx.workdir / "original.fa").write_bytes(b">fake\nACGT\n")
+        print_done(f"[dry-run] ticket registered, workdir → {ctx.workdir}")
+        return
+
     # Record in global registry
     if not ctx.print_only:
         from grit.core.registry import RegistryManager

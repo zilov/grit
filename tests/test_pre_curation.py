@@ -16,6 +16,7 @@ from grit.steps.pre_curation.setup import (
     _peek_first_fasta_header,
     _resolve_hap2_fasta,
     _validate_scaffold_headers,
+    run_setup,
 )
 
 # ---------------------------------------------------------------------------
@@ -359,3 +360,78 @@ def test_print_curation_summary_includes_sex(mock_ctx):
 def test_print_curation_summary_with_teloseq(mock_ctx):
     mock_ctx.teloseq = "--teloseq TTAGG"
     print_curation_summary(mock_ctx)
+
+
+# ---------------------------------------------------------------------------
+# run_setup — dry-run branch
+# ---------------------------------------------------------------------------
+
+
+def test_run_setup_dry_run_registers_ticket_and_finds_by_workdir(mock_ctx, tmp_path, monkeypatch):
+    """A dry-run ticket must be registered under the isolated dry_run_root
+    and resolvable via RegistryManager.find_ticket()."""
+    from grit.core.registry import RegistryManager
+
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+
+    mock_ctx.dry_run = True
+    mock_ctx.workdir = tmp_path / mock_ctx.tol_id
+
+    run_setup(mock_ctx)
+
+    record = RegistryManager(registry_dir=tmp_path).find_ticket(mock_ctx.ticket_id)
+    assert record is not None
+    assert record["workdir"] == str(mock_ctx.workdir)
+    assert record["tol_id"] == mock_ctx.tol_id
+    assert record["species"] == mock_ctx.species
+    assert record["hap1_prefix"] == mock_ctx.hap1_prefix
+    assert record["hap2_prefix"] == mock_ctx.hap2_prefix
+
+
+def test_run_setup_dry_run_creates_workdir_and_placeholder_fa(mock_ctx, tmp_path, monkeypatch):
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+
+    mock_ctx.dry_run = True
+    mock_ctx.workdir = tmp_path / mock_ctx.tol_id
+
+    run_setup(mock_ctx)
+
+    assert mock_ctx.workdir.is_dir()
+    assert (mock_ctx.workdir / "original.fa").exists()
+
+
+@patch("grit.steps.pre_curation.setup._run")
+@patch("grit.steps.pre_curation.setup.glob.glob")
+def test_run_setup_dry_run_skips_real_setup_work(
+    mock_glob, mock_run, mock_ctx, tmp_path, monkeypatch
+):
+    """No module loads / FASTA resolution / _run() shell calls in dry-run mode."""
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+
+    mock_ctx.dry_run = True
+    mock_ctx.workdir = tmp_path / mock_ctx.tol_id
+
+    run_setup(mock_ctx)
+
+    mock_run.assert_not_called()
+    mock_glob.assert_not_called()
+
+
+def test_run_setup_dry_run_does_not_touch_real_dry_run_root(mock_ctx, tmp_path, monkeypatch):
+    """Confirms the isolated dry_run_root() is actually what's used, not the real ~/.grit."""
+    calls = []
+    real_dry_run_root = tmp_path / "isolated"
+
+    def _fake_dry_run_root():
+        calls.append(True)
+        return real_dry_run_root
+
+    monkeypatch.setattr("grit.core.registry.dry_run_root", _fake_dry_run_root)
+
+    mock_ctx.dry_run = True
+    mock_ctx.workdir = real_dry_run_root / mock_ctx.tol_id
+
+    run_setup(mock_ctx)
+
+    assert calls, "dry_run_root() was never called"
+    assert (real_dry_run_root / "grit_registry.json").exists()
