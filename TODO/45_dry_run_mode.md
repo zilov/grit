@@ -53,12 +53,21 @@ while never shelling out to any real external tool, never submitting a real
 
 **Scope:** `grit/core/base_command.py`, `grit/core/click_cli.py`,
 `grit/core/context.py`, `grit/core/registry.py`, `grit/core/run_tracker.py`
-(read-only reference, no change expected there — confirm), plus their
-existing test files (`tests/test_base_command.py`,
-`tests/test_click_cli.py`/equivalent, `tests/test_context.py`,
-`tests/test_registry.py` — check which of these exist before assuming
-filenames; add tests in whichever file already covers the function you're
-touching).
+(read-only reference, no change expected there — confirm), plus
+`tests/test_base_command.py`, `tests/test_context.py`,
+`tests/test_registry.py` (all confirmed to exist). There is **no**
+`tests/test_click_cli.py` today — `status_cmd`/`untrack_cmd` have zero
+existing test coverage at the CLI level (only `RunTracker.untrack()` itself
+is tested, in `tests/test_run_tracker.py`). Create
+`tests/test_click_cli.py` for the new tests these two commands need,
+following the exact pattern already established in
+`tests/test_remove_cmd.py` (confirmed working): `from click.testing import
+CliRunner`, `from grit.core.click_cli import cli`, and an autouse fixture
+`monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", tmp_path)` to keep
+the CLI-invoked commands' default `RegistryManager()` construction off the
+real `~/.grit` for the whole test file (that fixture is for the *default*
+registry, not `dry_run_root()` — see Task 1b below for the separate
+`dry_run_root()` monkeypatch you'll also need).
 
 ### 1a. Flag plumbing (mirrors `--print-only` exactly)
 
@@ -109,14 +118,20 @@ branch: as written, `RunTracker`/`RegistryManager` always point at the
    registry=RegistryManager(registry_dir=dry_run_root()))` when
    `dry_run=True`, instead of relying on `RunTracker`'s default lazy
    (real-registry) construction.
-3. `status_cmd` (`click_cli.py:170-183`) constructs `RegistryManager()`
-   directly (line 176), bypassing `build_context()` entirely — it never sees
-   `ctx.dry_run`. Read `ctx.obj.dry_run` (the same `GlobalState` the
-   group-level `--dry-run` option sets) and swap in
-   `RegistryManager(registry_dir=dry_run_root())` when set.
-4. `untrack_cmd` (`click_cli.py:263-303`) does the same at line 274 (plus a
-   second bare `RunTracker(workdir)` at line 280 that needs the matching
-   `registry=` override). Branch on `ctx.obj.dry_run` the same way.
+3. `status_cmd` (`click_cli.py:167-183`, a plain `@cli.command("status")`,
+   **not** a `GritCommand` — it has no per-command option injection at all)
+   constructs `RegistryManager()` directly (line 176), bypassing
+   `build_context()` entirely — it never sees a `CurationContext`. Read
+   `ctx.obj.dry_run` (the same group-level `GlobalState` the `--dry-run`
+   option from Task 1a sets — reachable here only as `grit --dry-run
+   status -t <ticket>`, since `status`/`untrack` don't get their own
+   per-command `--dry-run` option the way `GritCommand`-based step commands
+   do) and swap in `RegistryManager(registry_dir=dry_run_root())` when set.
+4. `untrack_cmd` (`click_cli.py:263-303`, same plain-`@cli.command` shape)
+   does the same at line 274 (plus a second bare `RunTracker(workdir)` at
+   line 280 that needs the matching `registry=` override). Branch on
+   `ctx.obj.dry_run` the same way — again only reachable as `grit --dry-run
+   untrack ...`, not a per-command flag.
 5. `_state-update` (`click_cli.py:186-225`, the hidden bsub-epilogue
    command) needs **no** change — dry-run steps never call `_submit_bsub()`
    (Task 4+), so it is never invoked in dry-run mode. Leave it untouched;
@@ -144,13 +159,16 @@ before ever reading from those paths.
   return a `tmp_path`) to a location distinct from the `dry_run=False`
   one's real-derived workdir, and that its `tracker`'s underlying registry
   points at that same `tmp_path`, not `~/.grit`.
-- `status_cmd`/`untrack_cmd`: a test (using Click's `CliRunner` if that
-  pattern already exists elsewhere in the test suite — check
-  `tests/test_click_cli.py`-equivalent — otherwise call the underlying
-  functions directly) confirming that with `dry_run=True` on `ctx.obj`, the
-  `RegistryManager` constructed inside each is pointed at `dry_run_root()`,
-  not the default. Monkeypatch `dry_run_root()` to a `tmp_path` for this
-  test so it never touches a real `~/.grit`.
+- `status_cmd`/`untrack_cmd` (new `tests/test_click_cli.py`, per the Scope
+  note above): using `CliRunner`/`cli` exactly like `tests/test_remove_cmd.py`
+  does, seed a ticket via `RegistryManager(registry_dir=tmp_path).add_ticket(...)`
+  where `tmp_path` is what `dry_run_root()` was monkeypatched to return,
+  then invoke `["status", "-t", ticket_id, "--dry-run"]` (or however the
+  flag reaches these commands per your Task 1a wiring) and assert it reads
+  from that `tmp_path` registry, not the one the autouse
+  `_DEFAULT_DIR`-patched fixture points at — i.e. the test must prove
+  dry-run and non-dry-run invocations resolve to two *different*
+  registries, not just that dry-run doesn't crash.
 
 **Report file:** `.superpowers/sdd/45_dry_run_mode/task-1-report.md`
 
@@ -411,9 +429,12 @@ grit setup -t <ticket> --dry-run              && ok "setup --dry-run"
 grit pretext-to-asm -t <ticket> --dry-run      && ok "pretext-to-asm --dry-run"
 grit blast-contaminants -t <ticket> --dry-run  && ok "blast-contaminants --dry-run"
 grit rename-and-orient -t <ticket> --dry-run   && ok "rename-and-orient --dry-run"
-# assert (grep the output, or a follow-up `grit status -t` call) that the
-# ★ marker lands on rename_and_orient's row
-grit untrack -t <ticket> --step rename_and_orient
+# status/untrack aren't GritCommand-based, so --dry-run only works at the
+# group level for them: `grit --dry-run status ...`, not `grit status ... --dry-run`
+grit --dry-run status -t <ticket>
+# assert (grep the output) that the ★ marker lands on rename_and_orient's row
+grit --dry-run untrack -t <ticket> --step rename_and_orient
+grit --dry-run status -t <ticket>
 # assert the ★ now lands on blast_contaminants's row
 rm -rf ~/.grit/dry_run   # leave no trace
 ```
