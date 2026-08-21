@@ -125,7 +125,11 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
   `blast_contaminants`, `rename_and_orient[_hap2]`, `pretext_to_asm_recurate[_hap2]`) — the freshest
   existing tracked output wins outright, with a filesystem fallback when nothing is tracked. See
   `recuration-canonical-priority.md` for the full curator-facing decision path and a flowchart — read
-  it before touching any of these three functions or the recurate step
+  it before touching any of these three functions or the recurate step. `grit status -t`'s step-history
+  table surfaces this per row via a "Canonical" column showing per-type codes (`fa`/`hap`/`chr`), with a
+  `(1)`/`(2)` haplotype-index suffix when a ticket has more than one haplotype — e.g. a recurate row can
+  read `hap(1),chr(1)` while a later rename-and-orient row reads `fa(1)`, making clear they're each
+  canonical for a *different* output, not in conflict
 - **`GritJiraIssue`** is a shared server library injected via `sys.path` (path in user config), not a pip dependency
 
 ## Planning / design docs

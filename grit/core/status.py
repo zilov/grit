@@ -183,6 +183,67 @@ _CANONICAL_TYPE_LABELS = {
     "chr_list": "chr list",
 }
 
+# Short codes for the step-history table's "Canonical" column — kept distinct
+# from _CANONICAL_TYPE_LABELS (used by the wider "Canonical files" table).
+_CANONICAL_TYPE_MARKS = {
+    "fa": "fa",
+    "haplotigs": "hap",
+    "chr_list": "chr",
+}
+
+
+def _canonical_type_index(
+    resolved: dict[str, dict[str, Path | None]],
+) -> dict[str, list[tuple[str, str]]]:
+    """Invert `_resolve_canonical_files`'s output into path -> [(type, hap), ...]."""
+    index: dict[str, list[tuple[str, str]]] = {}
+    for hap, by_type in resolved.items():
+        for key, p in by_type.items():
+            if p is None:
+                continue
+            index.setdefault(str(p), []).append((key, hap))
+    return index
+
+
+def _canonical_mark(
+    outputs: dict, canonical_index: dict[str, list[tuple[str, str]]], haps: list
+) -> str:
+    """
+    Render this row's "Canonical" cell: which output type(s) — and, when a
+    ticket has more than one haplotype, which haplotype-index(es) — of its
+    recorded `outputs` currently resolve as canonical. Empty string when none do.
+
+    Kept deliberately compact (e.g. "fa(1),hap(1)") since this cell sits in a
+    fixed-width table column alongside step names that already run long.
+    """
+    matches: list[tuple[str, str]] = []
+    for v in outputs.values():
+        matches.extend(canonical_index.get(str(v), []))
+    if not matches:
+        return ""
+
+    hap_index = {hap: i + 1 for i, hap in enumerate(haps)}
+    show_hap = len(haps) > 1
+
+    haps_by_type: dict[str, list[str]] = {}
+    for type_key, hap in matches:
+        haps_by_type.setdefault(type_key, [])
+        if hap not in haps_by_type[type_key]:
+            haps_by_type[type_key].append(hap)
+
+    parts = []
+    for type_key in ("fa", "haplotigs", "chr_list"):
+        matched_haps = haps_by_type.get(type_key)
+        if not matched_haps:
+            continue
+        mark = _CANONICAL_TYPE_MARKS[type_key]
+        if show_hap:
+            indices = ",".join(str(hap_index.get(h, h)) for h in matched_haps)
+            mark += f"({indices})"
+        parts.append(mark)
+
+    return f"[green]{','.join(parts)}[/green]"
+
 
 def _print_canonical_files(ctx, resolved: dict[str, dict[str, Path | None]]) -> None:
     """Print a table of canonical output files found for this ticket."""
@@ -343,17 +404,17 @@ def show_ticket_history(
     except Exception as exc:
         console.print(f"[dim]Could not build curation context: {exc}[/dim]")
 
-    canonical_paths: set[str] = set()
+    canonical_index: dict[str, list[tuple[str, str]]] = {}
+    canonical_haps: list[str] = []
     if ctx:
         from grit.steps.pre_curation.setup import print_curation_summary
 
         print_curation_summary(ctx)
         console.print()
-        resolved_canonical = _resolve_canonical_files(ctx, _canonical_haps(ctx))
+        canonical_haps = _canonical_haps(ctx)
+        resolved_canonical = _resolve_canonical_files(ctx, canonical_haps)
         _print_canonical_files(ctx, resolved_canonical)
-        canonical_paths = {
-            str(p) for by_type in resolved_canonical.values() for p in by_type.values() if p
-        }
+        canonical_index = _canonical_type_index(resolved_canonical)
 
     tracker = RunTracker(workdir, registry=registry)
     history = tracker.history()
@@ -385,7 +446,7 @@ def show_ticket_history(
     table.add_column("Runs", justify="right")
     table.add_column("Last Run")
     table.add_column("Status")
-    table.add_column("Canonical", justify="center")
+    table.add_column("Canonical", justify="center", no_wrap=True)
     table.add_column("Job ID")
 
     memlimit_steps: list[str] = []
@@ -449,14 +510,14 @@ def show_ticket_history(
             style = "dim"
 
         outputs = entry.get("outputs") or {}
-        is_canonical = any(v in canonical_paths for v in outputs.values())
+        canonical_mark = _canonical_mark(outputs, canonical_index, canonical_haps)
 
         table.add_row(
             step,
             str(step_counts.get(step, 1)),
             ts,
             f"[{style}]{status}[/{style}]" if style else status,
-            "[green]★[/green]" if is_canonical else "",
+            canonical_mark,
             job_id,
         )
 

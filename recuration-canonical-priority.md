@@ -146,13 +146,34 @@ untrack` — the freshest output simply takes over.
 ## Seeing what's canonical right now
 
 `grit status -t {ticket}` prints a step-history table with a `Canonical`
-column. A step's most recent successful run is marked with a green `★` when
-one of its recorded output paths matches what `find_canonical_fa` /
-`find_canonical_chr_list` / `find_canonical_haplotigs` currently resolve to
-for any haplotype — i.e. it's a direct readout of the pool logic above, not
-a separate heuristic. The same view also prints a dedicated "Canonical
-files" table (fa / haplotigs / chr list per haplotype, with a found/not-found
-marker) above the step history.
+column. For each step, the column lists which specific output type(s) —
+`fa` (assembly FASTA), `hap` (haplotigs), `chr` (chromosome list) — of that
+step's recorded outputs currently match what `find_canonical_fa` /
+`find_canonical_chr_list` / `find_canonical_haplotigs` resolve to, e.g.
+`fa(1)` or `hap(1),chr(1)`. The `(N)` suffix is a 1-based haplotype index
+(only shown when the ticket has more than one haplotype) — it's a direct
+readout of the pool logic above per haplotype, not a separate heuristic.
+
+This replaces an earlier, ambiguous design where the column showed a bare
+`★` whenever *any* recorded output matched *any* canonical path for *any*
+haplotype and type. That collapsed genuinely distinct facts into one
+symbol: because `find_canonical_haplotigs`'s pool is smaller than
+`find_canonical_fa`'s (`rename_and_orient` never produces a haplotigs or
+chr-list output, so it isn't a candidate for those), a recurate round and a
+later rename-and-orient round can *both* be legitimately canonical at
+once — recurate for haplotigs/chr-list, rename-and-orient for the FASTA. The
+old marker starred all four rows (`pretext_to_asm_recurate[_hap2]` and
+`rename_and_orient[_hap2]`) identically, with no way to tell that they were
+canonical for different things rather than actually conflicting. The
+per-type marker makes that explicit: `pretext_to_asm_recurate` reads
+`hap(1),chr(1)` and `rename_and_orient` reads `fa(1)` — both correct, both
+visibly different.
+
+The same view also prints a dedicated "Canonical files" table (fa /
+haplotigs / chr list per haplotype, with a found/not-found marker) above the
+step history — it was never ambiguous in this way, since it already lists
+hap/type/file as separate columns; both tables are computed from the same
+`_resolve_canonical_files` call, so they can't disagree.
 
 ## Flowchart
 

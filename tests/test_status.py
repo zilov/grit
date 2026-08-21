@@ -13,6 +13,7 @@ from grit.core.status import (
     show_global_status,
     show_ticket_history,
 )
+from grit.utils.output import console
 from tests.conftest import TEST_USER_CONFIG, TEST_YAML_HAP1, TEST_YAML_PRIMARY
 
 
@@ -389,8 +390,8 @@ def test_show_ticket_history_marks_step_holding_canonical_output(tmp_path, monke
     pta_line = next(line for line in lines if "pretext_to_asm" in line and "success" in line)
     fastga_line = next(line for line in lines if "fastga" in line and "success" in line)
 
-    assert "★" in pta_line
-    assert "★" not in fastga_line
+    assert "fa(1)" in pta_line
+    assert "fa(" not in fastga_line
 
 
 def test_show_ticket_history_no_marker_when_no_outputs_recorded(tmp_path, monkeypatch, capsys):
@@ -408,8 +409,139 @@ def test_show_ticket_history_no_marker_when_no_outputs_recorded(tmp_path, monkey
     setup_line = next(line for line in lines if "setup_curation" in line)
     agp_line = next(line for line in lines if "agp_copied" in line)
 
-    assert "★" not in setup_line
-    assert "★" not in agp_line
+    for marker in ("fa(", "hap(", "chr("):
+        assert marker not in setup_line
+        assert marker not in agp_line
+
+
+def test_show_ticket_history_disambiguates_fa_vs_haplotigs_chr_list_owners(
+    tmp_path, monkeypatch, capsys
+):
+    """Reproduces the exact 4-row bug report: `pretext_to_asm_recurate[_hap2]` and
+    `rename_and_orient[_hap2]` are BOTH genuinely canonical at once, but for
+    different output types — recurate still owns haplotigs/chr_list, while
+    rename_and_orient (run later, with a fresher fa) has taken over the fa. The
+    old bare ★ marker could not tell these apart; the new per-type marker must."""
+    import os
+
+    monkeypatch.setattr(console, "width", 200)
+    tol_id = "sDipInt39"
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    def _write(path, mtime_offset):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(">seq\nACGT\n")
+        now = tracker.workdir.stat().st_mtime
+        os.utime(path, (now + mtime_offset, now + mtime_offset))
+
+    recurate_dir = tracker.start("pretext_to_asm_recurate", "RC-1234", tol_id)
+    recurate_hap = recurate_dir / f"{tol_id}.hap1.2.all_haplotigs.curated.fa"
+    recurate_chr = recurate_dir / f"{tol_id}.hap1.2.chromosome.list.csv"
+    _write(recurate_hap, 10)
+    _write(recurate_chr, 10)
+    tracker.finish(
+        "pretext_to_asm_recurate",
+        recurate_dir,
+        "success",
+        outputs={"hap1_haplotigs": str(recurate_hap), "hap1_chr_list": str(recurate_chr)},
+    )
+
+    recurate_hap2_dir = tracker.start("pretext_to_asm_recurate_hap2", "RC-1234", tol_id)
+    recurate_hap2_hap = recurate_hap2_dir / f"{tol_id}.hap2.2.all_haplotigs.curated.fa"
+    recurate_hap2_chr = recurate_hap2_dir / f"{tol_id}.hap2.2.chromosome.list.csv"
+    _write(recurate_hap2_hap, 10)
+    _write(recurate_hap2_chr, 10)
+    tracker.finish(
+        "pretext_to_asm_recurate_hap2",
+        recurate_hap2_dir,
+        "success",
+        outputs={"hap2_haplotigs": str(recurate_hap2_hap), "hap2_chr_list": str(recurate_hap2_chr)},
+    )
+
+    rao_dir = tracker.start("rename_and_orient", "RC-1234", tol_id)
+    rao_fa = rao_dir / f"{tol_id}.hap1.3.renamed.fa"
+    _write(rao_fa, 20)
+    tracker.finish("rename_and_orient", rao_dir, "success", outputs={"hap1_fa": str(rao_fa)})
+
+    rao_hap2_dir = tracker.start("rename_and_orient_hap2", "RC-1234", tol_id)
+    rao_hap2_fa = rao_hap2_dir / f"{tol_id}.hap2.3.renamed.fa"
+    _write(rao_hap2_fa, 20)
+    tracker.finish(
+        "rename_and_orient_hap2", rao_hap2_dir, "success", outputs={"hap2_fa": str(rao_hap2_fa)}
+    )
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    lines = out.splitlines()
+
+    recurate_line = next(
+        line for line in lines if "pretext_to_asm_recurate " in line + " " and "success" in line
+    )
+    recurate_hap2_line = next(
+        line for line in lines if "pretext_to_asm_recurate_hap2" in line and "success" in line
+    )
+    rao_line = next(
+        line for line in lines if "rename_and_orient " in line + " " and "success" in line
+    )
+    rao_hap2_line = next(
+        line for line in lines if "rename_and_orient_hap2" in line and "success" in line
+    )
+
+    # recurate rows: canonical for haplotigs + chr_list, NOT for fa.
+    assert "hap(1)" in recurate_line
+    assert "chr(1)" in recurate_line
+    assert "fa(" not in recurate_line
+    assert "hap(2)" in recurate_hap2_line
+    assert "chr(2)" in recurate_hap2_line
+    assert "fa(" not in recurate_hap2_line
+
+    # rename_and_orient rows: canonical for fa only, NOT haplotigs/chr_list.
+    assert "fa(1)" in rao_line
+    assert "hap(" not in rao_line
+    assert "chr(" not in rao_line
+    assert "fa(2)" in rao_hap2_line
+    assert "hap(" not in rao_hap2_line
+    assert "chr(" not in rao_hap2_line
+
+
+def test_show_ticket_history_marker_shows_multiple_types_from_one_step(
+    tmp_path, monkeypatch, capsys
+):
+    """When a single step's row owns more than one canonical output type at once
+    (the common case — pretext_to_asm producing fa + haplotigs + chr_list together),
+    the marker lists every owned type on that one row."""
+    monkeypatch.setattr(console, "width", 200)
+    tol_id = "sDipInt39"
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    pta_dir = tracker.start("pretext_to_asm", "RC-1234", tol_id)
+    fa_file = pta_dir / f"{tol_id}.hap1.1.curated.fa"
+    hap_file = pta_dir / f"{tol_id}.hap1.1.all_haplotigs.curated.fa"
+    chr_file = pta_dir / f"{tol_id}.hap1.1.chromosome.list.csv"
+    for f in (fa_file, hap_file, chr_file):
+        f.write_text(">seq\nACGT\n")
+    tracker.finish(
+        "pretext_to_asm",
+        pta_dir,
+        "success",
+        outputs={
+            "hap1_fa": str(fa_file),
+            "hap1_haplotigs": str(hap_file),
+            "hap1_chr_list": str(chr_file),
+        },
+    )
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    pta_line = next(
+        line for line in out.splitlines() if "pretext_to_asm " in line + " " and "success" in line
+    )
+
+    assert "fa(1)" in pta_line
+    assert "hap(1)" in pta_line
+    assert "chr(1)" in pta_line
 
 
 def test_show_global_status_reads_from_passed_registry_not_default(tmp_path, monkeypatch, capsys):
@@ -510,14 +642,14 @@ def test_show_ticket_history_dry_run_false_does_not_see_dry_run_ticket(tmp_path,
     assert "rename_and_orient" not in printed
 
 
-def test_show_ticket_history_dry_run_with_yaml_override_builds_ctx_and_shows_star(
+def test_show_ticket_history_dry_run_with_yaml_override_builds_ctx_and_shows_marker(
     tmp_path, monkeypatch, capsys
 ):
     """A synthetic dry-run ticket has no real Jira issue, so from_ticket would
-    normally raise and skip the canonical-files table / ★ marker entirely
+    normally raise and skip the canonical-files table / canonical marker entirely
     (ctx stays None). Passing yaml_override bypasses the Jira fetch, letting
     the real CurationContext build succeed against the dry-run-isolated workdir
-    — the canonical files table and ★ marker must then actually be produced."""
+    — the canonical files table and marker must then actually be produced."""
     tol_id = "ilHelSara1"
     ticket_id = "RC-DRY"
     dry_dir = tmp_path / "dry_run_root"
@@ -541,4 +673,10 @@ def test_show_ticket_history_dry_run_with_yaml_override_builds_ctx_and_shows_sta
     out = capsys.readouterr().out
     assert "Could not build curation context" not in out
     assert "Canonical files" in out
-    assert "★" in out
+
+    pta_line = next(
+        line for line in out.splitlines() if "pretext_to_asm" in line and "success" in line
+    )
+    assert "fa" in pta_line
+    # Single-hap ticket — no hap suffix needed since there's only one candidate.
+    assert "fa(" not in pta_line
