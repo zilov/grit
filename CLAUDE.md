@@ -63,6 +63,22 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
 
 - **No global state** — everything flows through `ctx`
 - **`print_only` everywhere** — every step respects `ctx.print_only`; `_run()` enforces it
+- **`--dry-run`** — a separate mode from `print_only`, for exercising step-sequencing/
+  tracking/canonical-resolution logic through the real CLI without HPC/NFS access.
+  `ctx.dry_run` isolates both the registry and every ticket's workdir under
+  `~/.grit/dry_run/` (see `dry_run_root()` in `grit/core/registry.py`) — never the
+  real `~/.grit/grit_registry.json` or a real farm workdir — and each supporting step
+  writes placeholder outputs via `write_fake_outputs()` (`grit/utils/helpers.py`)
+  instead of running any real command. As of now only `setup`, `pretext-to-asm`,
+  `blast-contaminants`, `rename-and-orient`, `microchromosome-combine`, and
+  `pretext-to-asm-recurate` have a dry-run branch; every other step (`hic-remapping`,
+  `fastga`, `qv`, `finalize-qc`, `busco-*`, etc.) has no `ctx.dry_run` check at all, so
+  passing `--dry-run` to one of those today silently proceeds as a real run instead of
+  erroring — a known footgun, not yet fixed. `status`/`untrack` are plain
+  `@cli.command`s rather than `GritCommand`-based, so `--dry-run` only works for them as
+  a group-level flag (`grit --dry-run status -t <ticket>`), never per-command. Reset the
+  sandbox with `rm -rf ~/.grit/dry_run`. See `tests/local_smoke_test.sh`'s dry-run
+  section for a real chained example.
 - **`require_workdir(ctx)`** — guards steps that need an existing workdir; skipped in print_only mode
 - **`log.*` not `print()`** — use Python `logging`; `RichHandler` formats output
 - **Minimal docstrings** — one line stating what the function returns/does, only
