@@ -462,3 +462,88 @@ call, not yours to make unilaterally).
 
 **Report file:** `.superpowers/sdd/45_dry_run_mode/task-7-report.md`
 </content>
+
+---
+
+## Task 8: Fix `grit/core/status.py`'s dry-run blindness (discovered during Task 7)
+
+**Scope:** `grit/core/status.py`, `grit/core/click_cli.py` (only the `status_cmd`
+call site that passes arguments into `show_ticket_history`), plus a new or existing
+test file covering `status.py` (check for `tests/test_status.py`; if none exists,
+create one following this repo's established test conventions). Depends on Tasks 1
+and 3 (needs `dry_run_root()`, `ctx.dry_run`, and a bootstrapped dry-run ticket to
+test against).
+
+### Problem
+
+Discovered empirically while verifying Task 7's smoke-test scenario: `grit --dry-run
+status -t <ticket>` cannot show any dry-run tracker state at all today, even though
+`status_cmd` (`click_cli.py:176-186`) already correctly swaps in a dry-run-isolated
+`RegistryManager(registry_dir=dry_run_root())` when `ctx.obj.dry_run` is set.
+
+Two separate gaps in `grit/core/status.py`:
+
+1. `show_global_status(registry)` (`status.py:14-39`) and `show_ticket_history(registry,
+   ticket_id, user_config)` (`status.py:300-336`) each receive the already-correct
+   `registry` object as their first argument, but independently construct
+   `RunTracker(workdir)` (lines 39 and 336) WITHOUT passing that `registry` through.
+   `RunTracker`'s `registry` constructor param defaults to `None`, and it lazily
+   builds its own `RegistryManager()` — the REAL default one — the first time it's
+   needed. So even though ticket *lookup* (`registry.all_tickets()`/`find_ticket()`)
+   correctly uses the isolated registry, actual step-history/`get_output` reads via
+   `RunTracker` silently fall back to the real `~/.grit/grit_registry.json`, which
+   (for a dry-run ticket's isolated workdir) has no matching records at all — so
+   `history`/`get_output`/the ★ marker all come back empty.
+2. `show_ticket_history` additionally builds `ctx = CurationContext.from_ticket(
+   ticket_id, user_config, print_only=True)` (`status.py:319`) with no `dry_run=True`
+   — for a dry-run/synthetic ticket this either fails outright (attempting a real
+   Jira lookup) or, if it somehow succeeds, resolves `ctx.workdir` via the real
+   `_derive_workdir(...)` instead of `dry_run_root() / tol_id`, breaking the
+   canonical-files table and the ★ marker's `_resolve_canonical_files` call entirely
+   for a dry-run ticket.
+
+This was never in any earlier task's declared scope — `status.py` wasn't listed in
+Task 1 (which fixed `status_cmd`/`untrack_cmd` in `click_cli.py`, a different file)
+or anywhere else. It's a genuine plan gap, not a review miss on an already-scoped
+file, and it undermines the core promise of this whole feature (inspecting dry-run
+tracker state via `grit status`).
+
+### Fix
+
+1. `show_global_status`: change `RunTracker(workdir)` (line 39) to
+   `RunTracker(workdir, registry=registry)`, reusing the already-correct `registry`
+   parameter this function already receives. No signature change needed.
+2. `show_ticket_history`: add a `dry_run: bool = False` parameter to its signature;
+   change `RunTracker(workdir)` (line 336) to `RunTracker(workdir, registry=registry)`
+   (same fix as above); change `CurationContext.from_ticket(ticket_id, user_config,
+   print_only=True)` (line 319) to also pass `dry_run=dry_run`.
+3. `click_cli.py`'s `status_cmd`: pass `dry_run=getattr(ctx.obj, "dry_run", False)`
+   into its `show_ticket_history(registry, ticket, user_config)` call (around line
+   192) to thread the new parameter through.
+
+Do not touch `show_global_status`'s signature beyond the internal `RunTracker` fix —
+it has no `CurationContext`-building step, so it doesn't need a `dry_run` parameter.
+
+### Tests
+
+- `show_global_status`: a test seeding a ticket + a tracked step in an isolated
+  `tmp_path` registry (via `RegistryManager(registry_dir=tmp_path)` and
+  `RunTracker(workdir, registry=that_registry)`), calling `show_global_status(that_registry)`,
+  and asserting the printed output shows the step — proving the fix reads from the
+  passed-in registry, not a lazily-constructed default one. (Capture output via
+  whatever pattern this repo's existing `status.py`/`console` tests already use —
+  check for a `capsys`-based pattern in any existing test touching `console.print`.)
+- `show_ticket_history`: a test with `dry_run=True`, a dry-run-bootstrapped ticket
+  (reuse Task 3's `setup`/`run_setup` dry-run branch to create one, or construct the
+  registry entry directly), asserting the printed step-history output includes a
+  step that was tracked via the dry-run-isolated registry — proving both the
+  `RunTracker` fix and the `CurationContext.from_ticket(..., dry_run=True)` fix work
+  together. Also a negative case: with `dry_run=False`, the same ticket ID (if it
+  happened to also exist in a real-registry fixture) does NOT pick up the dry-run
+  ticket's data — proving the two stay isolated in both directions.
+- `click_cli.py`'s `status_cmd`: extend `tests/test_click_cli.py` (from Task 1) with
+  a case confirming `--dry-run status -t <ticket>` reaches `show_ticket_history` with
+  `dry_run=True` (e.g. by asserting the printed output reflects dry-run-isolated data,
+  reusing the fixture-seeding pattern already established there).
+
+**Report file:** `.superpowers/sdd/45_dry_run_mode/task-8-report.md`
