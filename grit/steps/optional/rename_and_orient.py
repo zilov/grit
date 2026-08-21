@@ -29,9 +29,11 @@ _DEFAULT_MEM_MB = 60000
 
 _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("hap1_fa", "{tol_id}.{hap1}.*.fa", ["haplotigs"]),
+    ("hap1_chr_list", "{tol_id}.{hap1}.*.chromosome.list.csv", []),
 ]
 _OUTPUT_SPECS_HAP2: list[tuple[str, str, list[str]]] = [
     ("hap2_fa", "{tol_id}.{hap2}.*.fa", ["haplotigs"]),
+    ("hap2_chr_list", "{tol_id}.{hap2}.*.chromosome.list.csv", []),
 ]
 
 # ---------------------------------------------------------------------------

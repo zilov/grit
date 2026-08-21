@@ -294,6 +294,69 @@ def test_dry_run_hap1_short_circuits_before_bsub(
 @patch("grit.steps.optional.rename_and_orient._submit_bsub")
 @patch("grit.steps.optional.rename_and_orient.glob.glob")
 @patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_dry_run_tracks_chr_list_output(mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path):
+    """Regression: rename_and_orient's _OUTPUT_SPECS must include a chr_list
+    key, or the tracker never records the chromosome-list file that the real
+    tool writes, and find_canonical_chr_list can never select this step."""
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.dry_run = True
+
+    run_rename_and_orient(mock_ctx, run_hap2=True)
+
+    hap1_chr_list = mock_ctx.tracker.get_output("rename_and_orient", "hap1_chr_list")
+    hap2_chr_list = mock_ctx.tracker.get_output("rename_and_orient_hap2", "hap2_chr_list")
+    assert hap1_chr_list is not None
+    assert hap2_chr_list is not None
+    assert Path(hap1_chr_list).exists()
+    assert Path(hap2_chr_list).exists()
+
+
+@patch("grit.steps.optional.rename_and_orient._submit_bsub")
+@patch("grit.steps.optional.rename_and_orient.glob.glob")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_tracked_chr_list_resolves_after_successful_run(
+    mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path
+):
+    """Real (non-dry-run) run: simulate the external tool writing its
+    chromosome-list CSV alongside the renamed FASTA in --output-dir, and
+    confirm collect_outputs()/the tracker actually captures it."""
+    mock_ctx.workdir = tmp_path / "workdir"
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.print_only = False
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(mock_ctx.workdir, registry=reg)
+
+    canonical_fa = tmp_path / "workdir" / "sDipInt39.hap1.primary.curated.fa"
+    mock_find_fa.return_value = canonical_fa
+    paf_file = tmp_path / "workdir" / "fastga" / "sDipInt39_vs_ref.FastGA.paf"
+    mock_glob.return_value = [str(paf_file)]
+    mock_bsub.return_value = "12345"
+
+    run_rename_and_orient(mock_ctx)
+
+    run_dir = mock_ctx.tracker.latest_run_dir("rename_and_orient")
+    assert run_dir is not None
+
+    written_fa = run_dir / "sDipInt39.hap1.primary.renamed.fa"
+    written_fa.write_text(">seq\n")
+    written_chr_list = run_dir / "sDipInt39.hap1.primary.renamed.chromosome.list.csv"
+    written_chr_list.write_text("chr,length\n1,100\n")
+
+    outputs = collect_outputs(_OUTPUT_SPECS, run_dir, mock_ctx.tol_id)
+    mock_ctx.tracker.finish("rename_and_orient", run_dir, "success", outputs=outputs)
+
+    resolved = mock_ctx.tracker.get_output("rename_and_orient", "hap1_chr_list")
+    assert resolved is not None
+    assert Path(resolved) == written_chr_list
+
+
+@patch("grit.steps.optional.rename_and_orient._submit_bsub")
+@patch("grit.steps.optional.rename_and_orient.glob.glob")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
 def test_dry_run_hap2_writes_into_own_tracked_step(
     mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path
 ):

@@ -4,7 +4,7 @@ import pytest
 
 from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
-from grit.utils.helpers import find_canonical_fa, find_curated_fa
+from grit.utils.helpers import find_canonical_chr_list, find_canonical_fa, find_curated_fa
 
 
 def _make_tracker(tmp_path, ctx):
@@ -402,3 +402,56 @@ def test_recurate_hap2_step_name_used_for_hap2(mock_ctx, tmp_path):
     )
 
     assert find_canonical_fa(mock_ctx, "hap2") == recurate_fa
+
+
+def test_rename_and_orient_chr_list_beats_older_pretext_to_asm(mock_ctx, tmp_path):
+    """Regression for the missing rename_and_orient chr_list output-spec key:
+    a freshly-tracked rename_and_orient chromosome list must now displace an
+    older pretext_to_asm one, instead of find_canonical_chr_list returning
+    before it ever considers rename_and_orient (previously impossible since
+    rename_and_orient never had a tracked chr_list output at all)."""
+    import os
+
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
+    pta_chr_list = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.chromosome.list.csv")
+    tracker.finish(
+        "pretext_to_asm", pta_dir, "success", outputs={"hap1_chr_list": str(pta_chr_list)}
+    )
+
+    rao_dir = tmp_path / "rename_and_orient" / "2026-01-02T00_00_00"
+    rao_chr_list = _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.chromosome.list.csv")
+    tracker.finish(
+        "rename_and_orient", rao_dir, "success", outputs={"hap1_chr_list": str(rao_chr_list)}
+    )
+
+    os.utime(pta_chr_list, (1000, 1000))
+    os.utime(rao_chr_list, (2000, 2000))
+
+    assert find_canonical_chr_list(mock_ctx, "hap1") == rao_chr_list
+
+
+def test_pretext_to_asm_chr_list_rerun_after_rename_and_orient_wins(mock_ctx, tmp_path):
+    """The reverse direction: a fresher pretext_to_asm/recurate chr_list must
+    still be able to displace an older rename_and_orient one — proving the
+    mtime pool genuinely competes both ways, not just that rename_and_orient
+    always wins once tracked."""
+    import os
+
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    rao_dir = tmp_path / "rename_and_orient" / "2026-01-01T00_00_00"
+    rao_chr_list = _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.chromosome.list.csv")
+    tracker.finish(
+        "rename_and_orient", rao_dir, "success", outputs={"hap1_chr_list": str(rao_chr_list)}
+    )
+
+    pta_dir = tmp_path / "pretext_to_asm" / "2026-01-02T00_00_00"
+    pta_chr_list = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.chromosome.list.csv")
+    tracker.finish(
+        "pretext_to_asm", pta_dir, "success", outputs={"hap1_chr_list": str(pta_chr_list)}
+    )
+
+    os.utime(rao_chr_list, (1000, 1000))
+    os.utime(pta_chr_list, (2000, 2000))
+
+    assert find_canonical_chr_list(mock_ctx, "hap1") == pta_chr_list

@@ -544,6 +544,54 @@ def test_show_ticket_history_marker_shows_multiple_types_from_one_step(
     assert "chr(1)" in pta_line
 
 
+def test_show_ticket_history_rename_and_orient_can_show_chr(tmp_path, monkeypatch, capsys):
+    """Regression: after rename_and_orient's _OUTPUT_SPECS gained a chr_list
+    key, its row can legitimately show `chr` (in addition to `fa`) once its
+    chromosome-list output is the freshest tracked one for this haplotype —
+    a scenario that was previously impossible since rename_and_orient never
+    had a tracked chr_list output at all."""
+    import os
+
+    monkeypatch.setattr(console, "width", 200)
+    tol_id = "sDipInt39"
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    def _write(path, mtime_offset):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(">seq\nACGT\n")
+        now = tracker.workdir.stat().st_mtime
+        os.utime(path, (now + mtime_offset, now + mtime_offset))
+
+    pta_dir = tracker.start("pretext_to_asm", "RC-1234", tol_id)
+    pta_chr = pta_dir / f"{tol_id}.hap1.1.chromosome.list.csv"
+    _write(pta_chr, 10)
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_chr_list": str(pta_chr)})
+
+    rao_dir = tracker.start("rename_and_orient", "RC-1234", tol_id)
+    rao_fa = rao_dir / f"{tol_id}.hap1.primary.renamed.fa"
+    rao_chr = rao_dir / f"{tol_id}.hap1.primary.renamed.chromosome.list.csv"
+    _write(rao_fa, 20)
+    _write(rao_chr, 20)
+    tracker.finish(
+        "rename_and_orient",
+        rao_dir,
+        "success",
+        outputs={"hap1_fa": str(rao_fa), "hap1_chr_list": str(rao_chr)},
+    )
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    rao_line = next(
+        line
+        for line in out.splitlines()
+        if "rename_and_orient " in line + " " and "success" in line
+    )
+
+    assert "fa(1)" in rao_line
+    assert "chr(1)" in rao_line
+
+
 def test_show_global_status_reads_from_passed_registry_not_default(tmp_path, monkeypatch, capsys):
     """RunTracker(workdir) inside show_global_status must read from the `registry`
     argument it's already given, not lazily build its own default RegistryManager()

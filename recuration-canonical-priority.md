@@ -158,16 +158,22 @@ This replaces an earlier, ambiguous design where the column showed a bare
 `★` whenever *any* recorded output matched *any* canonical path for *any*
 haplotype and type. That collapsed genuinely distinct facts into one
 symbol: because `find_canonical_haplotigs`'s pool is smaller than
-`find_canonical_fa`'s (`rename_and_orient` never produces a haplotigs or
-chr-list output, so it isn't a candidate for those), a recurate round and a
-later rename-and-orient round can *both* be legitimately canonical at
-once — recurate for haplotigs/chr-list, rename-and-orient for the FASTA. The
-old marker starred all four rows (`pretext_to_asm_recurate[_hap2]` and
-`rename_and_orient[_hap2]`) identically, with no way to tell that they were
-canonical for different things rather than actually conflicting. The
-per-type marker makes that explicit: `pretext_to_asm_recurate` reads
-`hap(1),chr(1)` and `rename_and_orient` reads `fa(1)` — both correct, both
-visibly different.
+`find_canonical_fa`'s/`find_canonical_chr_list`'s (`rename_and_orient` never
+produces a haplotigs output, so it isn't a candidate there — it does
+produce both a renamed FASTA and a chromosome-list CSV, and genuinely
+competes by mtime in both of those pools), a recurate round and a later
+rename-and-orient round can *both* be legitimately canonical at once —
+recurate for haplotigs (always, since rename_and_orient can't win that
+pool), rename-and-orient for the FASTA and/or chromosome list if its run is
+the freshest tracked output. The old marker starred all four rows
+(`pretext_to_asm_recurate[_hap2]` and `rename_and_orient[_hap2]`)
+identically, with no way to tell that they were canonical for different
+things rather than actually conflicting. The per-type marker makes that
+explicit: e.g. `pretext_to_asm_recurate` reading `hap(1),chr(1)` and
+`rename_and_orient` reading `fa(1)` (rename-and-orient ran, but an even
+newer recurate round still owns the chromosome list) — or
+`rename_and_orient` reading `fa(1),chr(1)` when its run is fresher than
+everything else in both pools — both correct, both visibly different.
 
 The same view also prints a dedicated "Canonical files" table (fa /
 haplotigs / chr list per haplotype, with a found/not-found marker) above the
