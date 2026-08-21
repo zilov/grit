@@ -796,6 +796,7 @@ def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
 
     _MAP = {
         "pretext_to_asm": ("grit.steps.post_curation.pretext_to_asm", "_OUTPUT_SPECS"),
+        "blast_contaminants": ("grit.steps.optional.blast_contaminants", "_OUTPUT_SPECS"),
         "rename_and_orient": ("grit.steps.optional.rename_and_orient", "_OUTPUT_SPECS"),
         "rename_and_orient_hap2": ("grit.steps.optional.rename_and_orient", "_OUTPUT_SPECS_HAP2"),
         "hic_remapping": ("grit.steps.post_curation.hic_remapping", "_OUTPUT_SPECS"),

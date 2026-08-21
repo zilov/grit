@@ -17,6 +17,7 @@ from grit.utils.helpers import (
     build_bsub_opts,
     find_canonical_fa,
     find_latest_dir,
+    write_fake_outputs,
 )
 from grit.utils.modules import module_cmd
 from grit.utils.output import console, print_done, print_step_header
@@ -102,6 +103,16 @@ def _submit_rename_and_orient_for_hap(
     return job_id
 
 
+def _dry_run_rename_and_orient_for_hap(ctx: CurationContext, step_name: str) -> dict[str, str]:
+    """Write a placeholder renamed FASTA directly into this hap's tracked run_dir."""
+    run_dir = ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+    outputs = write_fake_outputs(
+        step_name, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
+    )
+    ctx.tracker.finish(step_name, run_dir, "success", outputs=outputs)
+    return outputs
+
+
 # ---------------------------------------------------------------------------
 # Public step function
 # ---------------------------------------------------------------------------
@@ -121,6 +132,14 @@ def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> No
     """
     log.info("rename-and-orient | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Rename and orient to reference")
+
+    if ctx.dry_run:
+        outputs = _dry_run_rename_and_orient_for_hap(ctx, "rename_and_orient")
+        if run_hap2:
+            print_step_header(ctx.ticket_id, ctx.tol_id, f"Rename and orient ({ctx.hap2_prefix})")
+            _dry_run_rename_and_orient_for_hap(ctx, "rename_and_orient_hap2")
+        print_done(f"[dry-run] Renamed FASTA → {outputs.get(f'{ctx.hap1_prefix}_fa', ctx.workdir)}")
+        return
 
     # --- find FastGA PAF ---
     fastga_dir = find_latest_dir(ctx, "fastga")

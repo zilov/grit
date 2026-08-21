@@ -9,7 +9,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _clean_species_name, _run, find_canonical_fa
+from grit.utils.helpers import _clean_species_name, _run, find_canonical_fa, write_fake_outputs
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -23,6 +23,11 @@ log = logging.getLogger(__name__)
 
 # Path to lineage script
 LINEAGE_SCRIPT = "/software/grit/projects/vgp_curation_scripts/get_lineage_from_species.rb"
+
+_OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
+    ("hap1_fa", "{tol_id}.{hap1}.*.decontaminated.fa", []),
+    ("hap2_fa", "{tol_id}.{hap2}.*.decontaminated.fa", []),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +54,22 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     """
     log.info("blast-contaminants | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Blast contaminants search")
+
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start(
+            "blast_contaminants", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
+        )
+        outputs = write_fake_outputs(
+            "blast_contaminants",
+            run_dir,
+            ctx.tol_id,
+            hap1=ctx.hap1_prefix,
+            hap2=ctx.hap2_prefix,
+        )
+        ctx.tracker.finish("blast_contaminants", run_dir, "success", outputs=outputs)
+        dest = outputs.get(f"{ctx.hap1_prefix}_fa", run_dir)
+        print_done(f"[dry-run] Decontaminated FASTA → {dest}")
+        return
 
     run_dir = (
         ctx.tracker.start("blast_contaminants", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)

@@ -259,3 +259,103 @@ def test_tracked_output_resolves_after_successful_run(
     assert resolved is not None
     assert Path(resolved).exists()
     assert Path(resolved) == written_fa
+
+
+def _attach_tracker(ctx, tmp_path):
+    ctx.workdir = tmp_path
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(ctx.ticket_id, ctx.tol_id, ctx.species, tmp_path)
+    ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+
+@patch("grit.steps.optional.rename_and_orient._submit_bsub")
+@patch("grit.steps.optional.rename_and_orient.glob.glob")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_dry_run_hap1_short_circuits_before_bsub(
+    mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path
+):
+    """dry_run must skip the PAF lookup and never call _submit_bsub()."""
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.dry_run = True
+
+    run_rename_and_orient(mock_ctx)
+
+    mock_bsub.assert_not_called()
+    mock_glob.assert_not_called()
+    mock_find_fa.assert_not_called()
+
+    output = mock_ctx.tracker.get_output("rename_and_orient", "hap1_fa")
+    assert output is not None
+    assert Path(output).exists()
+    run_dir = mock_ctx.tracker.latest_run_dir("rename_and_orient")
+    assert Path(output).parent == run_dir
+
+
+@patch("grit.steps.optional.rename_and_orient._submit_bsub")
+@patch("grit.steps.optional.rename_and_orient.glob.glob")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_dry_run_hap2_writes_into_own_tracked_step(
+    mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path
+):
+    """run_hap2=True in dry_run must produce a second tracked output under
+    rename_and_orient_hap2 without ever calling _submit_bsub()."""
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.dry_run = True
+
+    run_rename_and_orient(mock_ctx, run_hap2=True)
+
+    mock_bsub.assert_not_called()
+
+    hap1_output = mock_ctx.tracker.get_output("rename_and_orient", "hap1_fa")
+    hap2_output = mock_ctx.tracker.get_output("rename_and_orient_hap2", "hap2_fa")
+    assert hap1_output is not None
+    assert hap2_output is not None
+    assert Path(hap1_output).exists()
+    assert Path(hap2_output).exists()
+
+
+def test_dry_run_output_resolves_via_find_canonical_fa(mock_ctx, tmp_path):
+    """The fake output written in dry-run mode must resolve through the real
+    canonical-FASTA resolution pool, not just via tracker bookkeeping."""
+    from grit.utils.helpers import find_canonical_fa
+
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.dry_run = True
+
+    run_rename_and_orient(mock_ctx)
+
+    expected = Path(mock_ctx.tracker.get_output("rename_and_orient", "hap1_fa"))
+    resolved = find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix)
+    assert resolved == expected
+
+
+def test_chained_dry_run_forward_chain_through_canonical_pool(mock_ctx, tmp_path):
+    """Core scenario --dry-run exists to make testable without HPC: dry-run
+    pretext_to_asm -> dry-run blast_contaminants -> canonical resolves to
+    blast's output, not pretext_to_asm's -> dry-run rename_and_orient ->
+    canonical resolves to rename's output."""
+    from grit.steps.optional.blast_contaminants import run_blast_contaminants
+    from grit.steps.post_curation.pretext_to_asm import run_pretext_to_asm
+    from grit.utils.helpers import find_canonical_fa
+
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.dry_run = True
+
+    run_pretext_to_asm(mock_ctx)
+    pretext_output = Path(mock_ctx.tracker.get_output("pretext_to_asm", "hap1_fa"))
+    assert find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix) == pretext_output
+
+    run_blast_contaminants(mock_ctx)
+    blast_output = Path(
+        mock_ctx.tracker.get_output("blast_contaminants", f"{mock_ctx.hap1_prefix}_fa")
+    )
+    assert blast_output != pretext_output
+    assert find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix) == blast_output
+
+    with patch("grit.steps.optional.rename_and_orient._submit_bsub") as mock_bsub:
+        run_rename_and_orient(mock_ctx)
+        mock_bsub.assert_not_called()
+
+    rename_output = Path(mock_ctx.tracker.get_output("rename_and_orient", "hap1_fa"))
+    assert rename_output != blast_output
+    assert find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix) == rename_output

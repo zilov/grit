@@ -143,3 +143,39 @@ def test_warns_and_continues_on_non_scaffold_headers(
     assert "don't look like" in caplog.text or "SCAFFOLD" in caplog.text
     outputs = mock_ctx.tracker.history("blast_contaminants")[-1]["outputs"]
     assert set(outputs) == {f"{mock_ctx.hap1_prefix}_fa", f"{mock_ctx.hap2_prefix}_fa"}
+
+
+@patch("grit.steps.optional.blast_contaminants._run")
+@patch("grit.steps.optional.blast_contaminants.find_canonical_fa")
+def test_dry_run_short_circuits_before_any_real_work(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    """dry_run must skip the lineage/blast.me/decon_blastBTK pipeline entirely —
+    no _run() call and no dependency on find_canonical_fa."""
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.dry_run = True
+
+    run_blast_contaminants(mock_ctx)
+
+    mock_run.assert_not_called()
+    mock_find_fa.assert_not_called()
+
+    outputs = mock_ctx.tracker.history("blast_contaminants")[-1]["outputs"]
+    assert set(outputs) == {f"{mock_ctx.hap1_prefix}_fa", f"{mock_ctx.hap2_prefix}_fa"}
+    for hap in (mock_ctx.hap1_prefix, mock_ctx.hap2_prefix):
+        path = mock_ctx.tracker.get_output("blast_contaminants", f"{hap}_fa")
+        assert path is not None
+        assert Path(path).exists()
+
+
+def test_dry_run_output_resolves_via_find_canonical_fa(mock_ctx, tmp_path):
+    """The fake output written in dry-run mode must resolve through the real
+    canonical-FASTA resolution pool, not just via tracker bookkeeping."""
+    from grit.utils.helpers import find_canonical_fa
+
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.dry_run = True
+
+    run_blast_contaminants(mock_ctx)
+
+    expected = Path(mock_ctx.tracker.get_output("blast_contaminants", f"{mock_ctx.hap1_prefix}_fa"))
+    resolved = find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix)
+    assert resolved == expected
