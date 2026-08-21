@@ -230,3 +230,19 @@ def test_print_only_takes_precedence_over_dry_run(tmp_path, monkeypatch):
     assert ctx.dry_run is False
     assert "assembly/draft" not in str(ctx.workdir)
     assert tmp_path not in ctx.workdir.parents and ctx.workdir != tmp_path
+
+
+def test_dry_run_isolates_every_writable_path(tmp_path, monkeypatch):
+    """Regression guard: every real-filesystem path a dry-run context computes
+    must live under the monkeypatched dry_run_root(), not the real derived
+    location — not just workdir. Catches future fields with the same bug as
+    assembly_curated_dir (constructed straight from the real YAML draft path,
+    with no dry_run isolation) before they cause data loss."""
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+
+    ctx = CurationContext.from_yaml("RC-1234", TEST_YAML_HAP1, TEST_USER_CONFIG, dry_run=True)
+
+    assert tmp_path in ctx.workdir.parents or ctx.workdir == tmp_path
+    assert tmp_path in ctx.assembly_curated_dir.parents or ctx.assembly_curated_dir == tmp_path
+    assert ctx.assembly_curated_dir != ctx.workdir
+    assert "assembly/curated" not in str(ctx.assembly_curated_dir)

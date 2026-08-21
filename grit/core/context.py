@@ -166,6 +166,9 @@ class CurationContext:
 
         if dry_run:
             workdir = dry_run_root() / tol_id
+            assembly_curated_dir = (
+                dry_run_root() / tol_id / "assembly_curated" / f"{tol_id}.{release_version}"
+            )
             tracker = RunTracker(
                 workdir,
                 print_only=print_only,
