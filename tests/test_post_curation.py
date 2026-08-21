@@ -664,6 +664,83 @@ def test_run_hic_remapping_hifi_dir_override(mock_find_fa, mock_run, mock_ctx, t
     assert "--read_type hifi" in cmd
 
 
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_dry_run_hap1_only(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    """dry_run with default run_hap1=True/run_hap2=False must skip curationpretext.sh
+    entirely and track a fake hap1 pretext map only."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.dry_run = True
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+
+    run_hic_remapping(mock_ctx)
+
+    mock_run.assert_not_called()
+    mock_find_fa.assert_not_called()
+
+    hap1_pretext = mock_ctx.tracker.get_output("hic_remapping", "hap1_pretext")
+    assert hap1_pretext is not None
+    assert Path(hap1_pretext).exists()
+
+    assert mock_ctx.tracker.history("hic_remapping_hap2") == []
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_dry_run_hap2(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    """dry_run with run_hap2=True must additionally track a fake hap2 pretext map,
+    tracked separately under hic_remapping_hap2."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.dry_run = True
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+
+    run_hic_remapping(mock_ctx, run_hap2=True)
+
+    mock_run.assert_not_called()
+    mock_find_fa.assert_not_called()
+
+    hap1_pretext = mock_ctx.tracker.get_output("hic_remapping", "hap1_pretext")
+    hap2_pretext = mock_ctx.tracker.get_output("hic_remapping_hap2", "hap2_pretext")
+    assert hap1_pretext is not None and Path(hap1_pretext).exists()
+    assert hap2_pretext is not None and Path(hap2_pretext).exists()
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_dry_run_hap2_exclusive_skips_hap1(
+    mock_find_fa, mock_run, mock_ctx, tmp_path
+):
+    """dry_run with run_hap1=False, run_hap2=True must fake hap2 only."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.dry_run = True
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+
+    run_hic_remapping(mock_ctx, run_hap1=False, run_hap2=True)
+
+    mock_run.assert_not_called()
+    mock_find_fa.assert_not_called()
+
+    assert mock_ctx.tracker.history("hic_remapping") == []
+    hap2_pretext = mock_ctx.tracker.get_output("hic_remapping_hap2", "hap2_pretext")
+    assert hap2_pretext is not None
+    assert Path(hap2_pretext).exists()
+
+
 # ---------------------------------------------------------------------------
 # run_qv
 # ---------------------------------------------------------------------------
@@ -1279,3 +1356,50 @@ def test_run_busco_synteny_dry_run_short_circuits(
     png_path = mock_ctx.tracker.get_output("busco_synteny", "png")
     assert png_path is not None
     assert Path(png_path).exists()
+
+
+# ---------------------------------------------------------------------------
+# run_post_curation — dry-run end to end
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.pretext_to_asm._run")
+def test_run_post_curation_dry_run_tracks_every_sub_step(
+    mock_pta_run, mock_hic_run, mock_ctx, tmp_path
+):
+    """dry_run must flow through pretext_to_asm, haplotig_files, and hic_remapping
+    without any real subprocess, and every tracked sub-step's fake output must
+    be resolvable afterwards (proving the composite needs no branch of its own)."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.post_curation.post_curation import run_post_curation
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.dry_run = True
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+
+    run_post_curation(mock_ctx, run_hap2=True)
+
+    mock_pta_run.assert_not_called()
+    mock_hic_run.assert_not_called()
+
+    hap1_fa = mock_ctx.tracker.get_output("pretext_to_asm", "hap1_fa")
+    assert hap1_fa is not None and Path(hap1_fa).exists()
+
+    hap1_pretext = mock_ctx.tracker.get_output("hic_remapping", "hap1_pretext")
+    hap2_pretext = mock_ctx.tracker.get_output("hic_remapping_hap2", "hap2_pretext")
+    assert hap1_pretext is not None and Path(hap1_pretext).exists()
+    assert hap2_pretext is not None and Path(hap2_pretext).exists()
+
+    # haplotig_files has no tracker output specs — it's a plain local file-existence
+    # check/touch step, unaffected by dry_run — verify its real effect directly.
+    pta_run_dir = Path(hap1_fa).parent
+    assert (
+        pta_run_dir / f"{mock_ctx.tol_id}.hap1.{mock_ctx.release_version}.all_haplotigs.curated.fa"
+    ).exists()
+    assert (
+        pta_run_dir / f"{mock_ctx.tol_id}.hap2.{mock_ctx.release_version}.all_haplotigs.curated.fa"
+    ).exists()

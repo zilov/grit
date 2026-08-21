@@ -20,6 +20,9 @@ _DRY_RUN_SUPPORTED_COMMANDS = frozenset(
         "fastga-synteny",
         "fastga",
         "microchromosome-second-shot",
+        "hic-remapping",
+        "post-curation",
+        "post-curation-recurate",
     }
 )
 
