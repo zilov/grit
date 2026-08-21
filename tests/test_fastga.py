@@ -3,9 +3,13 @@
 from pathlib import Path
 from unittest.mock import patch
 
+from click.testing import CliRunner
+
 from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
 from grit.steps.optional.fastga import _is_super, _read_top1_table, run_fastga, run_fastga_stats
+
+_FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 def _attach_tracker(ctx, tmp_path):
@@ -146,3 +150,26 @@ def test_run_fastga_dry_run_top1_targets_content_is_parseable(mock_ctx, tmp_path
 
     assert rows == [("SUPER_1", "chr1", "1000000")]
     assert all(_is_super(row[0]) for row in rows)
+
+
+def test_cli_fastga_stats_dry_run_chains_after_fastga_dry_run(tmp_path, monkeypatch):
+    """`grit --dry-run fastga-stats` must no longer raise UsageError, and — chained
+    after a real `grit --dry-run fastga` run against the same isolated workdir —
+    must print the fake SUPER_1 row that fastga's dry-run branch wrote."""
+    from grit.core.click_cli import cli
+
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+
+    config_path = str(_FIXTURES_DIR / "test_config.yaml")
+    yaml_path = str(_FIXTURES_DIR / "uoEpiScra1_hap1_hap2.yaml")
+    common_args = ["--config", config_path, "--yaml", yaml_path, "--dry-run"]
+
+    runner = CliRunner()
+
+    result_fastga = runner.invoke(cli, [*common_args, "fastga"])
+    assert result_fastga.exit_code == 0, result_fastga.output
+
+    result_stats = runner.invoke(cli, [*common_args, "fastga-stats"])
+    assert result_stats.exit_code == 0, result_stats.output
+    assert "SUPER_1" in result_stats.output
+    assert "chr1" in result_stats.output

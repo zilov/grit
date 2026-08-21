@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from click.testing import CliRunner
 
 from grit.steps.post_curation import (
     finalize_for_qc,
@@ -1403,3 +1404,36 @@ def test_run_post_curation_dry_run_tracks_every_sub_step(
     assert (
         pta_run_dir / f"{mock_ctx.tol_id}.hap2.{mock_ctx.release_version}.all_haplotigs.curated.fa"
     ).exists()
+
+
+# ---------------------------------------------------------------------------
+# haplotig-files CLI — dry-run
+# ---------------------------------------------------------------------------
+
+
+def test_cli_haplotig_files_dry_run_chains_after_pretext_to_asm_dry_run(tmp_path, monkeypatch):
+    """`grit --dry-run haplotig-files` must no longer raise UsageError, and —
+    chained after a real `grit --dry-run pretext-to-asm` run against the same
+    isolated workdir — must create empty haplotig files for both haps of the
+    dual-hap fixture ticket."""
+    from grit.core.click_cli import cli
+
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+
+    fixtures_dir = Path(__file__).parent / "fixtures"
+    config_path = str(fixtures_dir / "test_config.yaml")
+    yaml_path = str(fixtures_dir / "uoEpiScra1_hap1_hap2.yaml")
+    common_args = ["--config", config_path, "--yaml", yaml_path, "--dry-run"]
+
+    runner = CliRunner()
+
+    result_pta = runner.invoke(cli, [*common_args, "pretext-to-asm"])
+    assert result_pta.exit_code == 0, result_pta.output
+
+    result_haplotig = runner.invoke(cli, [*common_args, "haplotig-files"])
+    assert result_haplotig.exit_code == 0, result_haplotig.output
+
+    workdir = tmp_path / "uoEpiScra1"
+    pta_run_dir = Path(next((workdir / "pretext_to_asm").iterdir()))
+    assert list(pta_run_dir.glob("uoEpiScra1.hap1.*.all_haplotigs.curated.fa"))
+    assert list(pta_run_dir.glob("uoEpiScra1.hap2.*.all_haplotigs.curated.fa"))

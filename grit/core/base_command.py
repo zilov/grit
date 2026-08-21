@@ -23,6 +23,9 @@ _DRY_RUN_SUPPORTED_COMMANDS = frozenset(
         "hic-remapping",
         "post-curation",
         "post-curation-recurate",
+        "fastga-stats",
+        "haplotig-files",
+        "validate-files",
     }
 )
 
