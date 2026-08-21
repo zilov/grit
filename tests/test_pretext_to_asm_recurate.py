@@ -330,3 +330,108 @@ def test_cli_help():
     result = CliRunner().invoke(cli, ["pretext-to-asm-recurate", "--help"])
     assert result.exit_code == 0
     assert "--hap2" in result.output
+
+
+# ---------------------------------------------------------------------------
+# dry-run
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.post_curation.pretext_to_asm_recurate.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.pretext_to_asm_recurate.find_canonical_fa")
+def test_dry_run_short_circuits_before_any_real_work(
+    mock_find_fa, mock_find_haplotigs, mock_ctx, tmp_path
+):
+    """dry_run must skip the AGP lookup + pretext-to-asm-core pipeline entirely —
+    no dependency on find_canonical_fa/find_canonical_haplotigs."""
+    tracker = _tracker(tmp_path, mock_ctx)
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.dry_run = True
+
+    run_pretext_to_asm_recurate(mock_ctx, "hap1", "pretext_to_asm_recurate")
+
+    mock_find_fa.assert_not_called()
+    mock_find_haplotigs.assert_not_called()
+
+    outputs = tracker.history("pretext_to_asm_recurate")[-1]["outputs"]
+    assert "hap1_fa" in outputs
+    assert Path(outputs["hap1_fa"]).exists()
+
+
+@patch("grit.steps.post_curation.pretext_to_asm_recurate.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.pretext_to_asm_recurate.find_canonical_fa")
+def test_dry_run_hap2_tracks_under_hap2_step_name(
+    mock_find_fa, mock_find_haplotigs, mock_ctx, tmp_path
+):
+    """hap2's dry-run must be tracked under pretext_to_asm_recurate_hap2, not
+    the hap1 step name, so each haplotype's recuration status stays independent."""
+    tracker = _tracker(tmp_path, mock_ctx)
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.dry_run = True
+
+    run_pretext_to_asm_recurate(mock_ctx, "hap2", "pretext_to_asm_recurate_hap2")
+
+    mock_find_fa.assert_not_called()
+    mock_find_haplotigs.assert_not_called()
+
+    assert tracker.history("pretext_to_asm_recurate") == []
+    outputs = tracker.history("pretext_to_asm_recurate_hap2")[-1]["outputs"]
+    assert "hap2_fa" in outputs
+    assert Path(outputs["hap2_fa"]).exists()
+
+
+def test_dry_run_output_resolves_via_find_canonical_fa(mock_ctx, tmp_path):
+    """The fake output written in dry-run mode must resolve through the real
+    canonical-FASTA resolution pool, not just via tracker bookkeeping."""
+    from grit.utils.helpers import find_canonical_fa
+
+    tracker = _tracker(tmp_path, mock_ctx)
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.dry_run = True
+
+    run_pretext_to_asm_recurate(mock_ctx, "hap1", "pretext_to_asm_recurate")
+
+    expected = Path(tracker.get_output("pretext_to_asm_recurate", "hap1_fa"))
+    resolved = find_canonical_fa(mock_ctx, "hap1")
+    assert resolved == expected
+
+
+def test_chained_dry_run_forward_chain_from_recurate(mock_ctx, tmp_path):
+    """Core scenario --dry-run exists to make testable without HPC: dry-run
+    pretext_to_asm -> dry-run pretext_to_asm_recurate -> canonical resolves to
+    the recurate output, not pretext_to_asm's -> dry-run blast_contaminants ->
+    canonical resolves to blast's output instead (the supported forward-chain
+    behaviour described in TODO/done/44_canonical_fa_flat_mtime_priority.md)."""
+    from grit.steps.optional.blast_contaminants import run_blast_contaminants
+    from grit.steps.post_curation.pretext_to_asm import run_pretext_to_asm
+    from grit.utils.helpers import find_canonical_fa
+
+    tracker = _tracker(tmp_path, mock_ctx)
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.dry_run = True
+
+    run_pretext_to_asm(mock_ctx)
+    pretext_output = Path(tracker.get_output("pretext_to_asm", "hap1_fa"))
+    assert find_canonical_fa(mock_ctx, "hap1") == pretext_output
+
+    run_pretext_to_asm_recurate(mock_ctx, "hap1", "pretext_to_asm_recurate")
+    recurate_output = Path(tracker.get_output("pretext_to_asm_recurate", "hap1_fa"))
+    assert recurate_output != pretext_output
+    assert find_canonical_fa(mock_ctx, "hap1") == recurate_output
+
+    run_blast_contaminants(mock_ctx)
+    blast_output = Path(tracker.get_output("blast_contaminants", "hap1_fa"))
+    assert blast_output != recurate_output
+    assert find_canonical_fa(mock_ctx, "hap1") == blast_output

@@ -11,7 +11,7 @@ from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.steps.post_curation.pretext_to_asm import _run_pretext_to_asm_core
 from grit.utils.helpers import find_canonical_fa, find_canonical_haplotigs
-from grit.utils.output import print_step_header, print_tip
+from grit.utils.output import print_done, print_step_header, print_tip
 
 log = logging.getLogger(__name__)
 
@@ -91,6 +91,22 @@ def _merge_haplotigs_transform(merged_name: str, prior_haplotigs: Path | None):
     return _transform
 
 
+def _write_fake_recurate_outputs(
+    ctx: CurationContext, run_dir: Path, hap_prefix: str
+) -> dict[str, str]:
+    """Write one placeholder file per hap-specific output spec, returning {key: path}."""
+    outputs: dict[str, str] = {}
+    for key, pattern, _excludes in _output_specs_for_hap(ctx, hap_prefix):
+        if key in outputs:  # already written via earlier spec (fallback skip)
+            continue
+        rel_path = pattern.format(tol_id=ctx.tol_id).replace("*", "1").replace("?", "1")
+        file_path = run_dir / rel_path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_bytes(b">fake\nACGT\n")
+        outputs[key] = str(file_path)
+    return outputs
+
+
 def run_pretext_to_asm_recurate(ctx: CurationContext, hap_prefix: str, step_name: str) -> Path:
     """
     Re-runs pretext-to-asm for one haplotype using the current canonical FASTA
@@ -111,6 +127,14 @@ def run_pretext_to_asm_recurate(ctx: CurationContext, hap_prefix: str, step_name
     )
     print_step_header(ctx.ticket_id, ctx.tol_id, f"Pretext to ASM recurate ({hap_prefix})")
     print_tip(_RECURATE_TIP.format(step_name=step_name))
+
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        outputs = _write_fake_recurate_outputs(ctx, run_dir, hap_prefix)
+        ctx.tracker.finish(step_name, run_dir, "success", outputs=outputs)
+        dest = outputs.get(f"{hap_prefix}_fa", run_dir)
+        print_done(f"[dry-run] Curated FASTA ({hap_prefix}) → {dest}")
+        return run_dir
 
     prior_haplotigs: Path | None = None
     try:

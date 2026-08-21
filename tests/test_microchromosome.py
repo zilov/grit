@@ -1,11 +1,22 @@
 """Tests for the birds microchromosome second-shot + combine steps."""
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+from grit.core.registry import RegistryManager
+from grit.core.run_tracker import RunTracker
 from grit.steps.post_curation.microchromosome_combine import run_microchromosome_combine
 from grit.steps.pre_curation.microchromosome_second_shot import run_microchromosome_second_shot
+
+
+def _attach_tracker(ctx, tmp_path):
+    ctx.workdir = tmp_path
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(ctx.ticket_id, ctx.tol_id, ctx.species, tmp_path)
+    ctx.tracker = RunTracker(tmp_path, registry=reg)
+
 
 # ---------------------------------------------------------------------------
 # run_microchromosome_second_shot
@@ -180,3 +191,62 @@ def test_combine_output_specs_use_literal_hap_tokens():
     keys = [key for key, _pattern, _excludes in _OUTPUT_SPECS]
     assert "hap1_fa" in keys
     assert "hap2_fa" in keys
+
+
+# ---------------------------------------------------------------------------
+# run_microchromosome_combine — dry-run
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.post_curation.microchromosome_combine._run")
+@patch("grit.steps.post_curation.microchromosome_combine.find_latest_dir")
+def test_dry_run_short_circuits_before_any_real_work(mock_find_dir, mock_run, mock_ctx, tmp_path):
+    """dry_run must skip the second-shot dir lookup + combine_curated_micros.py
+    pipeline entirely — no _run() call and no dependency on find_latest_dir."""
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.dry_run = True
+
+    run_microchromosome_combine(mock_ctx)
+
+    mock_run.assert_not_called()
+    mock_find_dir.assert_not_called()
+
+    outputs = mock_ctx.tracker.history("microchromosome_combine")[-1]["outputs"]
+    assert set(outputs) == {"hap1_fa", "hap2_fa", "hap1_chr_list", "hap2_chr_list"}
+    for key in outputs:
+        assert Path(outputs[key]).exists()
+
+
+@patch("grit.steps.post_curation.microchromosome_combine._run")
+@patch("grit.steps.post_curation.microchromosome_combine.find_latest_dir")
+def test_dry_run_single_hap_tracks_only_hap1(mock_find_dir, mock_run, mock_ctx_primary, tmp_path):
+    """A single-hap (primary/alternate) dry run must only ever track hap1's fake
+    outputs — a primary/alternate assembly never has a genuine second haplotype
+    to combine in the microchromosome-second-shot workflow."""
+    _attach_tracker(mock_ctx_primary, tmp_path)
+    mock_ctx_primary.dry_run = True
+
+    run_microchromosome_combine(mock_ctx_primary)
+
+    mock_run.assert_not_called()
+    mock_find_dir.assert_not_called()
+
+    outputs = mock_ctx_primary.tracker.history("microchromosome_combine")[-1]["outputs"]
+    assert set(outputs) == {"hap1_fa", "hap1_chr_list"}
+    assert "hap2_fa" not in outputs
+    assert "hap2_chr_list" not in outputs
+
+
+def test_dry_run_output_resolves_via_find_canonical_fa(mock_ctx, tmp_path):
+    """The fake output written in dry-run mode must resolve through the real
+    canonical-FASTA resolution pool, not just via tracker bookkeeping."""
+    from grit.utils.helpers import find_canonical_fa
+
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.dry_run = True
+
+    run_microchromosome_combine(mock_ctx)
+
+    expected = Path(mock_ctx.tracker.get_output("microchromosome_combine", "hap1_fa"))
+    resolved = find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix)
+    assert resolved == expected
