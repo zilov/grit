@@ -99,16 +99,21 @@ def load_user_config(config_path: Path) -> dict:
         return yaml.safe_load(f)
 
 
+def load_yaml_override(state: GlobalState) -> dict | None:
+    """Load the group-level --yaml FILE override, or None when not set."""
+    if not state.yaml:
+        return None
+    yaml_file = Path(state.yaml)
+    if not yaml_file.exists():
+        click.echo(f"Error: YAML file not found: {yaml_file}", err=True)
+        sys.exit(1)
+    with open(yaml_file) as f:
+        return yaml.safe_load(f)
+
+
 def build_context(state: GlobalState) -> CurationContext:
     user_config = load_user_config(Path(state.config_path))
-    yaml_override = None
-    if state.yaml:
-        yaml_file = Path(state.yaml)
-        if not yaml_file.exists():
-            click.echo(f"Error: YAML file not found: {yaml_file}", err=True)
-            sys.exit(1)
-        with open(yaml_file) as f:
-            yaml_override = yaml.safe_load(f)
+    yaml_override = load_yaml_override(state)
     return CurationContext.from_ticket(
         state.ticket,
         user_config,
@@ -192,7 +197,11 @@ def status_cmd(ctx, ticket):
     if ticket:
         user_config = load_user_config(Path(ctx.obj.config_path))
         show_ticket_history(
-            registry, ticket, user_config, dry_run=getattr(ctx.obj, "dry_run", False)
+            registry,
+            ticket,
+            user_config,
+            dry_run=getattr(ctx.obj, "dry_run", False),
+            yaml_override=load_yaml_override(ctx.obj),
         )
     else:
         show_global_status(registry)
@@ -329,6 +338,9 @@ def done_cmd(ctx, ticket):
     from grit.core.registry import RegistryManager
     from grit.utils.output import print_done
 
+    if getattr(ctx.obj, "dry_run", False):
+        raise click.UsageError("--dry-run is not supported for 'done'.")
+
     reg = RegistryManager()
     entry = reg.find_ticket(ticket)
     if entry is None:
@@ -348,6 +360,9 @@ def reopen_cmd(ctx, ticket):
     """Set a done ticket's status back to active curation."""
     from grit.core.registry import RegistryManager
     from grit.utils.output import print_done
+
+    if getattr(ctx.obj, "dry_run", False):
+        raise click.UsageError("--dry-run is not supported for 'reopen'.")
 
     reg = RegistryManager()
     entry = reg.find_ticket(ticket)
@@ -371,6 +386,9 @@ def remove_cmd(ctx, ticket, yes):
 
     from grit.core.registry import RegistryManager
     from grit.utils.output import console, print_done
+
+    if getattr(ctx.obj, "dry_run", False):
+        raise click.UsageError("--dry-run is not supported for 'remove'.")
 
     reg = RegistryManager()
     entry = reg.find_ticket(ticket)
@@ -412,6 +430,9 @@ def summary_cmd(ctx):
     """Show ticket counts by status, and done-ticket counts by time period."""
     from grit.core.registry import RegistryManager
     from grit.core.status import show_summary
+
+    if getattr(ctx.obj, "dry_run", False):
+        raise click.UsageError("--dry-run is not supported for 'summary'.")
 
     show_summary(RegistryManager())
 

@@ -4,6 +4,21 @@ from pathlib import Path
 
 import rich_click as click
 
+# Registered Click command names (the string passed to @click.command(...)) of
+# steps whose run_* function has an `if ctx.dry_run:` branch. Every other
+# GritCommand-based step ignores --dry-run entirely today and would otherwise
+# run for real — GritCommand.invoke() below refuses those before the callback runs.
+_DRY_RUN_SUPPORTED_COMMANDS = frozenset(
+    {
+        "setup",
+        "pretext-to-asm",
+        "blast-contaminants",
+        "rename-and-orient",
+        "microchromosome-combine",
+        "pretext-to-asm-recurate",
+    }
+)
+
 
 class GritCommand(click.RichCommand):
     """Click Command that auto-adds --ticket/-t and --print-only to every subcommand.
@@ -92,6 +107,16 @@ class GritCommand(click.RichCommand):
 
             if dry_run:
                 ctx.obj.dry_run = True
+
+            # print_only always takes precedence over dry_run (same rule as
+            # CurationContext.from_yaml) — a print_only invocation is always safe
+            # to allow, regardless of whether this command supports --dry-run.
+            effective_dry_run = ctx.obj.dry_run and not ctx.obj.print_only
+            if effective_dry_run and self.name not in _DRY_RUN_SUPPORTED_COMMANDS:
+                raise click.UsageError(
+                    f"--dry-run is not yet supported for '{self.name}' — supported "
+                    f"commands: {sorted(_DRY_RUN_SUPPORTED_COMMANDS)}"
+                )
 
             if untracked:
                 ctx.obj.untracked = True

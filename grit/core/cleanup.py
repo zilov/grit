@@ -327,7 +327,8 @@ def run_cleanup(dry_run: bool = True, include_cleaned: bool = False) -> None:
     default=False,
     help="Also rescan done tickets already marked cleaned_up (ignores the skip).",
 )
-def cleanup_cmd(yes, include_cleaned):
+@click.pass_context
+def cleanup_cmd(ctx, yes, include_cleaned):
     """Free disk space for done tickets.
 
     For each workdir of tickets already marked as done:
@@ -353,4 +354,7 @@ def cleanup_cmd(yes, include_cleaned):
 
     Runs as dry run by default — pass --yes to execute.
     """
+    if getattr(ctx.obj, "dry_run", False):
+        raise click.UsageError("--dry-run is not supported for 'cleanup'.")
+
     run_cleanup(dry_run=not yes, include_cleaned=include_cleaned)

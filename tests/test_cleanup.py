@@ -2,7 +2,10 @@
 
 from unittest.mock import patch
 
+from click.testing import CliRunner
+
 from grit.core.cleanup import plan_cleanup, run_cleanup
+from grit.core.click_cli import cli
 
 
 class _FakeTracker:
@@ -257,3 +260,14 @@ def test_run_cleanup_does_not_mark_cleaned_up_on_delete_error(mock_registry_cls,
         run_cleanup(dry_run=False)
 
     mock_registry.mark_cleaned_up.assert_not_called()
+
+
+def test_cleanup_cmd_rejects_dry_run(monkeypatch, tmp_path):
+    """`grit --dry-run cleanup` must refuse rather than scanning the real registry."""
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--dry-run", "cleanup"])
+
+    assert result.exit_code != 0
+    assert "--dry-run is not supported" in result.output
