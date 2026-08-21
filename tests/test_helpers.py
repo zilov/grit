@@ -1,8 +1,14 @@
 """Tests for grit/utils/helpers.py generic helpers."""
 
 import time
+from pathlib import Path
 
-from grit.utils.helpers import build_scp_tip, inputs_newer_than_curated_fa
+from grit.utils.helpers import (
+    build_scp_tip,
+    collect_outputs,
+    inputs_newer_than_curated_fa,
+    write_fake_outputs,
+)
 
 
 def test_build_scp_tip_returns_none_when_no_files():
@@ -88,3 +94,83 @@ def test_inputs_newer_than_curated_fa_false_when_all_inputs_older(tmp_path):
         inputs_newer_than_curated_fa(workdir, "sDipInt39", pta_dir, extra_inputs=[original_fa])
         is False
     )
+
+
+# ---------------------------------------------------------------------------
+# write_fake_outputs
+# ---------------------------------------------------------------------------
+
+
+def test_write_fake_outputs_round_trips_through_collect_outputs_pretext_to_asm(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    written = write_fake_outputs("pretext_to_asm", run_dir, "sDipInt39")
+
+    assert written
+    for key, path in written.items():
+        assert Path(path).is_file()
+
+    from grit.steps.post_curation.pretext_to_asm import _OUTPUT_SPECS
+
+    found = collect_outputs(_OUTPUT_SPECS, run_dir, "sDipInt39")
+    assert found == written
+
+
+def test_write_fake_outputs_round_trips_through_collect_outputs_rename_and_orient(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    written = write_fake_outputs("rename_and_orient", run_dir, "sDipInt39")
+
+    assert written
+    from grit.steps.optional.rename_and_orient import _OUTPUT_SPECS
+
+    found = collect_outputs(_OUTPUT_SPECS, run_dir, "sDipInt39")
+    assert found == written
+
+
+def test_write_fake_outputs_round_trips_through_collect_outputs_hic_remapping(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    written = write_fake_outputs("hic_remapping", run_dir, "sDipInt39")
+
+    assert written
+    from grit.steps.post_curation.hic_remapping import _OUTPUT_SPECS
+
+    found = collect_outputs(_OUTPUT_SPECS, run_dir, "sDipInt39")
+    assert found == written
+
+
+def test_write_fake_outputs_uses_content_override(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    written = write_fake_outputs(
+        "rename_and_orient",
+        run_dir,
+        "sDipInt39",
+        content={"hap1_fa": b">real\nACGTACGT\n"},
+    )
+
+    assert Path(written["hap1_fa"]).read_bytes() == b">real\nACGTACGT\n"
+
+
+def test_write_fake_outputs_writes_trivial_stub_without_content(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    written = write_fake_outputs("rename_and_orient", run_dir, "sDipInt39")
+
+    assert Path(written["hap1_fa"]).read_bytes() == b">fake\nACGT\n"
+
+
+def test_write_fake_outputs_unknown_step_returns_empty_and_writes_nothing(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    written = write_fake_outputs("not_a_real_step", run_dir, "sDipInt39")
+
+    assert written == {}
+    assert list(run_dir.iterdir()) == []

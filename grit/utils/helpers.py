@@ -765,6 +765,31 @@ def collect_outputs(
     return outputs
 
 
+def write_fake_outputs(
+    step: str,
+    run_dir: Path,
+    tol_id: str,
+    *,
+    hap1: str = "hap1",
+    hap2: str = "hap2",
+    content: dict[str, bytes] | None = None,
+) -> dict[str, str]:
+    """Write one placeholder file per _OUTPUT_SPECS entry for *step*, returning {key: path}."""
+    outputs: dict[str, str] = {}
+    for key, pattern, _excludes in _get_step_specs(step):
+        if key in outputs:  # already written via earlier spec (fallback skip)
+            continue
+        rel_path = (
+            pattern.format(tol_id=tol_id, hap1=hap1, hap2=hap2).replace("*", "1").replace("?", "1")
+        )
+        file_path = run_dir / rel_path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        data = content.get(key, b">fake\nACGT\n") if content else b">fake\nACGT\n"
+        file_path.write_bytes(data)
+        outputs[key] = str(file_path)
+    return outputs
+
+
 def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
     """Return _OUTPUT_SPECS for a step by lazy import. Returns [] for unknown steps."""
     from importlib import import_module
