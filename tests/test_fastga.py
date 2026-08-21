@@ -1,8 +1,18 @@
 """Tests for run_fastga step."""
 
+from pathlib import Path
 from unittest.mock import patch
 
+from grit.core.registry import RegistryManager
+from grit.core.run_tracker import RunTracker
 from grit.steps.optional.fastga import _is_super, _read_top1_table, run_fastga, run_fastga_stats
+
+
+def _attach_tracker(ctx, tmp_path):
+    ctx.workdir = tmp_path
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(ctx.ticket_id, ctx.tol_id, ctx.species, tmp_path)
+    ctx.tracker = RunTracker(tmp_path, registry=reg)
 
 
 @patch("grit.steps.optional.fastga._submit_bsub")
@@ -100,3 +110,39 @@ def test_run_fastga_stats_raises_when_no_top1_table(mock_find_latest_dir, mock_c
         raise AssertionError("expected FileNotFoundError")
     except FileNotFoundError:
         pass
+
+
+@patch("grit.steps.optional.fastga._submit_bsub")
+@patch("grit.steps.optional.fastga.find_reheadered_reference")
+@patch("grit.steps.optional.fastga.find_canonical_fa")
+def test_run_fastga_dry_run_short_circuits(
+    mock_find_fa, mock_find_ref, mock_bsub, mock_ctx, tmp_path
+):
+    """dry_run must skip reference/FASTA lookup + bsub submission entirely."""
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.dry_run = True
+
+    run_fastga(mock_ctx)
+
+    mock_bsub.assert_not_called()
+    mock_find_fa.assert_not_called()
+    mock_find_ref.assert_not_called()
+
+    paf_path = mock_ctx.tracker.get_output("fastga", "paf")
+    assert paf_path is not None
+    assert Path(paf_path).exists()
+
+
+def test_run_fastga_dry_run_top1_targets_content_is_parseable(mock_ctx, tmp_path):
+    """The dry-run fake top1_targets.tsv content must be parseable by the real
+    _read_top1_table function used downstream by fastga-stats."""
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.dry_run = True
+
+    run_fastga(mock_ctx)
+
+    top1_path = Path(mock_ctx.tracker.get_output("fastga", "top1_targets"))
+    rows = _read_top1_table(top1_path)
+
+    assert rows == [("SUPER_1", "chr1", "1000000")]
+    assert all(_is_super(row[0]) for row in rows)

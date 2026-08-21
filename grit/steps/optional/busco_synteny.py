@@ -13,6 +13,7 @@ from grit.utils.helpers import (
     build_bsub_opts,
     find_canonical_fa,
     find_reheadered_reference,
+    write_fake_outputs,
 )
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
@@ -64,6 +65,15 @@ def run_busco_synteny(
     """
     log.info("busco-synteny | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO synteny")
+
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start(
+            "busco_synteny", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
+        )
+        outputs = write_fake_outputs("busco_synteny", run_dir, ctx.tol_id)
+        ctx.tracker.finish("busco_synteny", run_dir, "success", outputs=outputs)
+        print_done(f"[dry-run] BUSCO synteny plot → {outputs.get('png', run_dir)}")
+        return
 
     from grit.steps.pre_curation.find_reference import reheader_reference
 

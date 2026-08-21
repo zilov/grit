@@ -69,12 +69,14 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
   `~/.grit/dry_run/` (see `dry_run_root()` in `grit/core/registry.py`) — never the
   real `~/.grit/grit_registry.json` or a real farm workdir — and each supporting step
   writes placeholder outputs via `write_fake_outputs()` (`grit/utils/helpers.py`)
-  instead of running any real command. As of now only `setup`, `pretext-to-asm`,
-  `blast-contaminants`, `rename-and-orient`, `microchromosome-combine`, and
-  `pretext-to-asm-recurate` have a dry-run branch (`_DRY_RUN_SUPPORTED_COMMANDS` in
-  `grit/core/base_command.py`). `GritCommand.invoke()` refuses `--dry-run` up front
-  for every other step (`hic-remapping`, `fastga`, `qv`, `finalize-qc`, `busco-*`,
-  etc.) with a `UsageError` rather than silently proceeding as a real run.
+  instead of running any real command. As of now `setup`, `pretext-to-asm`,
+  `blast-contaminants`, `rename-and-orient`, `microchromosome-combine`,
+  `pretext-to-asm-recurate`, `busco-synteny`, `fastga-synteny`, `fastga`, and
+  `microchromosome-second-shot` have a dry-run branch (`_DRY_RUN_SUPPORTED_COMMANDS`
+  in `grit/core/base_command.py`). `GritCommand.invoke()` refuses `--dry-run` up
+  front for every other step (`hic-remapping`, `fastga-stats`, `qv`, `finalize-qc`,
+  `busco-curated`, etc.) with a `UsageError` rather than silently proceeding as a
+  real run.
   `--print-only` always takes precedence over `--dry-run` when both are set — resolved
   once in `CurationContext.from_yaml` (`dry_run = dry_run and not print_only`) and
   independently in `GritCommand.invoke()` for the pre-callback guard, since that check

@@ -16,6 +16,7 @@ from grit.utils.helpers import (
     find_canonical_fa,
     find_latest_dir,
     find_reheadered_reference,
+    write_fake_outputs,
 )
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
@@ -59,6 +60,20 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     """Submits the FastGA dot-plot alignment (which also writes the top-targets summary)."""
     log.info("fastga | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run FastGA")
+
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start("fastga", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        outputs = write_fake_outputs(
+            "fastga",
+            run_dir,
+            ctx.tol_id,
+            content={
+                "top1_targets": (b"super\ttop_longest_ref_chr\tlen\nSUPER_1\tchr1\t1000000\n")
+            },
+        )
+        ctx.tracker.finish("fastga", run_dir, "success", outputs=outputs)
+        print_done(f"[dry-run] FastGA → {outputs.get('paf', run_dir)}")
+        return
 
     # --- find canonical hap1 FASTA (rename_and_orient output preferred) ---
     hap1_fa = find_canonical_fa(ctx, ctx.hap1_prefix)

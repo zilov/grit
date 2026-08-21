@@ -95,6 +95,47 @@ def test_second_shot_output_specs_include_merged_small_fa():
     assert "hap1_large_fa" in keys
 
 
+@patch("grit.steps.pre_curation.microchromosome_second_shot._run")
+def test_run_microchromosome_second_shot_dry_run_short_circuits(mock_run, mock_ctx, tmp_path):
+    """dry_run must skip curated-FASTA lookup + second-shot script entirely."""
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.dry_run = True
+
+    run_microchromosome_second_shot(mock_ctx)
+
+    mock_run.assert_not_called()
+
+    outputs = mock_ctx.tracker.history("microchromosome_second_shot")[-1]["outputs"]
+    assert set(outputs) == {
+        "hap1_large_fa",
+        "hap2_large_fa",
+        "hap1_large_chr",
+        "hap2_large_chr",
+        "merged_small_fa",
+        "pretext_map",
+    }
+    for key in outputs:
+        assert Path(outputs[key]).exists()
+
+
+@patch("grit.steps.pre_curation.microchromosome_second_shot._run")
+def test_run_microchromosome_second_shot_dry_run_single_hap_omits_hap2(
+    mock_run, mock_ctx_primary, tmp_path
+):
+    """A single-hap (primary/alternate) dry run must not fabricate hap2 outputs."""
+    _attach_tracker(mock_ctx_primary, tmp_path)
+    mock_ctx_primary.dry_run = True
+
+    run_microchromosome_second_shot(mock_ctx_primary)
+
+    mock_run.assert_not_called()
+
+    outputs = mock_ctx_primary.tracker.history("microchromosome_second_shot")[-1]["outputs"]
+    assert "hap1_large_fa" in outputs
+    assert "hap2_large_fa" not in outputs
+    assert "hap2_large_chr" not in outputs
+
+
 # ---------------------------------------------------------------------------
 # run_microchromosome_combine
 # ---------------------------------------------------------------------------

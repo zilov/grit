@@ -1246,3 +1246,36 @@ def test_finalize_for_qc_raises_on_reverse_yaml_pta_mismatch(
     mock_find_haplotigs.assert_not_called()
     mock_find_csv.assert_not_called()
     mock_run.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# run_busco_synteny — dry-run
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.optional.busco_synteny._submit_bsub")
+@patch("grit.steps.optional.busco_synteny.find_reheadered_reference")
+@patch("grit.steps.optional.busco_synteny.find_canonical_fa")
+def test_run_busco_synteny_dry_run_short_circuits(
+    mock_find_fa, mock_find_ref, mock_bsub, mock_ctx, tmp_path
+):
+    """dry_run must skip reference/FASTA lookup + bsub submission entirely."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.optional.busco_synteny import run_busco_synteny
+
+    mock_ctx.workdir = tmp_path
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+    mock_ctx.dry_run = True
+
+    run_busco_synteny(mock_ctx, lineage="insecta_odb10")
+
+    mock_bsub.assert_not_called()
+    mock_find_fa.assert_not_called()
+    mock_find_ref.assert_not_called()
+
+    png_path = mock_ctx.tracker.get_output("busco_synteny", "png")
+    assert png_path is not None
+    assert Path(png_path).exists()

@@ -16,6 +16,10 @@ _DRY_RUN_SUPPORTED_COMMANDS = frozenset(
         "rename-and-orient",
         "microchromosome-combine",
         "pretext-to-asm-recurate",
+        "busco-synteny",
+        "fastga-synteny",
+        "fastga",
+        "microchromosome-second-shot",
     }
 )
 

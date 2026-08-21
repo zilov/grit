@@ -1,10 +1,20 @@
 """Tests for fastga_synteny step."""
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+from grit.core.registry import RegistryManager
+from grit.core.run_tracker import RunTracker
 from grit.steps.optional.fastga_synteny import DEFAULT_MIN_ALIGN_LEN, run_fastga_synteny
+
+
+def _attach_tracker(ctx, tmp_path):
+    ctx.workdir = tmp_path
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(ctx.ticket_id, ctx.tol_id, ctx.species, tmp_path)
+    ctx.tracker = RunTracker(tmp_path, registry=reg)
 
 
 @patch("grit.steps.optional.fastga_synteny._submit_bsub")
@@ -86,3 +96,20 @@ def test_run_fastga_synteny_raises_when_no_paf(mock_find_dir, mock_glob, mock_ct
 
     with pytest.raises(FileNotFoundError, match="No FastGA PAF found"):
         run_fastga_synteny(mock_ctx)
+
+
+@patch("grit.steps.optional.fastga_synteny._submit_bsub")
+@patch("grit.steps.optional.fastga_synteny.find_latest_dir")
+def test_run_fastga_synteny_dry_run_short_circuits(mock_find_dir, mock_bsub, mock_ctx, tmp_path):
+    """dry_run must skip PAF lookup + bsub submission entirely."""
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.dry_run = True
+
+    run_fastga_synteny(mock_ctx)
+
+    mock_bsub.assert_not_called()
+    mock_find_dir.assert_not_called()
+
+    png_path = mock_ctx.tracker.get_output("fastga_synteny", "png")
+    assert png_path is not None
+    assert Path(png_path).exists()
