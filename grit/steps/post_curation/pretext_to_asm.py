@@ -11,7 +11,12 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, collect_outputs, inputs_newer_than_curated_fa
+from grit.utils.helpers import (
+    _run,
+    collect_outputs,
+    inputs_newer_than_curated_fa,
+    write_fake_outputs,
+)
 from grit.utils.modules import module_cmd
 from grit.utils.output import print_done, print_step_header
 
@@ -162,6 +167,25 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
     """
     log.info("pretext-to-asm | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Pretext to ASM")
+
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start(
+            "pretext_to_asm", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
+        )
+        outputs = write_fake_outputs(
+            "pretext_to_asm",
+            run_dir,
+            ctx.tol_id,
+            hap1=ctx.hap1_prefix,
+            hap2=ctx.hap2_prefix,
+            content={
+                "hap1_fa": b">SCAFFOLD_1\nACGTACGTACGT\n>SCAFFOLD_2\nACGTACGTACGT\n",
+                "hap2_fa": b">HAP_SCAFFOLD_1\nACGTACGTACGT\n",
+            },
+        )
+        ctx.tracker.finish("pretext_to_asm", run_dir, "success", outputs=outputs)
+        print_done(f"[dry-run] Curated FASTA → {outputs.get('hap1_fa', run_dir)}")
+        return
 
     original_fa = ctx.workdir / "original.fa"
     _run_pretext_to_asm_core(

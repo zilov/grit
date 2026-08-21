@@ -148,8 +148,59 @@ def test_run_pretext_to_asm_print_only_skips_checks(mock_run, mock_ctx, tmp_path
     # Should not raise even though files don't exist
     run_pretext_to_asm(mock_ctx)
 
-    calls = [str(c) for c in mock_run.call_args_list]
-    assert any("pretext-to-asm" in c for c in calls)
+
+@patch("grit.steps.post_curation.pretext_to_asm._run")
+@patch("grit.steps.post_curation.pretext_to_asm.glob.glob")
+def test_run_pretext_to_asm_dry_run_writes_fake_fasta_with_scaffold_headers(
+    mock_glob, mock_run, mock_ctx, tmp_path
+):
+    """Dry-run must skip real AGP/subprocess work and write a fake curated FASTA
+    with SCAFFOLD_ headers, tracked under the real _OUTPUT_SPECS keys."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.dry_run = True
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+
+    run_pretext_to_asm(mock_ctx)
+
+    mock_run.assert_not_called()
+    mock_glob.assert_not_called()
+
+    hap1_fa_path = mock_ctx.tracker.get_output("pretext_to_asm", "hap1_fa")
+    assert hap1_fa_path is not None
+    hap1_fa = Path(hap1_fa_path)
+    assert hap1_fa.exists()
+    content = hap1_fa.read_text()
+    assert "SCAFFOLD_1" in content
+    assert "SCAFFOLD_2" in content
+
+    hap2_fa_path = mock_ctx.tracker.get_output("pretext_to_asm", "hap2_fa")
+    assert hap2_fa_path is not None
+    assert "HAP_SCAFFOLD_1" in Path(hap2_fa_path).read_text()
+
+
+def test_run_pretext_to_asm_dry_run_output_resolves_via_find_canonical_fa(mock_ctx, tmp_path):
+    """The fake FASTA written in dry-run mode must resolve through the real
+    canonical-FASTA resolution pool, not just via tracker bookkeeping."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.utils.helpers import find_canonical_fa
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.dry_run = True
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+
+    run_pretext_to_asm(mock_ctx)
+
+    expected = Path(mock_ctx.tracker.get_output("pretext_to_asm", "hap1_fa"))
+    resolved = find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix)
+    assert resolved == expected
 
 
 @patch("grit.steps.post_curation.pretext_to_asm._run")
