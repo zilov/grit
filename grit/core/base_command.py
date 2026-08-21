@@ -30,6 +30,8 @@ _DRY_RUN_SUPPORTED_COMMANDS = frozenset(
         "busco-curated",
         "find-reference",
         "sex-matcher",
+        "qv",
+        "finalize-qc",
     }
 )
 

@@ -1327,6 +1327,119 @@ def test_finalize_for_qc_raises_on_reverse_yaml_pta_mismatch(
 
 
 # ---------------------------------------------------------------------------
+# run_qv — dry-run
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.post_curation.qv._run")
+def test_run_qv_dry_run(mock_run, mock_ctx, tmp_path):
+    """dry_run must not shell out, but must write stub merquryk files that
+    _find_qv_outputs(ctx) resolves and registers on the tracker."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.dry_run = True
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    run_qv(mock_ctx)
+
+    mock_run.assert_not_called()
+
+    qv_file = mock_ctx.tracker.get_output("qv", "qv")
+    completeness_file = mock_ctx.tracker.get_output("qv", "completeness_stats")
+    assert qv_file is not None and Path(qv_file).exists()
+    assert completeness_file is not None and Path(completeness_file).exists()
+
+
+# ---------------------------------------------------------------------------
+# finalize_for_qc — dry-run
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
+def test_finalize_for_qc_dry_run_dual_hap(mock_run, mock_qv_run, mock_ctx, tmp_path):
+    """dry_run for a hap1/hap2 assembly must skip the real pta-mismatch check and
+    real _run calls entirely, write placeholder files for both haplotypes, and
+    exercise qv's own dry-run branch (not the real kmer_completeness.bash call)
+    since no merquryk dir exists yet."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.dry_run = True
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    finalize_for_qc(mock_ctx)
+
+    # neither finalize_qc's real copy commands nor qv's real subprocess ran
+    mock_run.assert_not_called()
+    mock_qv_run.assert_not_called()
+
+    dest_dir = mock_ctx.assembly_curated_dir
+    assert (dest_dir / "sDipInt39.hap1.1.primary.curated.fa").exists()
+    assert (dest_dir / "sDipInt39.hap2.1.primary.curated.fa").exists()
+
+    # qv's dry-run branch ran as part of finalize_qc's dry-run branch
+    qv_file = mock_ctx.tracker.get_output("qv", "qv")
+    assert qv_file is not None and Path(qv_file).exists()
+
+    assert mock_ctx.tracker.get_output("finalize_qc", "curated_dir") == str(dest_dir)
+
+
+@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
+def test_finalize_for_qc_dry_run_single_hap(mock_run, mock_qv_run, mock_ctx_primary, tmp_path):
+    """dry_run for a primary/alternate assembly must write a placeholder for hap1
+    only (mirroring is_single_hap(ctx) gating) and still cascade into qv's
+    dry-run branch."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx_primary.workdir = tmp_path
+    mock_ctx_primary.tol_id = "ilHelSara1"
+    mock_ctx_primary.release_version = 1
+    mock_ctx_primary.dry_run = True
+    mock_ctx_primary.assembly_curated_dir = tmp_path / "curated" / "ilHelSara1.1"
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(
+        mock_ctx_primary.ticket_id, mock_ctx_primary.tol_id, mock_ctx_primary.species, tmp_path
+    )
+    mock_ctx_primary.tracker = RunTracker(tmp_path, registry=reg)
+
+    finalize_for_qc(mock_ctx_primary)
+
+    mock_run.assert_not_called()
+    mock_qv_run.assert_not_called()
+
+    dest_dir = mock_ctx_primary.assembly_curated_dir
+    assert (dest_dir / "ilHelSara1.1.primary.curated.fa").exists()
+    # no hap2 file for a single-hap assembly
+    assert not any(dest_dir.glob("ilHelSara1.*.hap2.*"))
+
+    qv_file = mock_ctx_primary.tracker.get_output("qv", "qv")
+    assert qv_file is not None and Path(qv_file).exists()
+
+    assert mock_ctx_primary.tracker.get_output("finalize_qc", "curated_dir") == str(dest_dir)
+
+
+# ---------------------------------------------------------------------------
 # run_busco_synteny — dry-run
 # ---------------------------------------------------------------------------
 

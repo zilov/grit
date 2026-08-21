@@ -74,7 +74,7 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
   `pretext-to-asm-recurate`, `busco-synteny`, `fastga-synteny`, `fastga`,
   `microchromosome-second-shot`, `hic-remapping`, `fastga-stats`,
   `haplotig-files`, `validate-files`, `super-to-scaffold`, `busco-curated`,
-  `find-reference`, and `sex-matcher` have a dry-run branch
+  `find-reference`, `sex-matcher`, `qv`, and `finalize-qc` have a dry-run branch
   (`_DRY_RUN_SUPPORTED_COMMANDS` in `grit/core/base_command.py`); the composite
   commands `post-curation` and `post-curation-recurate` are also allowlisted since
   they only call already-dry-run-aware sub-functions and do no I/O of their own.
@@ -95,9 +95,21 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
   already-done skip) — its dry-run branch calls `tracker.finish(..., "success")`
   anyway, a deliberate choice for consistency with every other async step's
   dry-run pattern, not a copy of that one step's unusual real-path omission.
-  `GritCommand.invoke()` refuses `--dry-run` up front for every other step
-  (`qv`, `finalize-qc`, etc.) with a `UsageError` rather than silently
-  proceeding as a real run.
+  `qv`'s dry-run branch writes stub `{tol_id}.qv`/`{tol_id}.completeness.stats`
+  files into the real `ctx.assembly_curated_dir/merquryk/` (not `run_dir`), then
+  reuses the real `_find_qv_outputs(ctx)` glob helper to build `tracker.finish()`'s
+  outputs — deliberately not `write_fake_outputs()`, since qv's outputs live under
+  `assembly_curated_dir`, not the tracked run dir. `finalize_qc`'s dry-run branch
+  skips the real-filesystem `_raise_if_yaml_pta_mismatch(ctx)` check entirely (not
+  just under `print_only`), writes placeholder curated FASTAs for whichever
+  haplotype(s) the shared `is_single_hap(ctx)` helper selects (its own hand-rolled
+  `_IS_SINGLE_HAP` check was replaced with this helper in both the dry-run and real
+  paths), and — matching its real behavior of calling `run_qv(ctx)` whenever
+  `dest_dir/merquryk` doesn't exist yet — calls the now-dry-run-aware `run_qv(ctx)`
+  under the same condition, so a dry-run `finalize-qc` cascades into qv's dry-run
+  branch rather than ever reaching a real subprocess.
+  `GritCommand.invoke()` refuses `--dry-run` up front for every other (not yet
+  ported) step with a `UsageError` rather than silently proceeding as a real run.
   `--print-only` always takes precedence over `--dry-run` when both are set — resolved
   once in `CurationContext.from_yaml` (`dry_run = dry_run and not print_only`) and
   independently in `GritCommand.invoke()` for the pre-callback guard, since that check
