@@ -56,6 +56,8 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     print_step_header(ctx.ticket_id, ctx.tol_id, "Blast contaminants search")
 
     if ctx.dry_run:
+        is_single_hap = ctx.hap1_prefix in ("primary", "paternal")
+
         run_dir = ctx.tracker.start(
             "blast_contaminants", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
         )
@@ -66,8 +68,14 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
             hap1=ctx.hap1_prefix,
             hap2=ctx.hap2_prefix,
         )
+        if is_single_hap:
+            # write_fake_outputs always writes both _OUTPUT_SPECS entries (keyed
+            # "hap1_fa"/"hap2_fa" regardless of assembly_type); drop the hap2 one so
+            # a single-hap dry-run's tracked outputs match what a real run would
+            # actually produce.
+            outputs.pop("hap2_fa", None)
         ctx.tracker.finish("blast_contaminants", run_dir, "success", outputs=outputs)
-        dest = outputs.get(f"{ctx.hap1_prefix}_fa", run_dir)
+        dest = outputs.get("hap1_fa", run_dir)
         print_done(f"[dry-run] Decontaminated FASTA → {dest}")
         return
 

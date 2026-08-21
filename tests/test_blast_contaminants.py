@@ -166,6 +166,27 @@ def test_dry_run_short_circuits_before_any_real_work(mock_find_fa, mock_run, moc
         assert Path(path).exists()
 
 
+@patch("grit.steps.optional.blast_contaminants._run")
+@patch("grit.steps.optional.blast_contaminants.find_canonical_fa")
+def test_dry_run_single_hap_tracks_only_hap1(mock_find_fa, mock_run, mock_ctx_primary, tmp_path):
+    """A single-hap (primary/alternate) dry run must only ever track hap1's fake
+    output — never a hap2/alternate output that the real workflow could never
+    produce for this assembly."""
+    _attach_tracker(mock_ctx_primary, tmp_path)
+    mock_ctx_primary.dry_run = True
+
+    run_blast_contaminants(mock_ctx_primary)
+
+    mock_run.assert_not_called()
+    mock_find_fa.assert_not_called()
+
+    outputs = mock_ctx_primary.tracker.history("blast_contaminants")[-1]["outputs"]
+    assert set(outputs) == {"hap1_fa"}
+    assert "hap2_fa" not in outputs
+    assert mock_ctx_primary.tracker.get_output("blast_contaminants", "alternate_fa") is None
+    assert mock_ctx_primary.tracker.get_output("blast_contaminants", "hap2_fa") is None
+
+
 def test_dry_run_output_resolves_via_find_canonical_fa(mock_ctx, tmp_path):
     """The fake output written in dry-run mode must resolve through the real
     canonical-FASTA resolution pool, not just via tracker bookkeeping."""
