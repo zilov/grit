@@ -5,10 +5,12 @@ tests/test_remove_cmd.py.
 """
 
 import pytest
+import yaml
 from click.testing import CliRunner
 
 from grit.core.click_cli import cli
 from grit.core.registry import RegistryManager
+from tests.conftest import TEST_USER_CONFIG
 
 
 @pytest.fixture(autouse=True)
@@ -27,6 +29,14 @@ def dry_run_dir(tmp_path_factory, monkeypatch):
     d = tmp_path_factory.mktemp("dry_run_root")
     monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: d)
     return d
+
+
+@pytest.fixture
+def user_config_path(tmp_path):
+    """A local user-config YAML file, for status_cmd's -t path (load_user_config)."""
+    path = tmp_path / "grit_curation_config.yaml"
+    path.write_text(yaml.safe_dump(TEST_USER_CONFIG))
+    return path
 
 
 def _seed_ticket(registry_dir, tmp_path, ticket_id="RC-1234", tol_id="xbTest1"):
@@ -99,3 +109,65 @@ def test_untrack_dry_run_does_not_touch_default_registry(
 
     assert result.exit_code == 1
     assert "not found" in result.output
+
+
+def test_status_dry_run_ticket_history_reads_from_dry_run_registry(
+    tmp_path, dry_run_dir, _patch_registry_dir, user_config_path
+):
+    """`grit --dry-run status -t <ticket>` must surface step history via the
+    dry-run-isolated registry (show_ticket_history's own RunTracker(workdir) call),
+    not the real default registry that _patch_registry_dir points elsewhere."""
+    from grit.core.run_tracker import RunTracker
+
+    reg, workdir = _seed_ticket(dry_run_dir, tmp_path, ticket_id="RC-DRY", tol_id="xbDry1")
+    tracker = RunTracker(workdir, registry=reg)
+    run_dir = tracker.start("rename_and_orient", "RC-DRY", "xbDry1")
+    tracker.finish("rename_and_orient", run_dir, "success")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["--config", str(user_config_path), "--dry-run", "status", "-t", "RC-DRY"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "rename_and_orient" in result.output
+    assert "success" in result.output
+
+
+def test_status_default_ticket_history_does_not_see_dry_run_ticket(
+    tmp_path, dry_run_dir, _patch_registry_dir, user_config_path
+):
+    # Ticket only exists in the dry-run registry — a plain `status -t` must not find it.
+    _seed_ticket(dry_run_dir, tmp_path, ticket_id="RC-DRY", tol_id="xbDry1")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--config", str(user_config_path), "status", "-t", "RC-DRY"])
+
+    assert result.exit_code == 0, result.output
+    assert "not found" in result.output
+
+
+def test_status_dry_run_passes_dry_run_flag_into_context(
+    tmp_path, dry_run_dir, _patch_registry_dir, user_config_path, monkeypatch
+):
+    """status_cmd must thread `dry_run=True` into show_ticket_history's
+    CurationContext.from_ticket(...) call."""
+    _seed_ticket(dry_run_dir, tmp_path, ticket_id="RC-DRY", tol_id="xbDry1")
+
+    captured = {}
+
+    def fake_from_ticket(cls, ticket_id, user_config, **kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("stop before any real Jira/context work")
+
+    monkeypatch.setattr(
+        "grit.core.context.CurationContext.from_ticket", classmethod(fake_from_ticket)
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["--config", str(user_config_path), "--dry-run", "status", "-t", "RC-DRY"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured.get("dry_run") is True

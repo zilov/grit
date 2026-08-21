@@ -191,7 +191,9 @@ def status_cmd(ctx, ticket):
 
     if ticket:
         user_config = load_user_config(Path(ctx.obj.config_path))
-        show_ticket_history(registry, ticket, user_config)
+        show_ticket_history(
+            registry, ticket, user_config, dry_run=getattr(ctx.obj, "dry_run", False)
+        )
     else:
         show_global_status(registry)
 

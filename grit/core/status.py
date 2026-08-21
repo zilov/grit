@@ -36,7 +36,7 @@ def show_global_status(registry) -> None:
         last_run = ""
         step_status = ""
         if workdir.exists():
-            tracker = RunTracker(workdir)
+            tracker = RunTracker(workdir, registry=registry)
             history = tracker.history()
             if history:
                 last_entry = history[-1]
@@ -297,7 +297,7 @@ def _print_less_tips(step_latest: dict[str, dict]) -> None:
             print_tip(tip)
 
 
-def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
+def show_ticket_history(registry, ticket_id: str, user_config: dict, dry_run: bool = False) -> None:
     """Print per-step run history and curation results for a single ticket."""
     from grit.core.run_tracker import RunTracker
     from grit.utils.helpers import _check_bjobs
@@ -317,7 +317,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
     try:
         from grit.core.context import CurationContext
 
-        ctx = CurationContext.from_ticket(ticket_id, user_config, print_only=True)
+        ctx = CurationContext.from_ticket(ticket_id, user_config, print_only=True, dry_run=dry_run)
     except Exception as exc:
         console.print(f"[dim]Could not build curation context: {exc}[/dim]")
 
@@ -333,7 +333,7 @@ def show_ticket_history(registry, ticket_id: str, user_config: dict) -> None:
             str(p) for by_type in resolved_canonical.values() for p in by_type.values() if p
         }
 
-    tracker = RunTracker(workdir)
+    tracker = RunTracker(workdir, registry=registry)
     history = tracker.history()
     tol_id = ticket.get("tol_id", "")
 

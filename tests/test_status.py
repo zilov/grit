@@ -10,6 +10,7 @@ from grit.core.status import (
     _print_less_tips,
     _print_scp_tips,
     _resolve_canonical_files,
+    show_global_status,
     show_ticket_history,
 )
 from tests.conftest import TEST_USER_CONFIG, TEST_YAML_HAP1
@@ -409,3 +410,101 @@ def test_show_ticket_history_no_marker_when_no_outputs_recorded(tmp_path, monkey
 
     assert "★" not in setup_line
     assert "★" not in agp_line
+
+
+def test_show_global_status_reads_from_passed_registry_not_default(tmp_path, monkeypatch, capsys):
+    """RunTracker(workdir) inside show_global_status must read from the `registry`
+    argument it's already given, not lazily build its own default RegistryManager()
+    pointed at a different location."""
+    default_dir = tmp_path / "default_registry"
+    passed_dir = tmp_path / "passed_registry"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", default_dir)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=passed_dir)
+    reg.add_ticket("RC-1234", "sDipInt39", "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+    run_dir = tracker.start("fastga", "RC-1234", "sDipInt39")
+    tracker.finish("fastga", run_dir, "success")
+
+    show_global_status(reg)
+
+    out = capsys.readouterr().out
+    assert "fastga" in out
+    assert "success" in out
+
+
+def _make_dry_run_ticket_with_ctx(tmp_path, monkeypatch, tol_id="sDipInt39"):
+    """Seed a ticket+step in a dry-run-isolated registry/workdir (distinct from the
+    default registry dir), and patch CurationContext.from_ticket to capture the
+    kwargs it's called with and return a ctx wired to that same dry-run workdir."""
+    default_dir = tmp_path / "default_registry"
+    dry_dir = tmp_path / "dry_run_root"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", default_dir)
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: dry_dir)
+
+    workdir = dry_dir / tol_id
+    workdir.mkdir(parents=True)
+    reg = RegistryManager(registry_dir=dry_dir)
+    reg.add_ticket("RC-DRY", tol_id, "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+
+    captured_kwargs: dict = {}
+
+    def fake_from_ticket(cls, ticket_id, user_config, **kwargs):
+        captured_kwargs.update(kwargs)
+        ctx = CurationContext.from_yaml(
+            "RC-DRY", TEST_YAML_HAP1, TEST_USER_CONFIG, dry_run=kwargs.get("dry_run", False)
+        )
+        ctx.workdir = workdir
+        ctx.tol_id = tol_id
+        ctx.tracker = tracker
+        return ctx
+
+    monkeypatch.setattr(
+        "grit.core.context.CurationContext.from_ticket",
+        classmethod(fake_from_ticket),
+    )
+    return reg, tracker, captured_kwargs
+
+
+def test_show_ticket_history_dry_run_reads_isolated_registry_and_context(
+    tmp_path, monkeypatch, capsys
+):
+    tol_id = "sDipInt39"
+    reg, tracker, captured_kwargs = _make_dry_run_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    run_dir = tracker.start("rename_and_orient", "RC-DRY", tol_id)
+    tracker.finish("rename_and_orient", run_dir, "success")
+
+    show_ticket_history(reg, "RC-DRY", TEST_USER_CONFIG, dry_run=True)
+
+    out = capsys.readouterr().out
+
+    # CurationContext.from_ticket was called with dry_run=True.
+    assert captured_kwargs.get("dry_run") is True
+    # RunTracker read the passed-in (dry-run-isolated) registry's step history.
+    assert "rename_and_orient" in out
+    assert "success" in out
+
+
+def test_show_ticket_history_dry_run_false_does_not_see_dry_run_ticket(tmp_path, monkeypatch):
+    """A real (non-dry-run) registry lookup for the same ticket ID must not pick up
+    the dry-run registry's data — the two registries are entirely separate objects,
+    so a real lookup with a real (empty) registry simply won't find the ticket."""
+    tol_id = "sDipInt39"
+    dry_reg, tracker, _ = _make_dry_run_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    run_dir = tracker.start("rename_and_orient", "RC-DRY", tol_id)
+    tracker.finish("rename_and_orient", run_dir, "success")
+
+    real_registry_dir = tmp_path / "real_registry"
+    real_reg = RegistryManager(registry_dir=real_registry_dir)
+
+    with patch("grit.core.status.console") as mock_console:
+        show_ticket_history(real_reg, "RC-DRY", TEST_USER_CONFIG, dry_run=False)
+
+    printed = " ".join(str(call.args[0]) for call in mock_console.print.call_args_list)
+    assert "not found" in printed
+    assert "rename_and_orient" not in printed
