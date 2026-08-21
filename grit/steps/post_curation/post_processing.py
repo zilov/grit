@@ -41,6 +41,12 @@ def run_post_processing(ctx: CurationContext) -> None:
         else None
     )
 
+    if ctx.dry_run:
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("post_processing", run_dir, "success")
+        print_done("[dry-run] Post-processing complete.")
+        return
+
     script_lines = [
         f"source {_POST_PROC_CONF}",
         "shopt -s expand_aliases",

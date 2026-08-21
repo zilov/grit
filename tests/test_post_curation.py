@@ -1582,3 +1582,35 @@ def test_cli_haplotig_files_dry_run_chains_after_pretext_to_asm_dry_run(tmp_path
     pta_run_dir = Path(next((workdir / "pretext_to_asm").iterdir()))
     assert list(pta_run_dir.glob("uoEpiScra1.hap1.*.all_haplotigs.curated.fa"))
     assert list(pta_run_dir.glob("uoEpiScra1.hap2.*.all_haplotigs.curated.fa"))
+
+
+# ---------------------------------------------------------------------------
+# run_post_processing — dry-run must never reach the real registry/subprocess
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.core.registry.RegistryManager.mark_done")
+@patch("grit.steps.post_curation.post_processing.subprocess.run")
+def test_run_post_processing_dry_run_skips_subprocess_and_mark_done(
+    mock_subprocess_run, mock_mark_done, mock_ctx, tmp_path
+):
+    """dry_run must return before the real `subprocess.run(["bash"], ...)` call
+    and before `RegistryManager().mark_done(ctx.ticket_id)` — the real, non-dry-run-
+    isolated default registry — is ever reached."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.post_curation.post_processing import run_post_processing
+
+    mock_ctx.workdir = tmp_path
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+    mock_ctx.dry_run = True
+
+    run_post_processing(mock_ctx)
+
+    mock_subprocess_run.assert_not_called()
+    mock_mark_done.assert_not_called()
+
+    status = registry.find_ticket(mock_ctx.ticket_id)["status"]
+    assert status != "done"

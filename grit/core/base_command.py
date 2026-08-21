@@ -32,6 +32,8 @@ _DRY_RUN_SUPPORTED_COMMANDS = frozenset(
         "sex-matcher",
         "qv",
         "finalize-qc",
+        "post-processing",
+        "pp",
     }
 )
 

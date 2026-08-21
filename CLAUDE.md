@@ -74,10 +74,23 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
   `pretext-to-asm-recurate`, `busco-synteny`, `fastga-synteny`, `fastga`,
   `microchromosome-second-shot`, `hic-remapping`, `fastga-stats`,
   `haplotig-files`, `validate-files`, `super-to-scaffold`, `busco-curated`,
-  `find-reference`, `sex-matcher`, `qv`, and `finalize-qc` have a dry-run branch
+  `find-reference`, `sex-matcher`, `qv`, `finalize-qc`, and `post-processing`
+  (aliased as `pp` — same underlying `run_post_processing()`, two distinct Click
+  command names, so both need their own entry) have a dry-run branch
   (`_DRY_RUN_SUPPORTED_COMMANDS` in `grit/core/base_command.py`); the composite
   commands `post-curation` and `post-curation-recurate` are also allowlisted since
   they only call already-dry-run-aware sub-functions and do no I/O of their own.
+  `post_processing` is the one step in this set with a real safety hazard: on
+  success it unconditionally calls `RegistryManager().mark_done(ctx.ticket_id)` —
+  the real, non-dry-run-isolated default registry, not `dry_run_root()` — after
+  shelling out via raw `subprocess.run(["bash"], ...)` (not `_run()`). Its
+  dry-run branch returns immediately after `tracker.start()`/`tracker.finish()`,
+  strictly before both the `subprocess.run()` call and the `mark_done()` call, so
+  neither real side effect is ever reachable when `ctx.dry_run` is set.
+  `add_pretext_view_tracks.py` deliberately has no dry-run branch and is not in
+  `_DRY_RUN_SUPPORTED_COMMANDS` — it mutates a `.pretext` binary in place via
+  `PretextGraph`, has no tracked output to fake, and plays no part in the
+  canonical-resolution/step-sequencing logic this feature exists to exercise.
   `super_to_scaffold`, `busco_curated`, `find_reference`, and `sex_matcher` each
   needed their own small local dry-run writer rather than the shared
   `write_fake_outputs()`/`_get_step_specs()` pattern: `busco_curated`'s real
