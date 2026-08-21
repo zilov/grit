@@ -35,6 +35,11 @@ _DEFAULT_DIR = Path.home() / ".grit"
 _REGISTRY_FILENAME = "grit_registry.json"
 
 
+def dry_run_root() -> Path:
+    """Isolated sandbox root for --dry-run mode: never the real ~/.grit state."""
+    return Path.home() / ".grit" / "dry_run"
+
+
 class RegistryManager:
     """Manages the global ticket registry in ~/.grit/grit_registry.json."""
 

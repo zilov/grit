@@ -56,3 +56,27 @@ def test_bsub_ram_custom_help_text():
     )
     result = CliRunner().invoke(cmd, ["--help"], obj=GlobalState())
     assert "auto-scaled by" in result.output
+
+
+def test_dry_run_shown_in_help():
+    cmd = _make_command()
+    result = CliRunner().invoke(cmd, ["--help"], obj=GlobalState())
+    assert "--dry-run" in result.output
+
+
+def test_dry_run_flag_sets_ctx_obj():
+    cmd = _make_command()
+    runner = CliRunner()
+    obj = GlobalState()
+    result = runner.invoke(cmd, ["-t", "RC-1234", "--dry-run"], obj=obj)
+    assert result.exit_code == 0, result.output
+    assert obj.dry_run is True
+
+
+def test_dry_run_left_false_when_not_passed():
+    cmd = _make_command()
+    runner = CliRunner()
+    obj = GlobalState()
+    result = runner.invoke(cmd, ["-t", "RC-1234"], obj=obj)
+    assert result.exit_code == 0, result.output
+    assert obj.dry_run is False

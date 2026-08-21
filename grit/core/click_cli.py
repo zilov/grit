@@ -38,6 +38,7 @@ class GlobalState:
         ticket: str = None,
         yaml: str = None,
         print_only: bool = False,
+        dry_run: bool = False,
         logging_level: str = "INFO",
         untracked: bool = False,
         bsub_ram: int | None = None,
@@ -47,6 +48,7 @@ class GlobalState:
         self.ticket = ticket
         self.yaml = yaml
         self.print_only = print_only
+        self.dry_run = dry_run
         self.logging_level = logging_level
         self.untracked = untracked
         self.bsub_ram = bsub_ram
@@ -61,6 +63,12 @@ class GlobalState:
 @click.option("--yaml", type=click.Path(exists=True), help="Path to YAML file")
 @click.option("--print-only", is_flag=True, help="Print commands without executing")
 @click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Create placeholder outputs and mark steps done, without running any real "
+    "command (for testing pipeline/tracking logic).",
+)
+@click.option(
     "--logging-level",
     "logging_level",
     default="INFO",
@@ -69,7 +77,7 @@ class GlobalState:
     show_default=True,
 )
 @click.pass_context
-def cli(ctx, verbose, config_path, yaml, print_only, logging_level):
+def cli(ctx, verbose, config_path, yaml, print_only, dry_run, logging_level):
     """Curation pipeline CLI."""
     configure_logging(logging_level)
     ctx.ensure_object(dict)
@@ -78,6 +86,7 @@ def cli(ctx, verbose, config_path, yaml, print_only, logging_level):
         config_path=config_path,
         yaml=yaml,
         print_only=print_only,
+        dry_run=dry_run,
         logging_level=logging_level,
     )
 
@@ -105,6 +114,7 @@ def build_context(state: GlobalState) -> CurationContext:
         user_config,
         yaml_override=yaml_override,
         print_only=state.print_only,
+        dry_run=state.dry_run,
         untracked=getattr(state, "untracked", False),
         bsub_ram=getattr(state, "bsub_ram", None),
     )
@@ -170,10 +180,13 @@ def init_cmd():
 @click.pass_context
 def status_cmd(ctx, ticket):
     """Show status of active curation tickets, or step history for a specific ticket."""
-    from grit.core.registry import RegistryManager
+    from grit.core.registry import RegistryManager, dry_run_root
     from grit.core.status import show_global_status, show_ticket_history
 
-    registry = RegistryManager()
+    if getattr(ctx.obj, "dry_run", False):
+        registry = RegistryManager(registry_dir=dry_run_root())
+    else:
+        registry = RegistryManager()
     registry.refresh_statuses()
 
     if ticket:
@@ -267,17 +280,20 @@ cli.add_command(cleanup_cmd)
 @click.pass_context
 def untrack_cmd(ctx, ticket, step, undo):
     """Mark the latest run of a step as non-canonical (or undo that)."""
-    from grit.core.registry import RegistryManager
+    from grit.core.registry import RegistryManager, dry_run_root
     from grit.core.run_tracker import RunTracker
     from grit.utils.output import print_done
 
-    reg = RegistryManager()
+    if getattr(ctx.obj, "dry_run", False):
+        reg = RegistryManager(registry_dir=dry_run_root())
+    else:
+        reg = RegistryManager()
     entry = reg.find_ticket(ticket)
     if entry is None:
         click.echo(f"Ticket {ticket} not found in registry.", err=True)
         raise SystemExit(1)
     workdir = Path(entry["workdir"])
-    tracker = RunTracker(workdir)
+    tracker = RunTracker(workdir, registry=reg)
     if undo:
         runs = tracker.history(step)
         untracked_runs = [r for r in runs if r.get("status") == "untracked" and r.get("run_dir")]

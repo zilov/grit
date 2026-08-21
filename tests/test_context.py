@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from grit.core.context import CurationContext, _derive_workdir, _detect_assembly_type
-from tests.conftest import TEST_USER_CONFIG, TEST_YAML_PRIMARY
+from tests.conftest import TEST_USER_CONFIG, TEST_YAML_HAP1, TEST_YAML_PRIMARY
 
 # --- _detect_assembly_type ---
 
@@ -176,3 +176,38 @@ def test_real_primary_curated_dir(real_ctx_primary):
     ctx = real_ctx_primary
     assert str(ctx.assembly_curated_dir).endswith("assembly/curated/xbLimHian1.1")
     assert "20240425" not in str(ctx.assembly_curated_dir)
+
+
+# --- dry_run isolation ---
+
+
+def test_dry_run_flag_threads_through_to_context():
+    ctx = CurationContext.from_ticket(
+        "RC-1234", TEST_USER_CONFIG, yaml_override=TEST_YAML_HAP1, dry_run=True
+    )
+    assert ctx.dry_run is True
+
+
+def test_dry_run_defaults_to_false(mock_ctx):
+    assert mock_ctx.dry_run is False
+
+
+def test_dry_run_workdir_isolated_from_real_workdir(tmp_path, monkeypatch):
+    """A dry_run=True context's workdir/tracker registry must live under
+    dry_run_root(), never under the real derived workdir or ~/.grit."""
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+
+    real_ctx = CurationContext.from_ticket(
+        "RC-1234", TEST_USER_CONFIG, yaml_override=TEST_YAML_HAP1, dry_run=False
+    )
+    dry_ctx = CurationContext.from_ticket(
+        "RC-1234", TEST_USER_CONFIG, yaml_override=TEST_YAML_HAP1, dry_run=True
+    )
+
+    assert dry_ctx.workdir != real_ctx.workdir
+    assert tmp_path in dry_ctx.workdir.parents or dry_ctx.workdir == tmp_path
+    assert "assembly/draft" not in str(real_ctx.workdir)
+
+    # tracker's underlying registry points at the monkeypatched dry_run_root, not ~/.grit
+    assert dry_ctx.tracker._registry.dir == tmp_path
+    assert dry_ctx.tracker.workdir == dry_ctx.workdir

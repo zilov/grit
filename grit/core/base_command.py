@@ -26,8 +26,9 @@ class GritCommand(click.RichCommand):
         **kwargs,
     ):
         super().__init__(name=name, **kwargs)
-        # Insert in reverse order so --ticket appears first, --print-only second, --untracked
-        # third, --bsub-ram fourth (only for steps that pass bsub_ram_default/bsub_ram_help)
+        # Insert in reverse order so --ticket appears first, --print-only second, --dry-run
+        # third, --untracked fourth, --bsub-ram fifth (only for steps that pass
+        # bsub_ram_default/bsub_ram_help)
         if bsub_ram_default is not None or bsub_ram_help is not None:
             help_text = bsub_ram_help or f"LSF memory limit in MB [default: {bsub_ram_default}]"
             self.params.insert(
@@ -46,6 +47,16 @@ class GritCommand(click.RichCommand):
                 is_flag=True,
                 default=False,
                 help="Run step but mark output as non-canonical (untracked).",
+            ),
+        )
+        self.params.insert(
+            0,
+            click.Option(
+                ["--dry-run"],
+                is_flag=True,
+                default=False,
+                help="Create placeholder outputs and mark steps done, without running any "
+                "real command (for testing pipeline/tracking logic).",
             ),
         )
         self.params.insert(
@@ -70,6 +81,7 @@ class GritCommand(click.RichCommand):
     def invoke(self, ctx: click.Context):
         ticket = ctx.params.pop("ticket", None)
         print_only = ctx.params.pop("print_only", False)
+        dry_run = ctx.params.pop("dry_run", False)
         untracked = ctx.params.pop("untracked", False)
         bsub_ram = ctx.params.pop("bsub_ram", None)
 
@@ -77,6 +89,9 @@ class GritCommand(click.RichCommand):
             # Local --print-only ORs with the global flag
             if print_only:
                 ctx.obj.print_only = True
+
+            if dry_run:
+                ctx.obj.dry_run = True
 
             if untracked:
                 ctx.obj.untracked = True

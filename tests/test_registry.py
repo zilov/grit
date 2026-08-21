@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from grit.core.registry import RegistryManager
+from grit.core.registry import RegistryManager, dry_run_root
 
 
 @pytest.fixture
@@ -290,3 +290,9 @@ def test_done_tickets_include_cleaned_returns_all(reg):
 
     done = reg.done_tickets(limit=None, include_cleaned=True)
     assert {t["ticket_id"] for t in done} == {"RC-1", "RC-2"}
+
+
+def test_dry_run_root_is_isolated_subdir_of_home():
+    root = dry_run_root()
+    assert root == Path.home() / ".grit" / "dry_run"
+    assert root != Path.home() / ".grit"

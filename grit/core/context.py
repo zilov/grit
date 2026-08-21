@@ -85,6 +85,7 @@ class CurationContext:
     teloseq: str = ""  # "--teloseq TTAGG" or ""
     release_version: int = 1  # release version from the ticket
     print_only: bool = False  # if True, print commands instead of running them
+    dry_run: bool = False  # if True, isolate workdir/registry under dry_run_root()
     untracked: bool = False  # if True, tracker.start() marks runs as non-canonical
     bsub_ram: int | None = None  # if set, overrides a step's default LSF memory limit (MB)
 
@@ -113,6 +114,7 @@ class CurationContext:
         *,
         teloseq: str = "",
         print_only: bool = False,
+        dry_run: bool = False,
         untracked: bool = False,
         bsub_ram: int | None = None,
         yaml_path: Path | None = None,
@@ -154,9 +156,19 @@ class CurationContext:
             / f"{tol_id}.{release_version}"
         )
 
-        workdir = _derive_workdir(assembly_draft_dir.parent, cfg.username, tol_id)
-
+        from grit.core.registry import RegistryManager, dry_run_root
         from grit.core.run_tracker import RunTracker
+
+        if dry_run:
+            workdir = dry_run_root() / tol_id
+            tracker = RunTracker(
+                workdir,
+                print_only=print_only,
+                registry=RegistryManager(registry_dir=dry_run_root()),
+            )
+        else:
+            workdir = _derive_workdir(assembly_draft_dir.parent, cfg.username, tol_id)
+            tracker = RunTracker(workdir, print_only=print_only)
 
         return cls(
             ticket_id=ticket_id,
@@ -180,11 +192,12 @@ class CurationContext:
             teloseq=teloseq,
             release_version=release_version,
             print_only=print_only,
+            dry_run=dry_run,
             untracked=untracked,
             bsub_ram=bsub_ram,
             yaml_data=yaml_data,
             yaml_path=yaml_path,
-            tracker=RunTracker(workdir, print_only=print_only),
+            tracker=tracker,
         )
 
     @classmethod
@@ -196,6 +209,7 @@ class CurationContext:
         gritjiraissue_module=None,
         yaml_override: dict[str, Any] | None = None,
         print_only: bool = False,
+        dry_run: bool = False,
         untracked: bool = False,
         bsub_ram: int | None = None,
     ) -> "CurationContext":
@@ -229,6 +243,7 @@ class CurationContext:
             user_config,
             teloseq=teloseq,
             print_only=print_only,
+            dry_run=dry_run,
             untracked=untracked,
             bsub_ram=bsub_ram,
             yaml_path=yaml_path,
