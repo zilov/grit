@@ -18,16 +18,25 @@
 #   - grit installed (pip install -e .)
 #   - Two YAML fixtures in tests/fixtures/
 #
-# The --dry-run pass near the end exercises setup/pretext-to-asm/
-# blast-contaminants/rename-and-orient/status/untrack end to end against the
-# isolated ~/.grit/dry_run/ sandbox — no farm/NFS output required for those
-# commands themselves. `grit status`'s canonical-file/★ resolution builds its
-# CurationContext from the same --yaml FILE given on the group-level flag
-# (threaded through as yaml_override), not a live Jira lookup — so the second
-# argument (dry_run_ticket) can be any string; it only needs to be the ticket_id
-# used consistently across the --dry-run commands below, not a real Jira key.
+# The --dry-run pass near the end exercises the full --dry-run-supported
+# command set end to end against the isolated ~/.grit/dry_run/ sandbox — no
+# farm/NFS output required for any of it (see CLAUDE.md's --dry-run bullet).
+# It runs entirely on a laptop and is the main thing to run after touching
+# find_canonical_fa/find_canonical_chr_list/find_canonical_haplotigs, any
+# step's dry-run branch, or the flat mtime pool itself — it's real curator
+# pipelines run twice, once straight through and once with steps re-run out of
+# order, specifically to catch canonical-FASTA collisions (see
+# TODO/done/44_canonical_fa_flat_mtime_priority.md) that unit tests, scoped to
+# one function at a time, would not surface.
 #
-# Exit code: 0 if all commands print without error, non-zero otherwise.
+# `grit status`'s canonical-file/★ resolution builds its CurationContext from
+# the same --yaml FILE given on the group-level flag (threaded through as
+# yaml_override), not a live Jira lookup — so the dry-run ticket IDs below can
+# be any string; each just needs to be used consistently across the --dry-run
+# commands in its own scenario, not be a real Jira key.
+#
+# Exit code: 0 if all commands print without error and every assertion below
+# passes, non-zero otherwise.
 
 set -euo pipefail
 
@@ -77,44 +86,184 @@ $GRIT --yaml "$HAP_YAML" blast-contaminants               && ok "blast-contamina
 $GRIT --yaml "$HAP_YAML" rename-and-orient                && ok "rename-and-orient"
 $GRIT --yaml "$HAP_YAML" busco-synteny --lineage stramenopiles_odb10 && ok "busco-synteny"
 
-# --- Dry-run mode ---
-# Chains a real sequence through the CLI against the isolated
-# ~/.grit/dry_run/ sandbox (see CLAUDE.md's --dry-run bullet). No real farm
-# output is required for setup/pretext-to-asm/blast-contaminants/
-# rename-and-orient below — each writes placeholder outputs directly.
+# =============================================================================
+# --- Dry-run mode: canonical-FASTA pipeline scenarios ---
+# =============================================================================
+# Everything below runs against the isolated ~/.grit/dry_run/ sandbox — no
+# farm/NFS access required. Each scenario uses its own ticket ID so they never
+# interfere with each other.
+
 GRIT_DRY="grit --config $CONFIG --yaml $HAP_YAML"
+GRIT_DRY_PRIMARY="grit --config $CONFIG --yaml $PRIMARY_YAML"
 
-$GRIT_DRY setup -t "$DRY_RUN_TICKET" --dry-run              && ok "setup --dry-run"
-$GRIT_DRY pretext-to-asm -t "$DRY_RUN_TICKET" --dry-run     && ok "pretext-to-asm --dry-run"
-$GRIT_DRY blast-contaminants -t "$DRY_RUN_TICKET" --dry-run && ok "blast-contaminants --dry-run"
-$GRIT_DRY rename-and-orient -t "$DRY_RUN_TICKET" --dry-run  && ok "rename-and-orient --dry-run"
+# assert_canonical STATUS_OUTPUT HAP TYPE_SUBSTR STEP_DIR_SUBSTR DESCRIPTION
+#   Greps the "Canonical files" table (Hap | Type | File | Found) for a row
+#   matching HAP and TYPE_SUBSTR, and asserts its File column contains
+#   STEP_DIR_SUBSTR (a run_dir directory name, e.g. "blast_contaminants/" —
+#   include the trailing slash so "pretext_to_asm/" doesn't also match
+#   "pretext_to_asm_recurate/", and so "rename_and_orient/" doesn't also match
+#   "rename_and_orient_hap2/").
+assert_canonical() {
+    local status_output="$1" hap="$2" type_substr="$3" step_substr="$4" desc="$5"
+    echo "$status_output" | grep "$hap" | grep "$type_substr" | grep -q "$step_substr" \
+        && ok "$desc" \
+        || fail "$desc — expected '$step_substr' in $hap's $type_substr row:
+$(echo "$status_output" | grep "$hap" | grep "$type_substr")"
+}
 
-# status/untrack are plain @cli.command, not GritCommand-based — --dry-run
-# only takes effect for them as a GROUP-level flag, before the subcommand
-# name (`grit --dry-run status ...`), never after it.
-#
-# The step-history table below, including the canonical-files table and the
-# ★ marker, is fully observable here. rename-and-orient only ran for hap1
-# above (no --hap2), so blast_contaminants stays canonical for hap2
-# throughout (★ on both rows before untrack); untracking rename_and_orient's
-# hap1 run below reverts hap1's canonical FASTA back to blast_contaminants too.
+# ---------------------------------------------------------------------------
+# Scenario 1: a real curation pipeline, straight through
+#   pretext-to-asm -> blast-contaminants -> hic-remapping ->
+#   pretext-to-asm-recurate -> rename-and-orient -> hic-remapping ->
+#   finalize-qc
+# Asserts canonical_fa lands on the expected step after every transition,
+# for both haplotypes.
+# ---------------------------------------------------------------------------
 echo ""
-echo "--- grit --dry-run status (before untrack) ---"
-before_status=$($GRIT_DRY --dry-run status -t "$DRY_RUN_TICKET")
-echo "$before_status"
-echo "$before_status" | grep "rename_and_orient" | grep -q "★" \
-    && ok "★ marks rename_and_orient as canonical before untrack" \
-    || fail "★ marker missing on rename_and_orient row before untrack"
+echo "--- Scenario 1: real curation pipeline (straight through) ---"
+T1="dry_run_pipeline_1"
 
-$GRIT_DRY --dry-run untrack -t "$DRY_RUN_TICKET" --step rename_and_orient && ok "untrack rename_and_orient --dry-run"
+$GRIT_DRY setup -t "$T1" --dry-run                          && ok "[S1] setup"
+$GRIT_DRY pretext-to-asm -t "$T1" --dry-run                 && ok "[S1] pretext-to-asm"
+s1=$($GRIT_DRY --dry-run status -t "$T1")
+assert_canonical "$s1" hap1 "assembly FA" "pretext_to_asm/" "[S1] hap1 canonical = pretext_to_asm after pretext-to-asm"
+assert_canonical "$s1" hap2 "assembly FA" "pretext_to_asm/" "[S1] hap2 canonical = pretext_to_asm after pretext-to-asm"
 
+$GRIT_DRY blast-contaminants -t "$T1" --dry-run             && ok "[S1] blast-contaminants"
+s1=$($GRIT_DRY --dry-run status -t "$T1")
+assert_canonical "$s1" hap1 "assembly FA" "blast_contaminants/" "[S1] hap1 canonical = blast_contaminants"
+assert_canonical "$s1" hap2 "assembly FA" "blast_contaminants/" "[S1] hap2 canonical = blast_contaminants"
+
+$GRIT_DRY hic-remapping -t "$T1" --dry-run                  && ok "[S1] hic-remapping (hap1)"
+$GRIT_DRY hic-remapping -t "$T1" --dry-run --hap2           && ok "[S1] hic-remapping (hap2, exclusive flag)"
+s1=$($GRIT_DRY --dry-run status -t "$T1")
+assert_canonical "$s1" hap1 "assembly FA" "blast_contaminants/" "[S1] hic-remapping doesn't change canonical_fa (hap1)"
+
+$GRIT_DRY pretext-to-asm-recurate -t "$T1" --dry-run        && ok "[S1] pretext-to-asm-recurate (hap1)"
+$GRIT_DRY pretext-to-asm-recurate -t "$T1" --dry-run --hap2 && ok "[S1] pretext-to-asm-recurate (hap2, exclusive flag)"
+s1=$($GRIT_DRY --dry-run status -t "$T1")
+assert_canonical "$s1" hap1 "assembly FA" "pretext_to_asm_recurate/" "[S1] hap1 canonical = pretext_to_asm_recurate"
+assert_canonical "$s1" hap2 "assembly FA" "pretext_to_asm_recurate_hap2/" "[S1] hap2 canonical = pretext_to_asm_recurate_hap2"
+
+$GRIT_DRY rename-and-orient -t "$T1" --dry-run --hap2       && ok "[S1] rename-and-orient (hap1+hap2, additive flag)"
+s1=$($GRIT_DRY --dry-run status -t "$T1")
+assert_canonical "$s1" hap1 "assembly FA" "rename_and_orient/" "[S1] hap1 canonical = rename_and_orient (chain forward from recurate)"
+assert_canonical "$s1" hap2 "assembly FA" "rename_and_orient_hap2/" "[S1] hap2 canonical = rename_and_orient_hap2 (chain forward from recurate)"
+
+$GRIT_DRY hic-remapping -t "$T1" --dry-run                  && ok "[S1] 2nd hic-remapping (hap1)"
+$GRIT_DRY hic-remapping -t "$T1" --dry-run --hap2           && ok "[S1] 2nd hic-remapping (hap2)"
+
+finalize_output=$($GRIT_DRY finalize-qc -t "$T1" --dry-run) && ok "[S1] finalize-qc"
+echo "$finalize_output"
+curated_dir=$(echo "$finalize_output" | grep -A1 "Curated dir" | tail -1 | tr -d ' ')
+[ -n "$curated_dir" ] && [ -d "$curated_dir" ] \
+    && ok "[S1] finalize-qc wrote into a real, discoverable curated dir" \
+    || fail "[S1] finalize-qc's curated dir not found on disk: '$curated_dir'"
+case "$curated_dir" in
+    */.grit/dry_run/*) ok "[S1] finalize-qc's curated dir is sandboxed under ~/.grit/dry_run/, not a real NFS path" ;;
+    *) fail "[S1] finalize-qc's curated dir escaped the dry-run sandbox: $curated_dir" ;;
+esac
+
+# ---------------------------------------------------------------------------
+# Scenario 2: re-run blast-contaminants, rename-and-orient, and
+# pretext-to-asm-recurate again, out of their "natural" order, on top of the
+# already-finalized Scenario 1 ticket — the collision-hunting case. Recency
+# wins by design (see TODO/done/44_canonical_fa_flat_mtime_priority.md), so
+# canonical_fa must bounce to whichever of these ran most recently every time,
+# with no crash and no stale/fabricated files left behind.
+# ---------------------------------------------------------------------------
 echo ""
-echo "--- grit --dry-run status (after untrack) ---"
-after_status=$($GRIT_DRY --dry-run status -t "$DRY_RUN_TICKET")
-echo "$after_status"
-echo "$after_status" | grep "blast_contaminants" | grep -q "★" \
-    && ok "★ moves to blast_contaminants after untracking rename_and_orient" \
-    || fail "★ marker missing on blast_contaminants row after untrack"
+echo "--- Scenario 2: duplicate re-runs on top of Scenario 1 (collision hunt) ---"
+
+$GRIT_DRY blast-contaminants -t "$T1" --dry-run             && ok "[S2] re-run blast-contaminants (after rename_and_orient was canonical)"
+s2=$($GRIT_DRY --dry-run status -t "$T1")
+assert_canonical "$s2" hap1 "assembly FA" "blast_contaminants/" "[S2] hap1 canonical bounces back to blast_contaminants"
+assert_canonical "$s2" hap2 "assembly FA" "blast_contaminants/" "[S2] hap2 canonical bounces back to blast_contaminants"
+
+$GRIT_DRY rename-and-orient -t "$T1" --dry-run --hap2       && ok "[S2] re-run rename-and-orient"
+s2=$($GRIT_DRY --dry-run status -t "$T1")
+assert_canonical "$s2" hap1 "assembly FA" "rename_and_orient/" "[S2] hap1 canonical bounces back to rename_and_orient"
+assert_canonical "$s2" hap2 "assembly FA" "rename_and_orient_hap2/" "[S2] hap2 canonical bounces back to rename_and_orient_hap2"
+
+$GRIT_DRY pretext-to-asm-recurate -t "$T1" --dry-run        && ok "[S2] re-run pretext-to-asm-recurate (hap1)"
+$GRIT_DRY pretext-to-asm-recurate -t "$T1" --dry-run --hap2 && ok "[S2] re-run pretext-to-asm-recurate (hap2)"
+s2=$($GRIT_DRY --dry-run status -t "$T1")
+assert_canonical "$s2" hap1 "assembly FA" "pretext_to_asm_recurate/" "[S2] hap1 canonical bounces back to pretext_to_asm_recurate"
+assert_canonical "$s2" hap2 "assembly FA" "pretext_to_asm_recurate_hap2/" "[S2] hap2 canonical bounces back to pretext_to_asm_recurate_hap2"
+
+# One more full lap: blast-contaminants again should still displace the
+# freshest recurate output, with no accumulated state from prior laps leaking
+# through (e.g. a stale run_dir being picked up instead of the newest one).
+$GRIT_DRY blast-contaminants -t "$T1" --dry-run             && ok "[S2] re-run blast-contaminants a second time"
+s2=$($GRIT_DRY --dry-run status -t "$T1")
+assert_canonical "$s2" hap1 "assembly FA" "blast_contaminants/" "[S2] hap1 canonical bounces to blast_contaminants again"
+assert_canonical "$s2" hap2 "assembly FA" "blast_contaminants/" "[S2] hap2 canonical bounces to blast_contaminants again"
+
+# ---------------------------------------------------------------------------
+# Scenario 3: single-hap (primary/alternate) regression check.
+#   A single-hap ticket must never get a fabricated "alternate"/hap2 output
+#   anywhere on disk — not just excluded from the tracker. write_fake_outputs
+#   always writes both _OUTPUT_SPECS entries; every dry-run branch that pops
+#   the hap2 key from the tracked outputs dict must also delete that file.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Scenario 3: single-hap ticket never fabricates a second haplotype ---"
+T3="dry_run_pipeline_primary"
+
+$GRIT_DRY_PRIMARY setup -t "$T3" --dry-run                          && ok "[S3] setup (primary)"
+$GRIT_DRY_PRIMARY pretext-to-asm -t "$T3" --dry-run                 && ok "[S3] pretext-to-asm (primary)"
+$GRIT_DRY_PRIMARY blast-contaminants -t "$T3" --dry-run             && ok "[S3] blast-contaminants (primary)"
+$GRIT_DRY_PRIMARY rename-and-orient -t "$T3" --dry-run              && ok "[S3] rename-and-orient (primary)"
+$GRIT_DRY_PRIMARY pretext-to-asm-recurate -t "$T3" --dry-run        && ok "[S3] pretext-to-asm-recurate (primary)"
+$GRIT_DRY_PRIMARY finalize-qc -t "$T3" --dry-run                    && ok "[S3] finalize-qc (primary)"
+
+s3=$($GRIT_DRY_PRIMARY --dry-run status -t "$T3")
+# Only check the "Canonical files" table's Hap column for a fabricated
+# "alternate" row — the curation-summary line above it legitimately says
+# "Assembly type: primary/alternate" for every primary/alternate ticket.
+echo "$s3" | sed -n '/Canonical files/,/Step history/p' | grep -q "│ alternate " \
+    && fail "[S3] a single-hap ticket's canonical-files table has a fabricated 'alternate' row" \
+    || ok "[S3] canonical-files table shows only 'primary', no fabricated 'alternate' row"
+
+primary_workdir=$(find ~/.grit/dry_run -maxdepth 1 -iname "xbLimHian1*" | head -1)
+[ -n "$primary_workdir" ] || fail "[S3] could not locate the primary ticket's sandbox workdir"
+leftover=$(find "$primary_workdir" \( -iname "*hap2*" -o -iname "*alternate*" \) 2>/dev/null || true)
+[ -z "$leftover" ] \
+    && ok "[S3] no hap2/alternate files anywhere on disk for the single-hap ticket" \
+    || fail "[S3] found leftover hap2/alternate files for a single-hap ticket:
+$leftover"
+
+# ---------------------------------------------------------------------------
+# Scenario 4: untrack / undo round-trip mid-chain.
+#   Untracking the currently-canonical step must fall through to the next-
+#   freshest tracked output; --undo must bring it back.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Scenario 4: untrack/undo round-trip ---"
+
+# From Scenario 2, hap1's canonical is currently blast_contaminants (its
+# second re-run, which ran after rename_and_orient's re-run and after
+# pretext_to_asm_recurate's re-run) — so untracking it must fall back to the
+# next-freshest tracked output, pretext_to_asm_recurate, NOT all the way back
+# to rename_and_orient (which is older than the recurate re-run).
+$GRIT_DRY --dry-run untrack -t "$T1" --step blast_contaminants && ok "[S4] untrack blast_contaminants (hap1)"
+s4=$($GRIT_DRY --dry-run status -t "$T1")
+assert_canonical "$s4" hap1 "assembly FA" "pretext_to_asm_recurate/" "[S4] hap1 canonical falls back to pretext_to_asm_recurate after untracking blast_contaminants"
+
+$GRIT_DRY --dry-run untrack -t "$T1" --step blast_contaminants --undo && ok "[S4] undo the untrack"
+s4=$($GRIT_DRY --dry-run status -t "$T1")
+assert_canonical "$s4" hap1 "assembly FA" "blast_contaminants/" "[S4] hap1 canonical returns to blast_contaminants after --undo"
+
+# NOTE — a real gotcha this whole file exists to surface: the dry-run sandbox
+# is keyed by tol_id alone (dry_run_root() / tol_id), NOT by ticket_id. Two
+# different --dry-run "tickets" that share a YAML fixture (hence the same
+# tol_id) share the exact same sandboxed workdir/tracker history — running a
+# second dry-run scenario against the same YAML after the first has already
+# mutated canonical_fa does NOT start from a clean slate. This is why every
+# scenario above reuses the single ticket $T1 for the hap YAML rather than
+# inventing a fresh ticket ID per scenario (a fresh ticket ID would not have
+# given a fresh sandbox) — the $DRY_RUN_TICKET CLI argument is still accepted
+# for backward compatibility but is no longer used by this script.
 
 rm -rf ~/.grit/dry_run
 ok "dry-run sandbox cleaned up"
