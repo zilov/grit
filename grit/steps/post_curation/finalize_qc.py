@@ -185,6 +185,13 @@ def finalize_for_qc(
         )
         for hap_prefix in haps_to_process:
             (dest_dir / _dest_name(hap_prefix, "primary.curated.fa")).write_text("fake\n")
+            haplotig_suffix = (
+                "all_haplotigs.curated.fa"
+                if ctx.combine_for_curation
+                else "additional_haplotigs.curated.fa"
+            )
+            (dest_dir / _dest_name(hap_prefix, haplotig_suffix)).write_text("fake\n")
+            (dest_dir / _dest_name(hap_prefix, "primary.chromosome.list.csv")).write_text("fake\n")
 
         qv_dir = dest_dir / "merquryk"
         if not qv_dir.exists():
