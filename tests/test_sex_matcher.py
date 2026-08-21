@@ -94,7 +94,9 @@ def test_dry_run_short_circuits_before_idempotency_and_tolid_checks(
 
     ctx = mock_ctx
     ctx.workdir = tmp_path
-    ctx.tol_id = "notAnInsectPrefix1"  # would fail the real tol_id check
+    # Genuinely fails the real check: lowercased ("xxnotaninsect1") does not
+    # start with any of _INSECT_PREFIXES ("ic", "il", "id", "n").
+    ctx.tol_id = "xxNotAnInsect1"
     ctx.print_only = False
     registry = RegistryManager(registry_dir=tmp_path / "registry")
     registry.add_ticket(ctx.ticket_id, ctx.tol_id, ctx.species, ctx.workdir)
