@@ -5,6 +5,8 @@ import re
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
 from grit.steps.optional.blast_contaminants import run_blast_contaminants
@@ -27,17 +29,22 @@ def _fake_find_canonical_fa(tmp_path, header=">SCAFFOLD_1"):
 
 
 def _write_cleaned_fasta(tmp_path, tol_id, hap_prefix):
-    (tmp_path / f"{tol_id}.{hap_prefix}.1.curated.fa").with_suffix(".cleaned.fa").write_text(
-        ">seq\n"
-    )
+    curated = tmp_path / f"{tol_id}.{hap_prefix}.1.curated.fa"
+    curated.with_name(curated.name + "_cleaned").write_text(">seq\n")
 
 
+_MKDIR_RE = re.compile(r"^mkdir -p (\S+)$")
 _BED_RE = re.compile(r"^grep -v \S+ \S+ \| perl -anE '.*' >> (\S+)$")
 
 
 def _fake_run_finds_contaminants(cmd, print_only=False):
-    """Emulate the bed-generation shell command writing a non-empty contaminated.bed,
-    as if decon_fasta's taxonomy.txt contained at least one non-target-phylum hit."""
+    """Emulate mkdir -p and the bed-generation shell command writing a non-empty
+    contaminated.bed, as if decon_fasta's taxonomy.txt contained at least one
+    non-target-phylum hit."""
+    mkdir_match = _MKDIR_RE.match(cmd)
+    if mkdir_match:
+        Path(mkdir_match.group(1)).mkdir(parents=True, exist_ok=True)
+        return ""
     bed_match = _BED_RE.match(cmd)
     if bed_match:
         Path(bed_match.group(1)).write_text("SCAFFOLD_1\t0\t10000\tREMOVE\n")
@@ -46,8 +53,13 @@ def _fake_run_finds_contaminants(cmd, print_only=False):
 
 
 def _fake_run_no_contaminants(cmd, print_only=False):
-    """Emulate the bed-generation shell command producing an empty contaminated.bed,
-    as if every hit in decon_fasta's taxonomy.txt matched the target phylum."""
+    """Emulate mkdir -p and the bed-generation shell command producing an empty
+    contaminated.bed, as if every hit in decon_fasta's taxonomy.txt matched the
+    target phylum."""
+    mkdir_match = _MKDIR_RE.match(cmd)
+    if mkdir_match:
+        Path(mkdir_match.group(1)).mkdir(parents=True, exist_ok=True)
+        return ""
     bed_match = _BED_RE.match(cmd)
     if bed_match:
         Path(bed_match.group(1)).touch()
@@ -97,7 +109,7 @@ def test_never_moves_original_curated_fasta(mock_find_fa, mock_run, mock_ctx, tm
 
     mv_calls = [str(c) for c in mock_run.call_args_list if "mv " in str(c)]
     assert mv_calls
-    assert all(".cleaned.fa" in c for c in mv_calls)
+    assert all("_cleaned" in c for c in mv_calls)
 
 
 @patch("grit.steps.optional.blast_contaminants._run", side_effect=_fake_run_finds_contaminants)
@@ -139,6 +151,25 @@ def test_no_contaminants_leaves_canonical_untouched(mock_find_fa, mock_run, mock
     assert not mv_calls
     outputs = mock_ctx.tracker.history("blast_contaminants")[-1].get("outputs")
     assert not outputs
+
+
+@patch("grit.steps.optional.blast_contaminants._run", side_effect=_fake_run_finds_contaminants)
+@patch("grit.steps.optional.blast_contaminants.find_canonical_fa")
+def test_missing_cleaned_fasta_raises_instead_of_silently_tracking(
+    mock_find_fa, mock_run, mock_ctx, tmp_path
+):
+    """If remove_contamination_bed doesn't produce the expected *_cleaned FASTA
+    (e.g. a tool failure), the step must fail loudly instead of tracking a
+    'success' output that points at a file that was never created."""
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_find_fa.side_effect = _fake_find_canonical_fa(tmp_path)
+    # Deliberately skip _write_cleaned_fasta — no *_cleaned file will exist.
+
+    with pytest.raises(RuntimeError, match="did not produce"):
+        run_blast_contaminants(mock_ctx)
+
+    last_run = mock_ctx.tracker.history("blast_contaminants")[-1]
+    assert last_run["status"] == "failed"
 
 
 @patch("grit.steps.optional.blast_contaminants._run")
