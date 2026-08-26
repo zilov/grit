@@ -32,32 +32,30 @@ def _write_cleaned_fasta(tmp_path, tol_id, hap_prefix):
     )
 
 
-_EXTRACT_RE = re.compile(r"^perl -nE '.*' (\S+) >> (\S+)$")
-_HEADER_RE = re.compile(r"^echo 'header' > (\S+)$")
+_BED_RE = re.compile(r"^grep -v \S+ \S+ \| perl -anE '.*' >> (\S+)$")
 
 
-def _fake_run_writes_blast_me(cmd, print_only=False):
-    """Emulate the header/extract shell commands' effect on disk so the
-    post-extraction SCAFFOLD-header check has real file content to read."""
-    header_match = _HEADER_RE.match(cmd)
-    if header_match:
-        Path(header_match.group(1)).write_text("header\n")
+def _fake_run_finds_contaminants(cmd, print_only=False):
+    """Emulate the bed-generation shell command writing a non-empty contaminated.bed,
+    as if decon_fasta's taxonomy.txt contained at least one non-target-phylum hit."""
+    bed_match = _BED_RE.match(cmd)
+    if bed_match:
+        Path(bed_match.group(1)).write_text("SCAFFOLD_1\t0\t10000\tREMOVE\n")
         return ""
-
-    extract_match = _EXTRACT_RE.match(cmd)
-    if extract_match:
-        fasta_path, blast_me_path = extract_match.groups()
-        scaffold_re = re.compile(r"([HAP_\d]*SCAFFOLD_\d+)", re.IGNORECASE)
-        matches = [m.group(1) for m in scaffold_re.finditer(Path(fasta_path).read_text())]
-        with open(blast_me_path, "a") as f:
-            for m in matches:
-                f.write(f"true,{m}\n")
-        return ""
-
     return ""
 
 
-@patch("grit.steps.optional.blast_contaminants._run", side_effect=_fake_run_writes_blast_me)
+def _fake_run_no_contaminants(cmd, print_only=False):
+    """Emulate the bed-generation shell command producing an empty contaminated.bed,
+    as if every hit in decon_fasta's taxonomy.txt matched the target phylum."""
+    bed_match = _BED_RE.match(cmd)
+    if bed_match:
+        Path(bed_match.group(1)).touch()
+        return ""
+    return ""
+
+
+@patch("grit.steps.optional.blast_contaminants._run", side_effect=_fake_run_finds_contaminants)
 @patch("grit.steps.optional.blast_contaminants.find_canonical_fa")
 def test_processes_both_haplotypes(mock_find_fa, mock_run, mock_ctx, tmp_path):
     _attach_tracker(mock_ctx, tmp_path)
@@ -74,7 +72,7 @@ def test_processes_both_haplotypes(mock_find_fa, mock_run, mock_ctx, tmp_path):
         assert outputs[f"{hap}_fa"].endswith(expected_suffix)
 
 
-@patch("grit.steps.optional.blast_contaminants._run", side_effect=_fake_run_writes_blast_me)
+@patch("grit.steps.optional.blast_contaminants._run", side_effect=_fake_run_finds_contaminants)
 @patch("grit.steps.optional.blast_contaminants.find_canonical_fa")
 def test_single_hap_processes_only_primary(mock_find_fa, mock_run, mock_ctx_primary, tmp_path):
     _attach_tracker(mock_ctx_primary, tmp_path)
@@ -87,7 +85,7 @@ def test_single_hap_processes_only_primary(mock_find_fa, mock_run, mock_ctx_prim
     assert set(outputs) == {f"{mock_ctx_primary.hap1_prefix}_fa"}
 
 
-@patch("grit.steps.optional.blast_contaminants._run", side_effect=_fake_run_writes_blast_me)
+@patch("grit.steps.optional.blast_contaminants._run", side_effect=_fake_run_finds_contaminants)
 @patch("grit.steps.optional.blast_contaminants.find_canonical_fa")
 def test_never_moves_original_curated_fasta(mock_find_fa, mock_run, mock_ctx, tmp_path):
     _attach_tracker(mock_ctx, tmp_path)
@@ -102,7 +100,7 @@ def test_never_moves_original_curated_fasta(mock_find_fa, mock_run, mock_ctx, tm
     assert all(".cleaned.fa" in c for c in mv_calls)
 
 
-@patch("grit.steps.optional.blast_contaminants._run", side_effect=_fake_run_writes_blast_me)
+@patch("grit.steps.optional.blast_contaminants._run", side_effect=_fake_run_finds_contaminants)
 @patch("grit.steps.optional.blast_contaminants.find_canonical_fa")
 def test_output_survives_untrack_fallback(mock_find_fa, mock_run, mock_ctx, tmp_path):
     """Untracking blast_contaminants must not lose the original curated FASTA —
@@ -125,30 +123,28 @@ def test_output_survives_untrack_fallback(mock_find_fa, mock_run, mock_ctx, tmp_
     assert original.exists()
 
 
-@patch("grit.steps.optional.blast_contaminants._run", side_effect=_fake_run_writes_blast_me)
+@patch("grit.steps.optional.blast_contaminants._run", side_effect=_fake_run_no_contaminants)
 @patch("grit.steps.optional.blast_contaminants.find_canonical_fa")
-def test_warns_and_continues_on_non_scaffold_headers(
-    mock_find_fa, mock_run, mock_ctx, tmp_path, caplog
-):
-    """Chaining onto a rename_and_orient output (headers like 'chr1', not
-    SCAFFOLD_N) must not crash — it should warn and still complete."""
+def test_no_contaminants_leaves_canonical_untouched(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    """When every taxonomy.txt hit matches the target phylum, no decontaminated
+    FASTA is written and the haplotype's canonical output is left alone."""
     _attach_tracker(mock_ctx, tmp_path)
-    mock_find_fa.side_effect = _fake_find_canonical_fa(tmp_path, header=">chr1")
+    mock_find_fa.side_effect = _fake_find_canonical_fa(tmp_path)
     _write_cleaned_fasta(tmp_path, mock_ctx.tol_id, mock_ctx.hap1_prefix)
     _write_cleaned_fasta(tmp_path, mock_ctx.tol_id, mock_ctx.hap2_prefix)
 
-    with caplog.at_level("WARNING"):
-        run_blast_contaminants(mock_ctx)
+    run_blast_contaminants(mock_ctx)
 
-    assert "don't look like" in caplog.text or "SCAFFOLD" in caplog.text
-    outputs = mock_ctx.tracker.history("blast_contaminants")[-1]["outputs"]
-    assert set(outputs) == {f"{mock_ctx.hap1_prefix}_fa", f"{mock_ctx.hap2_prefix}_fa"}
+    mv_calls = [str(c) for c in mock_run.call_args_list if "mv " in str(c)]
+    assert not mv_calls
+    outputs = mock_ctx.tracker.history("blast_contaminants")[-1].get("outputs")
+    assert not outputs
 
 
 @patch("grit.steps.optional.blast_contaminants._run")
 @patch("grit.steps.optional.blast_contaminants.find_canonical_fa")
 def test_dry_run_short_circuits_before_any_real_work(mock_find_fa, mock_run, mock_ctx, tmp_path):
-    """dry_run must skip the lineage/blast.me/decon_blastBTK pipeline entirely —
+    """dry_run must skip the lineage/decon_fasta pipeline entirely —
     no _run() call and no dependency on find_canonical_fa."""
     _attach_tracker(mock_ctx, tmp_path)
     mock_ctx.dry_run = True
