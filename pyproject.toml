@@ -13,7 +13,7 @@ dependencies = [
     "pyyaml>=6.0",
     "requests>=2.28",
     "rich-click>=1.8.0",
-    "rename-and-orient>=1.2.1",
+    "rename-and-orient>=1.2.2",
 ]
 
 [tool.uv.sources]
