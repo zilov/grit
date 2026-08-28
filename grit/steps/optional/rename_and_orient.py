@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import glob
 import logging
-import sys
+import shutil
 from pathlib import Path
 
 import rich_click as click
@@ -19,12 +19,10 @@ from grit.utils.helpers import (
     find_latest_dir,
     write_fake_outputs,
 )
-from grit.utils.modules import module_cmd
 from grit.utils.output import console, print_done, print_step_header
 
 log = logging.getLogger(__name__)
 
-_RENAME_AND_ORIENT_CMD = str(Path(sys.executable).parent / "rename-and-orient")
 _DEFAULT_MEM_MB = 60000
 
 _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
@@ -72,9 +70,13 @@ def _submit_rename_and_orient_for_hap(
 
     source_arg = f"--mapping-table {mapping_table}" if mapping_table else f"--paf {paf_file}"
 
+    # Resolve the absolute path now, on the submit host, since $HOME is
+    # NFS-shared with the compute node and rename-and-orient's own bsub
+    # environment carries no module load to put it on PATH.
+    rename_and_orient_cmd = shutil.which("rename-and-orient") or "rename-and-orient"
+
     inner_cmd = (
-        f"{module_cmd('GRIT')} && "
-        f"{_RENAME_AND_ORIENT_CMD} "
+        f"{rename_and_orient_cmd} "
         f"--fasta {input_fa} "
         f"{source_arg} "
         f"--output-dir {run_dir} "
