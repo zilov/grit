@@ -28,7 +28,7 @@ from grit.utils.output import (
 log = logging.getLogger(__name__)
 
 _SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-_PAF_TOP_TARGETS_SCRIPT = _SCRIPTS_DIR / "paf_top_targets_add_top_longest.py"
+_PAF_TOP_TARGETS_SCRIPT = _SCRIPTS_DIR / "paf_top_targets_by_coverage.py"
 
 # Downloadable outputs, picked up by the bsub -Ep epilogue (grit _state-update)
 # and surfaced as an scp tip in `grit status` — see build_scp_tip().
@@ -45,8 +45,8 @@ def _is_super(name: str) -> bool:
     return name.startswith("SUPER_")
 
 
-def _read_top1_table(top1_file: Path) -> list[tuple[str, str, str]]:
-    """Read the super/top_longest_ref_chr/len rows written by --top1-out (skips the header)."""
+def _read_top1_table(top1_file: Path) -> list[tuple[str, str, str, str]]:
+    """Read the curated_fa_chr/ref_fa_chr/aligned_length/prc_of_ref_length rows from --top1-out."""
     lines = top1_file.read_text().splitlines()[1:]
     return [tuple(line.split("\t")) for line in lines if line.strip()]
 
@@ -138,9 +138,9 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
 
 
 def run_fastga_stats(ctx: CurationContext) -> None:
-    """Prints the top-longest reference target table for SUPER_* scaffolds from the latest run."""
+    """Prints the best reference target (by coverage) for SUPER_* scaffolds from the latest run."""
     log.info("fastga-stats | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
-    print_step_header(ctx.ticket_id, ctx.tol_id, "FastGA top-longest targets")
+    print_step_header(ctx.ticket_id, ctx.tol_id, "FastGA best targets by coverage")
 
     fastga_dir = find_latest_dir(ctx, "fastga")
     matches = glob.glob(str(fastga_dir / "*.top1_targets.tsv"))
@@ -156,12 +156,16 @@ def run_fastga_stats(ctx: CurationContext) -> None:
         log.warning("No SUPER_* rows found in %s", top1_file)
         return
 
-    table = Table(title="Top-longest reference target per super scaffold", header_style="bold cyan")
+    table = Table(
+        title="Best reference target per super scaffold (by non-overlapping coverage)",
+        header_style="bold cyan",
+    )
     table.add_column("super")
-    table.add_column("top_longest_ref_chr")
-    table.add_column("len", justify="right")
-    for super_name, ref_chr, length in rows:
-        table.add_row(super_name, ref_chr, f"{int(length):,}")
+    table.add_column("ref_chr")
+    table.add_column("aligned_length", justify="right")
+    table.add_column("prc_of_ref_length", justify="right")
+    for super_name, ref_chr, length, pct in rows:
+        table.add_row(super_name, ref_chr, f"{int(length):,}", f"{float(pct):.2f}%")
     console.print(table)
 
 
@@ -193,7 +197,7 @@ def fastga_cmd(ctx, reference):
 @click.command("fastga-stats", cls=GritCommand)
 @click.pass_context
 def fastga_stats_cmd(ctx):
-    """Print the per-query top-longest reference target table from the latest fastga run."""
+    """Print the per-query best-target-by-coverage table from the latest fastga run."""
     from grit.core.click_cli import build_context
 
     curation_ctx = build_context(ctx.obj)
