@@ -51,7 +51,14 @@ runs a fast local PAF-parsing script rather than an HPC job) skips
 `ctx.tracker.start(step, ...)`, do the work via `_run()` (so `print_only`
 is still respected), then call `ctx.tracker.finish(step, run_dir, "success",
 outputs=...)` directly once the work is done. See `run_fastga_stats` in
-`grit/steps/optional/fastga.py`.
+`grit/steps/optional/fastga.py`. Because there's no bsub epilogue and no
+`job_id` for this kind of step, `grit status`'s bjobs-based recovery for
+stuck "started" rows can never apply to it — the step must wrap its
+post-`start()` work in try/except and call `ctx.tracker.finish(step, run_dir,
+"failed", untracked=ctx.untracked)` itself on any failure (a script error,
+or a "success" exit that produced none of the expected outputs), then
+re-raise, or a crash strands the record as "started" forever with no
+recovery path but `grit untrack`.
 
 ### HPC module loading
 

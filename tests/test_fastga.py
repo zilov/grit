@@ -1,7 +1,7 @@
 """Tests for run_fastga / run_fastga_stats steps."""
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
@@ -235,6 +235,75 @@ def test_run_fastga_stats_print_only_skips_execution_and_table(
     assert mock_run.call_args[0][1] is True
     assert not (tmp_path / "fastga_stats").exists()
     assert capsys.readouterr().out.count("SUPER_1") == 0
+
+
+@patch("grit.steps.optional.fastga._run")
+@patch("grit.steps.optional.fastga.find_latest_dir")
+def test_run_fastga_stats_finishes_failed_when_run_raises(
+    mock_find_latest_dir, mock_run, mock_ctx, tmp_path
+):
+    """A failing _run() call must finish the tracker as "failed" (with
+    untracked threaded through) rather than leaving the run stuck "started",
+    and must re-raise the original exception."""
+    fastga_dir = tmp_path / "fastga_run"
+    fastga_dir.mkdir()
+    (fastga_dir / "GCA_x_vs_y_FastGA.paf").write_text("fake paf\n")
+    mock_find_latest_dir.return_value = fastga_dir
+    mock_ctx.workdir = tmp_path
+    mock_ctx.print_only = False
+    mock_ctx.untracked = False
+
+    run_dir = tmp_path / "fastga_stats" / "run1"
+    run_dir.mkdir(parents=True)
+    mock_ctx.tracker = MagicMock()
+    mock_ctx.tracker.start.return_value = run_dir
+
+    mock_run.side_effect = RuntimeError("script blew up")
+
+    try:
+        run_fastga_stats(mock_ctx)
+        raise AssertionError("expected RuntimeError to propagate")
+    except RuntimeError:
+        pass
+
+    mock_ctx.tracker.finish.assert_called_once_with(
+        "fastga_stats", run_dir, "failed", untracked=False
+    )
+
+
+@patch("grit.steps.optional.fastga.collect_outputs")
+@patch("grit.steps.optional.fastga._run")
+@patch("grit.steps.optional.fastga.find_latest_dir")
+def test_run_fastga_stats_finishes_failed_when_no_top1_output(
+    mock_find_latest_dir, mock_run, mock_collect_outputs, mock_ctx, tmp_path
+):
+    """A "successful" _run() that produces no top1_targets output must still
+    finish the tracker as "failed", not "success", and must raise."""
+    fastga_dir = tmp_path / "fastga_run"
+    fastga_dir.mkdir()
+    (fastga_dir / "GCA_x_vs_y_FastGA.paf").write_text("fake paf\n")
+    mock_find_latest_dir.return_value = fastga_dir
+    mock_ctx.workdir = tmp_path
+    mock_ctx.print_only = False
+    mock_ctx.untracked = True
+
+    run_dir = tmp_path / "fastga_stats" / "run1"
+    run_dir.mkdir(parents=True)
+    mock_ctx.tracker = MagicMock()
+    mock_ctx.tracker.start.return_value = run_dir
+
+    mock_run.return_value = ""
+    mock_collect_outputs.return_value = {}
+
+    try:
+        run_fastga_stats(mock_ctx)
+        raise AssertionError("expected FileNotFoundError to propagate")
+    except FileNotFoundError:
+        pass
+
+    mock_ctx.tracker.finish.assert_called_once_with(
+        "fastga_stats", run_dir, "failed", untracked=True
+    )
 
 
 def test_run_fastga_stats_dry_run_top1_targets_content_is_parseable(mock_ctx, tmp_path, capsys):

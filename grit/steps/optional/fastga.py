@@ -212,15 +212,23 @@ def run_fastga_stats(ctx: CurationContext) -> None:
         f"python3 {_PAF_TOP_TARGETS_SCRIPT} {paf_file} --top1-out {top1_file} "
         f"--top_longest > {summary_file}"
     )
-    _run(cmd, ctx.print_only)
-    if ctx.print_only:
-        return
+    try:
+        _run(cmd, ctx.print_only)
+        if ctx.print_only:
+            return
 
-    outputs = collect_outputs(_OUTPUT_SPECS_STATS, run_dir, ctx.tol_id)
-    if ctx.tracker and run_dir:
-        ctx.tracker.finish(
-            "fastga_stats", run_dir, "success", outputs=outputs, untracked=ctx.untracked
-        )
+        outputs = collect_outputs(_OUTPUT_SPECS_STATS, run_dir, ctx.tol_id)
+        if "top1_targets" not in outputs:
+            raise FileNotFoundError(f"No top1_targets output found at {top1_file}")
+
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish(
+                "fastga_stats", run_dir, "success", outputs=outputs, untracked=ctx.untracked
+            )
+    except Exception:
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("fastga_stats", run_dir, "failed", untracked=ctx.untracked)
+        raise
 
     _print_top1_table(top1_file)
 
