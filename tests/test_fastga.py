@@ -323,6 +323,81 @@ def test_run_fastga_stats_dry_run_top1_targets_content_is_parseable(mock_ctx, tm
     assert "SUPER_1" in capsys.readouterr().out
 
 
+@patch("grit.steps.optional.fastga._run")
+@patch("grit.steps.optional.fastga.find_latest_dir")
+def test_run_fastga_stats_skips_rerun_when_top1_already_exists(
+    mock_find_latest_dir, mock_run, mock_ctx, tmp_path, capsys
+):
+    """A prior fastga_stats run with a top1_targets file matching the current
+    PAF's prefix must be reused instead of re-running the coverage script."""
+    fastga_dir = tmp_path / "fastga_run"
+    fastga_dir.mkdir()
+    (fastga_dir / "GCA_x_vs_y_FastGA.paf").write_text("fake paf\n")
+
+    stats_dir = tmp_path / "fastga_stats" / "2026-01-01T00_00_00"
+    stats_dir.mkdir(parents=True)
+    (stats_dir / "GCA_x_vs_y.top1_targets.tsv").write_text(
+        "curated_fa_chr\tref_fa_chr\taligned_length\tprc_of_ref_length\nSUPER_1\tchr1\t500\t50.00\n"
+    )
+
+    mock_find_latest_dir.side_effect = lambda ctx, step: {
+        "fastga": fastga_dir,
+        "fastga_stats": stats_dir,
+    }[step]
+    mock_ctx.tracker = None
+    mock_ctx.workdir = tmp_path
+    mock_ctx.print_only = False
+
+    run_fastga_stats(mock_ctx)
+
+    mock_run.assert_not_called()
+    out = capsys.readouterr().out
+    assert "SUPER_1" in out
+
+
+@patch("grit.steps.optional.fastga._run")
+@patch("grit.steps.optional.fastga.find_latest_dir")
+def test_run_fastga_stats_reruns_when_prefix_differs(
+    mock_find_latest_dir, mock_run, mock_ctx, tmp_path, capsys
+):
+    """A prior fastga_stats run for a *different* PAF prefix must not be
+    reused — the coverage script still runs against the current PAF."""
+    fastga_dir = tmp_path / "fastga_run"
+    fastga_dir.mkdir()
+    (fastga_dir / "GCA_x_vs_y_FastGA.paf").write_text("fake paf\n")
+
+    stats_dir = tmp_path / "fastga_stats" / "2026-01-01T00_00_00"
+    stats_dir.mkdir(parents=True)
+    (stats_dir / "GCA_other_vs_y.top1_targets.tsv").write_text(
+        "curated_fa_chr\tref_fa_chr\taligned_length\tprc_of_ref_length\nSUPER_9\tchr9\t900\t90.00\n"
+    )
+
+    mock_find_latest_dir.side_effect = lambda ctx, step: {
+        "fastga": fastga_dir,
+        "fastga_stats": stats_dir,
+    }[step]
+    mock_ctx.tracker = None
+    mock_ctx.workdir = tmp_path
+    mock_ctx.print_only = False
+
+    def _fake_run(cmd, print_only):
+        top1_path = Path(cmd.split("--top1-out ")[1].split(" ")[0])
+        top1_path.write_text(
+            "curated_fa_chr\tref_fa_chr\taligned_length\tprc_of_ref_length\n"
+            "SUPER_1\tchr1\t500\t50.00\n"
+        )
+        return ""
+
+    mock_run.side_effect = _fake_run
+
+    run_fastga_stats(mock_ctx)
+
+    mock_run.assert_called_once()
+    out = capsys.readouterr().out
+    assert "SUPER_1" in out
+    assert "SUPER_9" not in out
+
+
 def test_cli_fastga_stats_dry_run_chains_after_fastga_dry_run(tmp_path, monkeypatch):
     """`grit --dry-run fastga-stats` must no longer raise UsageError, and — after
     a real `grit --dry-run fastga` run against the same isolated workdir —

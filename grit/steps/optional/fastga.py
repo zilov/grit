@@ -196,6 +196,14 @@ def run_fastga_stats(ctx: CurationContext) -> None:
     paf_file = Path(sorted(paf_matches)[-1])
     prefix = paf_file.name.removesuffix("_FastGA.paf")
 
+    if not ctx.print_only:
+        prev_dir = find_latest_dir(ctx, "fastga_stats")
+        prev_matches = sorted(glob.glob(str(prev_dir / f"{prefix}.top1_targets.tsv")))
+        if prev_matches:
+            log.info("fastga-stats | reusing existing results for %s", prefix)
+            _print_top1_table(Path(prev_matches[-1]))
+            return
+
     run_dir = (
         ctx.tracker.start("fastga_stats", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
         if ctx.tracker
