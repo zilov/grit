@@ -32,8 +32,11 @@ _PAF_TOP_TARGETS_SCRIPT = _SCRIPTS_DIR / "paf_top_targets_by_coverage.py"
 
 # Downloadable outputs, picked up by the bsub -Ep epilogue (grit _state-update)
 # and surfaced as an scp tip in `grit status` — see build_scp_tip().
-_OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
-    ("idx", "*.idx", []),
+# "idx" is a "multi" spec: FastGA_dot_dgenies_stats.sh writes one .idx per
+# genome (ref and query), and both must reach the scp tip — see
+# collect_outputs()/MULTI_OUTPUT_SEP in grit/utils/helpers.py.
+_OUTPUT_SPECS: list[tuple[str, str, list[str]] | tuple[str, str, list[str], bool]] = [
+    ("idx", "*.idx", [], True),
     ("paf", "*FastGA.paf", []),
     ("top_targets_summary", "*.top_targets_summary.txt", []),
     ("top1_targets", "*.top1_targets.tsv", []),

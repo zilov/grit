@@ -317,7 +317,7 @@ _SCP_TIP_RENAME_STEPS = {"hic_remapping", "hic_remapping_hap2"}
 
 def _print_scp_tips(step_latest: dict[str, dict], farm_host: str, tol_id: str) -> None:
     """Print an scp-download tip for each successful step in `_SCP_TIP_STEPS`."""
-    from grit.utils.helpers import build_scp_tip
+    from grit.utils.helpers import MULTI_OUTPUT_SEP, build_scp_tip
 
     for step, label, key_filter in _SCP_TIP_STEPS:
         entry = step_latest.get(step)
@@ -326,7 +326,9 @@ def _print_scp_tips(step_latest: dict[str, dict], farm_host: str, tol_id: str) -
         outputs = entry.get("outputs") or {}
         if key_filter is not None:
             outputs = {k: v for k, v in outputs.items() if k in key_filter}
-        files = sorted(outputs.values())
+        # A "multi" spec (e.g. fastga's "idx": one file per genome) joins its
+        # matches into a single string — split back out into individual files.
+        files = sorted(f for value in outputs.values() for f in value.split(MULTI_OUTPUT_SEP))
         dest_names = None
         if step in _SCP_TIP_RENAME_STEPS:
             dest_names = [

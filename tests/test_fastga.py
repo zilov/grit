@@ -45,7 +45,7 @@ def test_run_fastga_inner_cmd_runs_top_targets_summary(
 def test_fastga_output_specs_include_top_targets_summary():
     from grit.steps.optional.fastga import _OUTPUT_SPECS
 
-    keys = [key for key, _pattern, _excludes in _OUTPUT_SPECS]
+    keys = [spec[0] for spec in _OUTPUT_SPECS]
     assert "top_targets_summary" in keys
     assert "top1_targets" in keys
 

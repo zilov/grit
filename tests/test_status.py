@@ -78,6 +78,29 @@ def test_print_scp_tips_hic_remapping_both_haps_prints_two_tips(mock_print_tip):
 
 
 @patch("grit.core.status.print_tip")
+def test_print_scp_tips_splits_multi_value_output_into_separate_files(mock_print_tip):
+    """fastga's 'idx' output is a MULTI_OUTPUT_SEP-joined pair (ref + query
+    dgenies index) — both must reach the scp command, not just one."""
+    step_latest = {
+        "fastga": {
+            "status": "success",
+            "outputs": {
+                "idx": "/lustre/foo/ref_name.idx\n/lustre/foo/query_name.idx",
+                "paf": "/lustre/foo/run.paf",
+            },
+        },
+    }
+
+    _print_scp_tips(step_latest, "farm22", "sDipInt39")
+
+    mock_print_tip.assert_called_once()
+    tip = mock_print_tip.call_args[0][0]
+    assert "scp farm22:/lustre/foo/ref_name.idx" in tip
+    assert "scp farm22:/lustre/foo/query_name.idx" in tip
+    assert "scp farm22:/lustre/foo/run.paf" in tip
+
+
+@patch("grit.core.status.print_tip")
 def test_print_scp_tips_skips_step_without_outputs(mock_print_tip):
     step_latest = {"fastga": {"status": "success", "outputs": {}}}
 

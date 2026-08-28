@@ -755,22 +755,41 @@ def _clean_species_name(species: str) -> str:
     return f"{words[0]} {second}"
 
 
+# Join separator for a "multi" spec's output value — several matched files
+# for one key are stored as a single string so the tracker's outputs dict
+# stays dict[str, str] end to end; split on this to recover the file list.
+MULTI_OUTPUT_SEP = "\n"
+
+
 def collect_outputs(
-    specs: list[tuple[str, str, list[str]]],
+    specs: list[tuple[str, str, list[str]] | tuple[str, str, list[str], bool]],
     run_dir: Path,
     tol_id: str,
     *,
     hap1: str = "hap1",
     hap2: str = "hap2",
 ) -> dict[str, str]:
-    """Glob for step outputs once and return {key: path_str} dict."""
+    """
+    Glob for step outputs once and return {key: path_str} dict.
+
+    A 4-element spec `(key, pattern, excludes, multi=True)` keeps every match
+    (not just the last one), joined with MULTI_OUTPUT_SEP — for a glob like
+    "*.idx" that legitimately matches more than one meaningful file (e.g.
+    fastga's separate ref/query dgenies indexes).
+    """
     outputs: dict[str, str] = {}
-    for key, pattern, excludes in specs:
+    for spec in specs:
+        key, pattern, excludes = spec[0], spec[1], spec[2]
+        multi = spec[3] if len(spec) > 3 else False
         if key in outputs:  # already found via earlier spec (fallback skip)
             continue
         glob_pattern = pattern.format(tol_id=tol_id, hap1=hap1, hap2=hap2)
         matches = [f for f in run_dir.glob(glob_pattern) if not any(e in f.name for e in excludes)]
-        if matches:
+        if not matches:
+            continue
+        if multi:
+            outputs[key] = MULTI_OUTPUT_SEP.join(str(f) for f in sorted(matches))
+        else:
             outputs[key] = str(sorted(matches)[-1])
     return outputs
 
@@ -788,20 +807,31 @@ def write_fake_outputs(
     Write one placeholder file per _OUTPUT_SPECS entry for *step*, returning {key: path}.
 
     Any ``*``/``?`` wildcard in a spec's glob pattern is filled with the fixed
-    placeholder token ``"1"`` to produce a concrete filename.
+    placeholder token ``"1"`` to produce a concrete filename. A 4-element
+    "multi" spec (see collect_outputs) writes two placeholder files instead
+    of one, joined with MULTI_OUTPUT_SEP, so dry-run mirrors the real
+    multi-file case.
     """
     outputs: dict[str, str] = {}
-    for key, pattern, _excludes in _get_step_specs(step):
+    for spec in _get_step_specs(step):
+        key, pattern, _excludes = spec[0], spec[1], spec[2]
+        multi = spec[3] if len(spec) > 3 else False
         if key in outputs:  # already written via earlier spec (fallback skip)
             continue
-        rel_path = (
-            pattern.format(tol_id=tol_id, hap1=hap1, hap2=hap2).replace("*", "1").replace("?", "1")
-        )
-        file_path = run_dir / rel_path
-        file_path.parent.mkdir(parents=True, exist_ok=True)
         data = content.get(key, b">fake\nACGT\n") if content else b">fake\nACGT\n"
-        file_path.write_bytes(data)
-        outputs[key] = str(file_path)
+        tokens = ["1", "2"] if multi else ["1"]
+        file_paths = []
+        for token in tokens:
+            rel_path = (
+                pattern.format(tol_id=tol_id, hap1=hap1, hap2=hap2)
+                .replace("*", token)
+                .replace("?", token)
+            )
+            file_path = run_dir / rel_path
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_bytes(data)
+            file_paths.append(file_path)
+        outputs[key] = MULTI_OUTPUT_SEP.join(str(p) for p in file_paths)
     return outputs
 
 

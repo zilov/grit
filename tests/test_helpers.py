@@ -174,3 +174,49 @@ def test_write_fake_outputs_unknown_step_returns_empty_and_writes_nothing(tmp_pa
 
     assert written == {}
     assert list(run_dir.iterdir()) == []
+
+
+# ---------------------------------------------------------------------------
+# collect_outputs / write_fake_outputs — "multi" specs (4-element tuple)
+# ---------------------------------------------------------------------------
+
+
+def test_collect_outputs_multi_spec_joins_all_matches(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    ref_idx = run_dir / "ref_name.idx"
+    query_idx = run_dir / "query_name.idx"
+    ref_idx.write_text("x")
+    query_idx.write_text("x")
+
+    found = collect_outputs([("idx", "*.idx", [], True)], run_dir, "sDipInt39")
+
+    assert found["idx"] == "\n".join(sorted([str(ref_idx), str(query_idx)]))
+
+
+def test_collect_outputs_non_multi_spec_keeps_only_last_match(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "a.idx").write_text("x")
+    (run_dir / "b.idx").write_text("x")
+
+    found = collect_outputs([("idx", "*.idx", [])], run_dir, "sDipInt39")
+
+    assert found["idx"] == str(run_dir / "b.idx")
+
+
+def test_write_fake_outputs_round_trips_through_collect_outputs_fastga(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    written = write_fake_outputs("fastga", run_dir, "sDipInt39")
+
+    assert written
+    assert len(written["idx"].split("\n")) == 2
+    for path in written["idx"].split("\n"):
+        assert Path(path).is_file()
+
+    from grit.steps.optional.fastga import _OUTPUT_SPECS
+
+    found = collect_outputs(_OUTPUT_SPECS, run_dir, "sDipInt39")
+    assert found == written
