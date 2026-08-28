@@ -234,12 +234,12 @@ leftover=$(find "$primary_workdir" \( -iname "*hap2*" -o -iname "*alternate*" \)
 $leftover"
 
 # ---------------------------------------------------------------------------
-# Scenario 4: untrack / undo round-trip mid-chain.
+# Scenario 4: untrack / retrack round-trip mid-chain.
 #   Untracking the currently-canonical step must fall through to the next-
-#   freshest tracked output; --undo must bring it back.
+#   freshest tracked output; retrack must bring it back.
 # ---------------------------------------------------------------------------
 echo ""
-echo "--- Scenario 4: untrack/undo round-trip ---"
+echo "--- Scenario 4: untrack/retrack round-trip ---"
 
 # From Scenario 2, hap1's canonical is currently blast_contaminants (its
 # second re-run, which ran after rename_and_orient's re-run and after
@@ -250,9 +250,9 @@ $GRIT_DRY --dry-run untrack -t "$T1" --step blast_contaminants && ok "[S4] untra
 s4=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s4" hap1 "assembly FA" "pretext_to_asm_recurate/" "[S4] hap1 canonical falls back to pretext_to_asm_recurate after untracking blast_contaminants"
 
-$GRIT_DRY --dry-run untrack -t "$T1" --step blast_contaminants --undo && ok "[S4] undo the untrack"
+$GRIT_DRY --dry-run retrack -t "$T1" --step blast_contaminants && ok "[S4] retrack blast_contaminants"
 s4=$($GRIT_DRY --dry-run status -t "$T1")
-assert_canonical "$s4" hap1 "assembly FA" "blast_contaminants/" "[S4] hap1 canonical returns to blast_contaminants after --undo"
+assert_canonical "$s4" hap1 "assembly FA" "blast_contaminants/" "[S4] hap1 canonical returns to blast_contaminants after retrack"
 
 # The dry-run sandbox is keyed by ticket_id, not tol_id — two --dry-run
 # "tickets" that share a YAML fixture (hence the same tol_id, exactly what

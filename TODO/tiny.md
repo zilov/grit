@@ -19,6 +19,21 @@ Small fixes and improvements — close in one batch when still relevant.
   Fix: count only terminal entries (`success` or `failed`) per step,
   or count unique `run_dir` values instead of raw lines.
 
+- [x] **Any step's `--untracked` run becomes canonical once it finishes** —
+  root cause: `RunTracker.start(untracked=True)` wrote `status="untracked"`,
+  but `RunTracker.finish()` had no idea the run was untracked and always
+  overwrote it with `status="success"/"failed"` — since `_untracked_dirs()`
+  keys off the *last* record per `run_dir`, the finish record always won,
+  silently promoting the untracked run to canonical (this is what corrupted
+  `pretext-to-asm`'s canonical resolution after a `post-curation --untracked`
+  run, and what made `blast-contaminants -t RC-4896 --untracked` show up as
+  `fa(1,2)` canonical in `grit status`). Fixed by threading `untracked=...`
+  into `finish()` (and the bsub `-Ep` epilogue path via `_state-update
+  --untracked`) so it keeps writing `status="untracked"` instead of
+  clobbering it — `grit untrack --undo` still works (and now also promotes a
+  run that was `--untracked` from the start, not just one marked untracked
+  after the fact, using the outputs its own finish() call recorded).
+
 - [ ] **Generalize `--untracked` to all steps** — currently only some steps
   wire `ctx.untracked` through to `tracker.start(..., untracked=...)`. Worth
   making this a default option every step gets (via `GritCommand` base class,

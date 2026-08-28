@@ -131,7 +131,7 @@ def run_pretext_to_asm_recurate(ctx: CurationContext, hap_prefix: str, step_name
     if ctx.dry_run:
         run_dir = ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
         outputs = _write_fake_recurate_outputs(ctx, run_dir, hap_prefix)
-        ctx.tracker.finish(step_name, run_dir, "success", outputs=outputs)
+        ctx.tracker.finish(step_name, run_dir, "success", outputs=outputs, untracked=ctx.untracked)
         dest = outputs.get(f"{hap_prefix}_fa", run_dir)
         print_done(f"[dry-run] Curated FASTA ({hap_prefix}) → {dest}")
         return run_dir

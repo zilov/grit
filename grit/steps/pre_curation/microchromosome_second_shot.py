@@ -89,7 +89,13 @@ def run_microchromosome_second_shot(ctx: CurationContext) -> None:
                 path = outputs.pop(key, None)
                 if path:
                     Path(path).unlink(missing_ok=True)
-        ctx.tracker.finish("microchromosome_second_shot", run_dir, "success", outputs=outputs)
+        ctx.tracker.finish(
+            "microchromosome_second_shot",
+            run_dir,
+            "success",
+            outputs=outputs,
+            untracked=ctx.untracked,
+        )
         print_done(f"[dry-run] Microchromosome second-shot curation complete → {run_dir}")
         return
 
@@ -130,11 +136,17 @@ def run_microchromosome_second_shot(ctx: CurationContext) -> None:
                 _OUTPUT_SPECS, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
             )
             ctx.tracker.finish(
-                "microchromosome_second_shot", run_dir, "success", outputs=outputs or None
+                "microchromosome_second_shot",
+                run_dir,
+                "success",
+                outputs=outputs or None,
+                untracked=ctx.untracked,
             )
     except Exception:
         if ctx.tracker:
-            ctx.tracker.finish("microchromosome_second_shot", run_dir, "failed")
+            ctx.tracker.finish(
+                "microchromosome_second_shot", run_dir, "failed", untracked=ctx.untracked
+            )
         raise
 
     # --- print scp of micro pretext map to local for curation ---

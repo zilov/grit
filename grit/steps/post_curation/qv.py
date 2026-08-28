@@ -73,7 +73,7 @@ def run_qv(ctx: CurationContext) -> None:
         (qv_dir / f"{ctx.tol_id}.completeness.stats").write_text("fake\n")
         if ctx.tracker and run_dir:
             outputs = _find_qv_outputs(ctx) or None
-            ctx.tracker.finish("qv", run_dir, "success", outputs=outputs)
+            ctx.tracker.finish("qv", run_dir, "success", outputs=outputs, untracked=ctx.untracked)
         print_done(f"[dry-run] QV analysis → {qv_dir}")
         return
 
@@ -91,7 +91,7 @@ def run_qv(ctx: CurationContext) -> None:
 
     if ctx.tracker and run_dir:
         outputs = None if ctx.print_only else (_find_qv_outputs(ctx) or None)
-        ctx.tracker.finish("qv", run_dir, "success", outputs=outputs)
+        ctx.tracker.finish("qv", run_dir, "success", outputs=outputs, untracked=ctx.untracked)
 
     print_done("QV analysis done")
 

@@ -100,7 +100,9 @@ def run_microchromosome_combine(ctx: CurationContext) -> None:
                 path = outputs.pop(key, None)
                 if path:
                     Path(path).unlink(missing_ok=True)
-        ctx.tracker.finish("microchromosome_combine", run_dir, "success", outputs=outputs)
+        ctx.tracker.finish(
+            "microchromosome_combine", run_dir, "success", outputs=outputs, untracked=ctx.untracked
+        )
         dest = outputs.get("hap1_fa", run_dir)
         print_done(f"[dry-run] Microchromosome combine complete. Final merged FASTAs → {dest}")
         return
@@ -191,11 +193,17 @@ def run_microchromosome_combine(ctx: CurationContext) -> None:
         if ctx.tracker:
             outputs = collect_outputs(_OUTPUT_SPECS, run_dir, ctx.tol_id)
             ctx.tracker.finish(
-                "microchromosome_combine", run_dir, "success", outputs=outputs or None
+                "microchromosome_combine",
+                run_dir,
+                "success",
+                outputs=outputs or None,
+                untracked=ctx.untracked,
             )
     except Exception:
         if ctx.tracker:
-            ctx.tracker.finish("microchromosome_combine", run_dir, "failed")
+            ctx.tracker.finish(
+                "microchromosome_combine", run_dir, "failed", untracked=ctx.untracked
+            )
         raise
 
     print_done(f"Microchromosome combine complete. Final merged FASTAs in: {run_dir}")

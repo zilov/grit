@@ -81,7 +81,7 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
             "busco_curated", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
         )
         output_dir = _dry_run_busco_curated(ctx)
-        ctx.tracker.finish("busco_curated", run_dir, "success")
+        ctx.tracker.finish("busco_curated", run_dir, "success", untracked=ctx.untracked)
         print_done(f"[dry-run] BUSCO on curated genome → {output_dir}")
         return
 
@@ -145,7 +145,11 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     )
 
     # --- submit ---
-    epilogue = _state_update_epilogue(ctx.workdir, "busco_curated", run_dir) if run_dir else None
+    epilogue = (
+        _state_update_epilogue(ctx.workdir, "busco_curated", run_dir, untracked=ctx.untracked)
+        if run_dir
+        else None
+    )
     job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
     if ctx.tracker and run_dir and job_id:
         ctx.tracker.record_job("busco_curated", run_dir, job_id)

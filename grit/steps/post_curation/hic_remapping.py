@@ -123,7 +123,7 @@ def _submit_hic_remapping(
                 ctx.tracker.record_job(step_name, run_dir, m.group(1))
     except Exception:
         if ctx.tracker:
-            ctx.tracker.finish(step_name, run_dir, "failed")
+            ctx.tracker.finish(step_name, run_dir, "failed", untracked=ctx.untracked)
         raise
 
     remapped_pattern = str(run_dir / "pretext_maps_processed" / f"{sample}*normal.pretext")
@@ -140,7 +140,7 @@ def _dry_run_hic_remapping_for_hap(ctx: CurationContext, step_name: str) -> dict
     outputs = write_fake_outputs(
         step_name, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
     )
-    ctx.tracker.finish(step_name, run_dir, "success", outputs=outputs)
+    ctx.tracker.finish(step_name, run_dir, "success", outputs=outputs, untracked=ctx.untracked)
     return outputs
 
 

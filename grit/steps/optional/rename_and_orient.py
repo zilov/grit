@@ -89,7 +89,11 @@ def _submit_rename_and_orient_for_hap(
         error="e_rename_and_orient",
         run_dir=run_dir,
     )
-    epilogue = _state_update_epilogue(ctx.workdir, step_name, run_dir) if run_dir else None
+    epilogue = (
+        _state_update_epilogue(ctx.workdir, step_name, run_dir, untracked=ctx.untracked)
+        if run_dir
+        else None
+    )
 
     console.print(f"\n[yellow]Command ({hap_prefix}):[/yellow] [green]{inner_cmd}[/green]")
 
@@ -99,7 +103,7 @@ def _submit_rename_and_orient_for_hap(
             ctx.tracker.record_job(step_name, run_dir, job_id)
     except Exception:
         if ctx.tracker and run_dir:
-            ctx.tracker.finish(step_name, run_dir, "failed")
+            ctx.tracker.finish(step_name, run_dir, "failed", untracked=ctx.untracked)
         raise
 
     return job_id
@@ -111,7 +115,7 @@ def _dry_run_rename_and_orient_for_hap(ctx: CurationContext, step_name: str) -> 
     outputs = write_fake_outputs(
         step_name, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
     )
-    ctx.tracker.finish(step_name, run_dir, "success", outputs=outputs)
+    ctx.tracker.finish(step_name, run_dir, "success", outputs=outputs, untracked=ctx.untracked)
     return outputs
 
 

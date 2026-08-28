@@ -201,7 +201,11 @@ def finalize_for_qc(
 
         if ctx.tracker and run_dir:
             ctx.tracker.finish(
-                "finalize_qc", run_dir, "success", outputs={"curated_dir": str(dest_dir)}
+                "finalize_qc",
+                run_dir,
+                "success",
+                outputs={"curated_dir": str(dest_dir)},
+                untracked=ctx.untracked,
             )
         print_done(f"[dry-run] Curated dir → {dest_dir}")
         return
@@ -319,7 +323,11 @@ def finalize_for_qc(
 
     if ctx.tracker and run_dir:
         ctx.tracker.finish(
-            "finalize_qc", run_dir, "success", outputs={"curated_dir": str(dest_dir)}
+            "finalize_qc",
+            run_dir,
+            "success",
+            outputs={"curated_dir": str(dest_dir)},
+            untracked=ctx.untracked,
         )
 
     from grit.utils.output import print_curation_results, print_tip

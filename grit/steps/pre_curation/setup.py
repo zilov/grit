@@ -357,7 +357,7 @@ def run_setup(ctx: CurationContext) -> None:
             "setup_curation", ctx.ticket_id, ctx.tol_id, create_dir=False, untracked=ctx.untracked
         )
         (ctx.workdir / "original.fa").write_bytes(b">fake\nACGT\n")
-        ctx.tracker.finish("setup_curation", run_dir, "success")
+        ctx.tracker.finish("setup_curation", run_dir, "success", untracked=ctx.untracked)
         print_done(f"[dry-run] ticket registered, workdir → {ctx.workdir}")
         return
 
@@ -385,10 +385,10 @@ def run_setup(ctx: CurationContext) -> None:
         setup_curation(ctx)
         print_pretext_scp_commands(ctx)
         if ctx.tracker and not ctx.print_only:
-            ctx.tracker.finish("setup_curation", run_dir, "success")
+            ctx.tracker.finish("setup_curation", run_dir, "success", untracked=ctx.untracked)
     except Exception:
         if ctx.tracker and not ctx.print_only:
-            ctx.tracker.finish("setup_curation", run_dir, "failed")
+            ctx.tracker.finish("setup_curation", run_dir, "failed", untracked=ctx.untracked)
         raise
 
     if any(ctx.tol_id.lower().startswith(p) for p in _INSECT_PREFIXES):

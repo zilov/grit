@@ -71,7 +71,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
                 "top1_targets": (b"super\ttop_longest_ref_chr\tlen\nSUPER_1\tchr1\t1000000\n")
             },
         )
-        ctx.tracker.finish("fastga", run_dir, "success", outputs=outputs)
+        ctx.tracker.finish("fastga", run_dir, "success", outputs=outputs, untracked=ctx.untracked)
         print_done(f"[dry-run] FastGA → {outputs.get('paf', run_dir)}")
         return
 
@@ -119,7 +119,11 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
         error="e_fastga",
         run_dir=run_dir,
     )
-    epilogue = _state_update_epilogue(ctx.workdir, "fastga", run_dir) if run_dir else None
+    epilogue = (
+        _state_update_epilogue(ctx.workdir, "fastga", run_dir, untracked=ctx.untracked)
+        if run_dir
+        else None
+    )
 
     try:
         job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
@@ -127,7 +131,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
             ctx.tracker.record_job("fastga", run_dir, job_id)
     except Exception:
         if ctx.tracker and run_dir:
-            ctx.tracker.finish("fastga", run_dir, "failed")
+            ctx.tracker.finish("fastga", run_dir, "failed", untracked=ctx.untracked)
         raise
 
     print_done("FastGA submitted.")

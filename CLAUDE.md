@@ -61,6 +61,16 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
 
 ## Key conventions
 
+- **`--untracked`** — for steps that thread `ctx.untracked` through, every
+  `ctx.tracker.finish(...)` call for that run (including the bsub `-Ep`
+  epilogue path, via `_state_update_epilogue(..., untracked=ctx.untracked)`)
+  must also pass `untracked=ctx.untracked`. `RunTracker.finish()` writes
+  `status="untracked"` instead of the given success/failed when `untracked=True`
+  — omitting it there lets the finish record silently overwrite the untracked
+  marker with `success`/`failed`, making the run canonical the moment it
+  completes (the exact bug fixed in `TODO/tiny.md`). Outputs are still
+  recorded on an untracked finish, so `grit retrack -t <ticket> -s <step>` can
+  later promote the run to canonical using its own recorded outputs.
 - **No global state** — everything flows through `ctx`
 - **`print_only` everywhere** — every step respects `ctx.print_only`; `_run()` enforces it
 - **`--dry-run`** — a separate mode from `print_only`, for exercising step-sequencing/
@@ -85,7 +95,7 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
   (aliased as `pp`), `post-curation`, and `post-curation-recurate` have a
   dry-run branch (`_DRY_RUN_SUPPORTED_COMMANDS` in `grit/core/base_command.py`).
   `GritCommand.invoke()` refuses `--dry-run` up front for every other (not yet
-  ported) step with a `UsageError`. `status`/`untrack` support `--dry-run` as a
+  ported) step with a `UsageError`. `status`/`untrack`/`retrack` support `--dry-run` as a
   group-level flag (`grit --dry-run status -t <ticket>`, never per-command); the
   other plain `@cli.command`s (`done`/`reopen`/`remove`/`summary`/`cleanup`)
   have no dry-run support and raise `UsageError` if `--dry-run` is passed, since

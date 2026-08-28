@@ -175,6 +175,28 @@ def test_start_untracked_never_canonical(tracker):
     assert tracker.latest_run_dir("qv") is None
 
 
+def test_finish_untracked_keeps_status_untracked(tracker):
+    run_dir = tracker.start("qv", "RC-1234", "sDipInt39", untracked=True)
+    tracker.finish("qv", run_dir, "success", outputs={"fa": "/path/to/r.fa"}, untracked=True)
+
+    records = tracker.history("qv")
+    assert records[-1]["status"] == "untracked"
+    assert records[-1]["outputs"] == {"fa": "/path/to/r.fa"}
+    assert tracker.latest_run_dir("qv") is None
+    assert tracker.get_output("qv", "fa") is None
+
+
+def test_finish_untracked_run_can_be_promoted(tracker):
+    """The real success/failure a finish(untracked=True) call recorded is preserved
+    (not lost), so promoting the run later can reuse it — mirrors grit retrack."""
+    run_dir = tracker.start("qv", "RC-1234", "sDipInt39", untracked=True)
+    tracker.finish("qv", run_dir, "success", outputs={"fa": "/path/to/r.fa"}, untracked=True)
+
+    tracker.finish("qv", run_dir, "success", outputs={"fa": "/path/to/r.fa"})
+    assert tracker.latest_run_dir("qv") == run_dir
+    assert tracker.get_output("qv", "fa") == "/path/to/r.fa"
+
+
 def test_untrack_undo(tracker):
     r1 = tracker.start("pretext_to_asm", "RC-1234", "sDipInt39")
     tracker.finish("pretext_to_asm", r1, "success", outputs={"fa": "/path/to/r1.fa"})

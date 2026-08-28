@@ -97,7 +97,7 @@ def _run_pretext_to_asm_core(
 
     if not ctx.print_only and not original_fa.exists():
         if ctx.tracker:
-            ctx.tracker.finish(step_name, run_dir, "failed")
+            ctx.tracker.finish(step_name, run_dir, "failed", untracked=ctx.untracked)
         raise FileNotFoundError(original_fa_missing_msg)
 
     # AGP is uploaded by the user to agp_search_dir
@@ -110,7 +110,7 @@ def _run_pretext_to_asm_core(
         agp_files = glob.glob(agp_pattern)
         if not agp_files:
             if ctx.tracker:
-                ctx.tracker.finish(step_name, run_dir, "failed")
+                ctx.tracker.finish(step_name, run_dir, "failed", untracked=ctx.untracked)
             raise FileNotFoundError(
                 f"No AGP file found at {agp_pattern}. Copy AGP from local machine first.\n"
                 f"  scp ~/curations/work/{ctx.tol_id}/{ctx.tol_id}*.agp* "
@@ -133,10 +133,12 @@ def _run_pretext_to_asm_core(
             outputs = collect_outputs(
                 output_specs, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
             )
-            ctx.tracker.finish(step_name, run_dir, "success", outputs=outputs or None)
+            ctx.tracker.finish(
+                step_name, run_dir, "success", outputs=outputs or None, untracked=ctx.untracked
+            )
     except Exception:
         if ctx.tracker:
-            ctx.tracker.finish(step_name, run_dir, "failed")
+            ctx.tracker.finish(step_name, run_dir, "failed", untracked=ctx.untracked)
         raise
 
     print_done(f"Curated FASTA → {out_fa}")
@@ -195,7 +197,9 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
                 path = outputs.pop(key, None)
                 if path:
                     Path(path).unlink(missing_ok=True)
-        ctx.tracker.finish("pretext_to_asm", run_dir, "success", outputs=outputs)
+        ctx.tracker.finish(
+            "pretext_to_asm", run_dir, "success", outputs=outputs, untracked=ctx.untracked
+        )
         print_done(f"[dry-run] Curated FASTA → {outputs.get('hap1_fa', run_dir)}")
         return
 

@@ -86,17 +86,22 @@ def _submit_bsub(
     return output
 
 
-def _state_update_epilogue(workdir: Path, step: str, run_dir: Path) -> str:
+def _state_update_epilogue(workdir: Path, step: str, run_dir: Path, untracked: bool = False) -> str:
     """
     Build the bsub -Ep epilogue command that calls `grit _state-update` when a job finishes.
 
     Uses $LSB_JOBEXIT_STAT (set by LSF in epilogue environment) to determine success vs failed.
     The `grit` command must be on $PATH on compute nodes.
+
+    Pass ``untracked=True`` when the job was submitted for a run started with
+    ``tracker.start(untracked=True)``, so the epilogue's `finish()` call doesn't
+    clobber the untracked marker with 'success'/'failed'.
     """
     grit_bin = sys.argv[0]  # full path — ensures grit is found in bsub epilogue environment
+    untracked_flag = " --untracked" if untracked else ""
     return (
         f"{grit_bin} _state-update --workdir {workdir} --step {step} --run-dir {run_dir} "
-        f"--status $([ $LSB_JOBEXIT_STAT -eq 0 ] && echo success || echo failed)"
+        f"--status $([ $LSB_JOBEXIT_STAT -eq 0 ] && echo success || echo failed){untracked_flag}"
     )
 
 

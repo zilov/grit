@@ -67,7 +67,9 @@ def run_fastga_synteny(ctx: CurationContext, min_align_len: int = DEFAULT_MIN_AL
             "fastga_synteny", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
         )
         outputs = write_fake_outputs("fastga_synteny", run_dir, ctx.tol_id)
-        ctx.tracker.finish("fastga_synteny", run_dir, "success", outputs=outputs)
+        ctx.tracker.finish(
+            "fastga_synteny", run_dir, "success", outputs=outputs, untracked=ctx.untracked
+        )
         print_done(f"[dry-run] FastGA synteny plot → {outputs.get('png', run_dir)}")
         return
 
@@ -98,7 +100,11 @@ def run_fastga_synteny(ctx: CurationContext, min_align_len: int = DEFAULT_MIN_AL
         output="o_fastga_synt",
         run_dir=run_dir,
     )
-    epilogue = _state_update_epilogue(ctx.workdir, "fastga_synteny", run_dir) if run_dir else None
+    epilogue = (
+        _state_update_epilogue(ctx.workdir, "fastga_synteny", run_dir, untracked=ctx.untracked)
+        if run_dir
+        else None
+    )
     job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
     if ctx.tracker and run_dir and job_id:
         ctx.tracker.record_job("fastga_synteny", run_dir, job_id)

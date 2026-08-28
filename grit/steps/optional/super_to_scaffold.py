@@ -128,7 +128,9 @@ def run_super_to_scaffold(ctx: CurationContext) -> None:
             "super_to_scaffold", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
         )
         outputs = write_fake_outputs("super_to_scaffold", run_dir, ctx.tol_id)
-        ctx.tracker.finish("super_to_scaffold", run_dir, "success", outputs=outputs)
+        ctx.tracker.finish(
+            "super_to_scaffold", run_dir, "success", outputs=outputs, untracked=ctx.untracked
+        )
         print_done(f"[dry-run] Table saved → {outputs.get('table_csv', run_dir)}")
         return
 
@@ -190,11 +192,15 @@ def run_super_to_scaffold(ctx: CurationContext) -> None:
 
         if ctx.tracker:
             ctx.tracker.finish(
-                "super_to_scaffold", run_dir, "success", outputs={"table_csv": str(csv_path)}
+                "super_to_scaffold",
+                run_dir,
+                "success",
+                outputs={"table_csv": str(csv_path)},
+                untracked=ctx.untracked,
             )
     except Exception:
         if ctx.tracker:
-            ctx.tracker.finish("super_to_scaffold", run_dir, "failed")
+            ctx.tracker.finish("super_to_scaffold", run_dir, "failed", untracked=ctx.untracked)
         raise
 
     print_done(f"Table saved → {csv_path}")

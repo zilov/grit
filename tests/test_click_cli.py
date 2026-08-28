@@ -98,6 +98,35 @@ def test_untrack_dry_run_targets_dry_run_registry(tmp_path, dry_run_dir, _patch_
     assert runs[-1]["status"] == "untracked"
 
 
+def test_retrack_promotes_a_run_started_as_untracked(tmp_path, dry_run_dir, _patch_registry_dir):
+    """A run started with `--untracked` (never previously canonical) must still be
+    promotable via `grit retrack`, using the outputs its own finish() call
+    recorded — not just outputs from a prior `success` record (see run_tracker.finish)."""
+    from grit.core.run_tracker import RunTracker
+
+    reg, workdir = _seed_ticket(dry_run_dir, tmp_path, ticket_id="RC-DRY", tol_id="xbDry1")
+    tracker = RunTracker(workdir, registry=reg)
+    run_dir = tracker.start("qv", "RC-DRY", "xbDry1", untracked=True)
+    tracker.finish("qv", run_dir, "success", outputs={"qv_report": "/path/qv.txt"}, untracked=True)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--dry-run", "retrack", "-t", "RC-DRY", "-s", "qv"])
+
+    assert result.exit_code == 0, result.output
+    assert tracker.latest_run_dir("qv") == run_dir
+    assert tracker.get_output("qv", "qv_report") == "/path/qv.txt"
+
+
+def test_retrack_no_untracked_run_errors(tmp_path, dry_run_dir, _patch_registry_dir):
+    _seed_ticket(dry_run_dir, tmp_path, ticket_id="RC-DRY", tol_id="xbDry1")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--dry-run", "retrack", "-t", "RC-DRY", "-s", "qv"])
+
+    assert result.exit_code == 1
+    assert "No untracked runs found" in result.output
+
+
 def test_untrack_dry_run_does_not_touch_default_registry(
     tmp_path, dry_run_dir, _patch_registry_dir
 ):

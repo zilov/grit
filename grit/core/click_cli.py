@@ -219,7 +219,13 @@ def status_cmd(ctx, ticket):
     help="Job outcome.",
 )
 @click.option("--job-id", "job_id", default=None, help="LSF job ID.")
-def state_update_cmd(workdir, step, run_dir, status, job_id):
+@click.option(
+    "--untracked",
+    is_flag=True,
+    default=False,
+    help="Keep the run marked untracked instead of recording success/failed.",
+)
+def state_update_cmd(workdir, step, run_dir, status, job_id, untracked):
     """[Internal] Called by bsub -Ep epilogue to record job completion."""
     from grit.core.registry import RegistryManager
     from grit.core.run_tracker import RunTracker
@@ -239,7 +245,7 @@ def state_update_cmd(workdir, step, run_dir, status, job_id):
                 outputs = (
                     collect_outputs(specs, Path(run_dir), tol_id, hap1=hap1, hap2=hap2) or None
                 )
-    tracker.finish(step, Path(run_dir), status, job_id=job_id, outputs=outputs)
+    tracker.finish(step, Path(run_dir), status, job_id=job_id, outputs=outputs, untracked=untracked)
     log.info(
         "_state-update: step=%s status=%s job_id=%s outputs=%s",
         step,
@@ -284,16 +290,10 @@ from grit.core.cleanup import cleanup_cmd  # noqa: E402
 cli.add_command(cleanup_cmd)
 
 
-@cli.command("untrack")
-@click.option("--ticket", "-t", required=True, help="Ticket ID.")
-@click.option("--step", "-s", required=True, help="Step name to untrack (e.g. rename_and_orient).")
-@click.option("--undo", is_flag=True, default=False, help="Re-enable latest untracked run.")
-@click.pass_context
-def untrack_cmd(ctx, ticket, step, undo):
-    """Mark the latest run of a step as non-canonical (or undo that)."""
+def _resolve_tracker(ctx, ticket):
+    """Return the RunTracker for *ticket*, honoring --dry-run's isolated registry."""
     from grit.core.registry import RegistryManager, dry_run_root
     from grit.core.run_tracker import RunTracker
-    from grit.utils.output import print_done
 
     if getattr(ctx.obj, "dry_run", False):
         reg = RegistryManager(registry_dir=dry_run_root())
@@ -304,30 +304,59 @@ def untrack_cmd(ctx, ticket, step, undo):
         click.echo(f"Ticket {ticket} not found in registry.", err=True)
         raise SystemExit(1)
     workdir = Path(entry["workdir"])
-    tracker = RunTracker(workdir, registry=reg)
-    if undo:
-        runs = tracker.history(step)
-        untracked_runs = [r for r in runs if r.get("status") == "untracked" and r.get("run_dir")]
-        if not untracked_runs:
-            click.echo(f"No untracked runs found for step {step!r}.", err=True)
-            raise SystemExit(1)
-        run_dir = Path(untracked_runs[-1]["run_dir"])
+    return RunTracker(workdir, registry=reg)
+
+
+@cli.command("untrack")
+@click.option("--ticket", "-t", required=True, help="Ticket ID.")
+@click.option("--step", "-s", required=True, help="Step name to untrack (e.g. rename_and_orient).")
+@click.pass_context
+def untrack_cmd(ctx, ticket, step):
+    """Mark the latest run of a step as non-canonical. Undo with `grit retrack`."""
+    from grit.utils.output import print_done
+
+    tracker = _resolve_tracker(ctx, ticket)
+    if not tracker.untrack(step):
+        click.echo(f"No successful run found for step {step!r} in {ticket}.", err=True)
+        raise SystemExit(1)
+    run_dir = tracker.latest_run_dir(step)
+    console_hint = f" → canonical is now: {run_dir.name}" if run_dir else ""
+    print_done(f"Untracked latest {step!r} run{console_hint}")
+
+
+cli.add_command(untrack_cmd)
+
+
+@cli.command("retrack")
+@click.option("--ticket", "-t", required=True, help="Ticket ID.")
+@click.option("--step", "-s", required=True, help="Step name to retrack (e.g. rename_and_orient).")
+@click.pass_context
+def retrack_cmd(ctx, ticket, step):
+    """Promote the latest untracked run of a step back to canonical.
+
+    Works whether the run was marked untracked after the fact (`grit untrack`)
+    or run with `--untracked` from the start.
+    """
+    from grit.utils.output import print_done
+
+    tracker = _resolve_tracker(ctx, ticket)
+    runs = tracker.history(step)
+    untracked_runs = [r for r in runs if r.get("status") == "untracked" and r.get("run_dir")]
+    if not untracked_runs:
+        click.echo(f"No untracked runs found for step {step!r}.", err=True)
+        raise SystemExit(1)
+    run_dir = Path(untracked_runs[-1]["run_dir"])
+    outputs = untracked_runs[-1].get("outputs")
+    if outputs is None:
         success_before = [
             r for r in runs if r.get("status") == "success" and r.get("run_dir") == str(run_dir)
         ]
         outputs = success_before[-1].get("outputs") if success_before else None
-        tracker.finish(step, run_dir, "success", outputs=outputs)
-        print_done(f"Re-enabled {step!r} run: {run_dir.name}")
-    else:
-        if not tracker.untrack(step):
-            click.echo(f"No successful run found for step {step!r} in {ticket}.", err=True)
-            raise SystemExit(1)
-        run_dir = tracker.latest_run_dir(step)
-        console_hint = f" → canonical is now: {run_dir.name}" if run_dir else ""
-        print_done(f"Untracked latest {step!r} run{console_hint}")
+    tracker.finish(step, run_dir, "success", outputs=outputs)
+    print_done(f"Retracked {step!r} run: {run_dir.name}")
 
 
-cli.add_command(untrack_cmd)
+cli.add_command(retrack_cmd)
 
 
 @cli.command("done")

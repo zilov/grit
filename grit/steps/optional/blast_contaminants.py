@@ -90,7 +90,9 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
             path = outputs.pop("hap2_fa", None)
             if path:
                 Path(path).unlink(missing_ok=True)
-        ctx.tracker.finish("blast_contaminants", run_dir, "success", outputs=outputs)
+        ctx.tracker.finish(
+            "blast_contaminants", run_dir, "success", outputs=outputs, untracked=ctx.untracked
+        )
         dest = outputs.get("hap1_fa", run_dir)
         print_done(f"[dry-run] Decontaminated FASTA → {dest}")
         return
@@ -112,10 +114,16 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
             if dest is not None:
                 outputs[f"{hap_prefix}_fa"] = str(dest)
         if ctx.tracker and run_dir:
-            ctx.tracker.finish("blast_contaminants", run_dir, "success", outputs=outputs or None)
+            ctx.tracker.finish(
+                "blast_contaminants",
+                run_dir,
+                "success",
+                outputs=outputs or None,
+                untracked=ctx.untracked,
+            )
     except Exception:
         if ctx.tracker and run_dir:
-            ctx.tracker.finish("blast_contaminants", run_dir, "failed")
+            ctx.tracker.finish("blast_contaminants", run_dir, "failed", untracked=ctx.untracked)
         raise
 
     print_done("Contaminant blasting completed")

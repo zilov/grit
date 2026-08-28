@@ -143,7 +143,9 @@ def test_local_missing_file_with_tracker_marks_failed(mock_run, mock_ctx, tmp_pa
     mock_tracker.start.assert_called_once()
 
     # Verify tracker.finish was called with "failed" status
-    mock_tracker.finish.assert_called_once_with("find_reference", mock_run_dir, "failed")
+    mock_tracker.finish.assert_called_once_with(
+        "find_reference", mock_run_dir, "failed", untracked=mock_ctx.untracked
+    )
 
     # Verify _run was not called (file check failed before attempting any prep)
     mock_run.assert_not_called()
