@@ -68,7 +68,10 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
             run_dir,
             ctx.tol_id,
             content={
-                "top1_targets": (b"super\ttop_longest_ref_chr\tlen\nSUPER_1\tchr1\t1000000\n")
+                "top1_targets": (
+                    b"curated_fa_chr\tref_fa_chr\taligned_length\tprc_of_ref_length\n"
+                    b"SUPER_1\tchr1\t1000000\t100.00\n"
+                )
             },
         )
         ctx.tracker.finish("fastga", run_dir, "success", outputs=outputs, untracked=ctx.untracked)

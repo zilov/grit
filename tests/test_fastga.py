@@ -158,7 +158,7 @@ def test_run_fastga_dry_run_top1_targets_content_is_parseable(mock_ctx, tmp_path
     top1_path = Path(mock_ctx.tracker.get_output("fastga", "top1_targets"))
     rows = _read_top1_table(top1_path)
 
-    assert rows == [("SUPER_1", "chr1", "1000000")]
+    assert rows == [("SUPER_1", "chr1", "1000000", "100.00")]
     assert all(_is_super(row[0]) for row in rows)
 
 
