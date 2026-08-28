@@ -10,9 +10,11 @@ from rich.table import Table
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.helpers import (
+    _run,
     _state_update_epilogue,
     _submit_bsub,
     build_bsub_opts,
+    collect_outputs,
     find_canonical_fa,
     find_latest_dir,
     find_reheadered_reference,
@@ -38,8 +40,14 @@ _PAF_TOP_TARGETS_SCRIPT = _SCRIPTS_DIR / "paf_top_targets_by_coverage.py"
 _OUTPUT_SPECS: list[tuple[str, str, list[str]] | tuple[str, str, list[str], bool]] = [
     ("idx", "*.idx", [], True),
     ("paf", "*FastGA.paf", []),
-    ("top_targets_summary", "*.top_targets_summary.txt", []),
+]
+
+# Outputs for the separate "fastga_stats" step (`grit fastga-stats`) — computed
+# synchronously by run_fastga_stats from fastga's PAF, not part of the fastga
+# bsub job.
+_OUTPUT_SPECS_STATS: list[tuple[str, str, list[str]]] = [
     ("top1_targets", "*.top1_targets.tsv", []),
+    ("top_targets_summary", "*.top_targets_summary.txt", []),
 ]
 
 
@@ -54,29 +62,39 @@ def _read_top1_table(top1_file: Path) -> list[tuple[str, str, str, str]]:
     return [tuple(line.split("\t")) for line in lines if line.strip()]
 
 
+def _print_top1_table(top1_file: Path) -> None:
+    """Render *top1_file*'s SUPER_* rows as a Rich table."""
+    rows = [row for row in _read_top1_table(top1_file) if _is_super(row[0])]
+    if not rows:
+        log.warning("No SUPER_* rows found in %s", top1_file)
+        return
+
+    table = Table(
+        title="Best reference target per super scaffold (by non-overlapping coverage)",
+        header_style="bold cyan",
+    )
+    table.add_column("super")
+    table.add_column("ref_chr")
+    table.add_column("aligned_length", justify="right")
+    table.add_column("prc_of_ref_length", justify="right")
+    for super_name, ref_chr, length, pct in rows:
+        table.add_row(super_name, ref_chr, f"{int(length):,}", f"{float(pct):.2f}%")
+    console.print(table)
+
+
 # ---------------------------------------------------------------------------
 # Public step functions
 # ---------------------------------------------------------------------------
 
 
 def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
-    """Submits the FastGA dot-plot alignment (which also writes the top-targets summary)."""
+    """Submits the FastGA dot-plot alignment bsub job."""
     log.info("fastga | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run FastGA")
 
     if ctx.dry_run:
         run_dir = ctx.tracker.start("fastga", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
-        outputs = write_fake_outputs(
-            "fastga",
-            run_dir,
-            ctx.tol_id,
-            content={
-                "top1_targets": (
-                    b"curated_fa_chr\tref_fa_chr\taligned_length\tprc_of_ref_length\n"
-                    b"SUPER_1\tchr1\t1000000\t100.00\n"
-                )
-            },
-        )
+        outputs = write_fake_outputs("fastga", run_dir, ctx.tol_id)
         ctx.tracker.finish("fastga", run_dir, "success", outputs=outputs, untracked=ctx.untracked)
         print_done(f"[dry-run] FastGA → {outputs.get('paf', run_dir)}")
         return
@@ -114,8 +132,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     inner_cmd = (
         f"cd {run_dir} && "
         f"{module_cmd('GRIT')} && "
-        f"bash {fastga_script} {ref_reheader} {hap1_fa} {run_prefix} "
-        f"{run_dir} {_PAF_TOP_TARGETS_SCRIPT}"
+        f"bash {fastga_script} {ref_reheader} {hap1_fa} {run_prefix} {run_dir}"
     )
     bsub_opts = build_bsub_opts(
         group="team135",
@@ -144,44 +161,68 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
 
 
 def run_fastga_stats(ctx: CurationContext) -> None:
-    """Prints the best reference target (by coverage) for SUPER_* scaffolds from the latest run."""
+    """Computes (from the latest fastga run's PAF) and prints the best reference
+    target per super scaffold, by non-overlapping coverage."""
     log.info("fastga-stats | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "FastGA best targets by coverage")
 
-    fastga_dir = find_latest_dir(ctx, "fastga")
-    matches = glob.glob(str(fastga_dir / "*.top1_targets.tsv"))
-    if not matches:
-        raise FileNotFoundError(
-            f"No top1_targets table found in {fastga_dir}\n"
-            f"Run 'grit fastga -t {ctx.ticket_id}' first."
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start(
+            "fastga_stats", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
         )
-    top1_file = Path(sorted(matches)[-1])
-
-    all_rows = _read_top1_table(top1_file)
-    if any(len(row) != 4 for row in all_rows):
-        raise ValueError(
-            f"{top1_file} has the old 3-column top1_targets format from a "
-            f"previous fastga run.\n"
-            f"Run 'grit fastga -t {ctx.ticket_id}' to regenerate it in the "
-            f"current curated_fa_chr/ref_fa_chr/aligned_length/prc_of_ref_length format."
+        outputs = write_fake_outputs(
+            "fastga_stats",
+            run_dir,
+            ctx.tol_id,
+            content={
+                "top1_targets": (
+                    b"curated_fa_chr\tref_fa_chr\taligned_length\tprc_of_ref_length\n"
+                    b"SUPER_1\tchr1\t1000000\t100.00\n"
+                )
+            },
         )
-
-    rows = [row for row in all_rows if _is_super(row[0])]
-    if not rows:
-        log.warning("No SUPER_* rows found in %s", top1_file)
+        ctx.tracker.finish(
+            "fastga_stats", run_dir, "success", outputs=outputs, untracked=ctx.untracked
+        )
+        _print_top1_table(Path(outputs["top1_targets"]))
         return
 
-    table = Table(
-        title="Best reference target per super scaffold (by non-overlapping coverage)",
-        header_style="bold cyan",
+    fastga_dir = find_latest_dir(ctx, "fastga")
+    paf_matches = glob.glob(str(fastga_dir / "*FastGA.paf"))
+    if not paf_matches:
+        raise FileNotFoundError(
+            f"No FastGA PAF file found in {fastga_dir}\nRun 'grit fastga -t {ctx.ticket_id}' first."
+        )
+    paf_file = Path(sorted(paf_matches)[-1])
+    prefix = paf_file.name.removesuffix("_FastGA.paf")
+
+    run_dir = (
+        ctx.tracker.start("fastga_stats", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else ctx.workdir / "fastga_stats" / "untracked"
     )
-    table.add_column("super")
-    table.add_column("ref_chr")
-    table.add_column("aligned_length", justify="right")
-    table.add_column("prc_of_ref_length", justify="right")
-    for super_name, ref_chr, length, pct in rows:
-        table.add_row(super_name, ref_chr, f"{int(length):,}", f"{float(pct):.2f}%")
-    console.print(table)
+    top1_file = run_dir / f"{prefix}.top1_targets.tsv"
+    summary_file = run_dir / f"{prefix}.top_targets_summary.txt"
+
+    if not ctx.print_only:
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = (
+        f"{module_cmd('GRIT')} && "
+        f"python3 {_PAF_TOP_TARGETS_SCRIPT} {paf_file} --top1-out {top1_file} "
+        f"--top_longest > {summary_file}"
+    )
+    _run(cmd, ctx.print_only)
+    if ctx.print_only:
+        return
+
+    outputs = collect_outputs(_OUTPUT_SPECS_STATS, run_dir, ctx.tol_id)
+    if ctx.tracker and run_dir:
+        ctx.tracker.finish(
+            "fastga_stats", run_dir, "success", outputs=outputs, untracked=ctx.untracked
+        )
+
+    _print_top1_table(top1_file)
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +253,8 @@ def fastga_cmd(ctx, reference):
 @click.command("fastga-stats", cls=GritCommand)
 @click.pass_context
 def fastga_stats_cmd(ctx):
-    """Print the per-query best-target-by-coverage table from the latest fastga run."""
+    """Compute and print the per-query best-target-by-coverage table from the
+    latest fastga run's PAF."""
     from grit.core.click_cli import build_context
 
     curation_ctx = build_context(ctx.obj)

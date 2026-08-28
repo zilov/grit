@@ -66,6 +66,10 @@ STEP_MANIFESTS: dict[str, dict] = {
         "dir": "run_dir",
         "files": ["*.idx", "*FastGA.paf"],
     },
+    "fastga_stats": {
+        "dir": "run_dir",
+        "files": ["*.top1_targets.tsv"],
+    },
     "busco_synteny": {
         "dir": "run_dir",
         "files": ["*.png"],

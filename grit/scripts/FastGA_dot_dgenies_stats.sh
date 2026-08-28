@@ -4,10 +4,10 @@
 ## Uses RagTag python script to convert from paf to delta (https://github.com/malonge/RagTag/wiki/file-utilities#paf2delta)
 ## Need to be in curation_v2 env.
 
-## Usage: sh /software/grit/projects/vgp_curation_scripts/FastGA_dot.sh <ref.fa> <query.fa> <out_prefix> <outdir> <top_targets_script>
+## Usage: sh /software/grit/projects/vgp_curation_scripts/FastGA_dot.sh <ref.fa> <query.fa> <out_prefix> <outdir>
 
-if [ "$#" -ne 5 ]; then
-    echo "Usage: $0 <ref.fa> <query.fa> <out_prefix> <outdir> <top_targets_script>"
+if [ "$#" -ne 4 ]; then
+    echo "Usage: $0 <ref.fa> <query.fa> <out_prefix> <outdir>"
     exit 1
 fi
 
@@ -15,7 +15,6 @@ ref=$(realpath "$1")
 query=$(realpath "$2")
 prefix=$3
 outdir=$4
-top_targets_script=$5
 
 # Create output directory if it doesn't exist
 mkdir -p ${outdir}
@@ -50,10 +49,6 @@ ALNchain ${prefix}_FastGA.1aln -o${prefix}_chained
 echo "Converting raw alignment to PAF..."
 ALNtoPAF -m ${prefix}_FastGA.1aln > ${prefix}_FastGA.paf
 
-# Top-targets summary, generated right away since the raw PAF is on disk in this job
-echo "Generating top-targets summary..."
-python3 ${top_targets_script} ${prefix}_FastGA.paf --top1-out ${prefix}.top1_targets.tsv --top_longest > ${prefix}.top_targets_summary.txt
-
 # Add NM tag to cigar string
 cut -f14 ${prefix}_FastGA.paf  | sed 's/df/NM/g' > tmp; cut -f1-14 ${prefix}_FastGA.paf  | paste - tmp > tmp2; cut -f15 ${prefix}_FastGA.paf  | paste tmp2 - > ${prefix}_FastGA_add_NM.paf
 
@@ -63,13 +58,13 @@ python /software/grit/projects/vgp_curation_scripts/ragtag_paf2delta.py ${prefix
 
 # Run dot prep.
 echo "Running DotPrep for raw alignment..."
-DotPrep.py --overview 10000000 --delta ${prefix}_FastGA_add_NM.delta --out ${prefix}_FastGA_add_NM  
+DotPrep.py --overview 10000000 --delta ${prefix}_FastGA_add_NM.delta --out ${prefix}_FastGA_add_NM
 
 ## Convert chained alignment
 
 # Covert to paf with fastGA tool.
 echo "Converting chained alignment to PAF..."
-ALNtoPAF -m ${prefix}_chained.1aln > ${prefix}_chained.paf 
+ALNtoPAF -m ${prefix}_chained.1aln > ${prefix}_chained.paf
 
 # Add NM tag to cigar string
 cut -f14 ${prefix}_chained.paf  | sed 's/df/NM/g' > tmp; cut -f1-14 ${prefix}_chained.paf  | paste - tmp > tmp2; cut -f15 ${prefix}_chained.paf  | paste tmp2 - > ${prefix}_chained_add_NM.paf
@@ -80,7 +75,7 @@ python /software/grit/projects/vgp_curation_scripts/ragtag_paf2delta.py ${prefix
 
 # Run dot prep.
 echo "Running DotPrep for chained alignment..."
-DotPrep.py --overview 10000000 --delta ${prefix}_chained_add_NM.delta --out ${prefix}_chained_add_NM 
+DotPrep.py --overview 10000000 --delta ${prefix}_chained_add_NM.delta --out ${prefix}_chained_add_NM
 
 # Clean up
 echo "Cleaning up temporary files..."

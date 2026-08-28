@@ -847,6 +847,7 @@ def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
         "hic_remapping": ("grit.steps.post_curation.hic_remapping", "_OUTPUT_SPECS"),
         "hic_remapping_hap2": ("grit.steps.post_curation.hic_remapping", "_OUTPUT_SPECS_HAP2"),
         "fastga": ("grit.steps.optional.fastga", "_OUTPUT_SPECS"),
+        "fastga_stats": ("grit.steps.optional.fastga", "_OUTPUT_SPECS_STATS"),
         "busco_synteny": ("grit.steps.optional.busco_synteny", "_OUTPUT_SPECS"),
         "fastga_synteny": ("grit.steps.optional.fastga_synteny", "_OUTPUT_SPECS"),
         "microchromosome_second_shot": (
