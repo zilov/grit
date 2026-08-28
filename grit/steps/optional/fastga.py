@@ -157,7 +157,16 @@ def run_fastga_stats(ctx: CurationContext) -> None:
         )
     top1_file = Path(sorted(matches)[-1])
 
-    rows = [row for row in _read_top1_table(top1_file) if _is_super(row[0])]
+    all_rows = _read_top1_table(top1_file)
+    if any(len(row) != 4 for row in all_rows):
+        raise ValueError(
+            f"{top1_file} has the old 3-column top1_targets format from a "
+            f"previous fastga run.\n"
+            f"Run 'grit fastga -t {ctx.ticket_id}' to regenerate it in the "
+            f"current curated_fa_chr/ref_fa_chr/aligned_length/prc_of_ref_length format."
+        )
+
+    rows = [row for row in all_rows if _is_super(row[0])]
     if not rows:
         log.warning("No SUPER_* rows found in %s", top1_file)
         return

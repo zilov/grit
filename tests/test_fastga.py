@@ -126,6 +126,29 @@ def test_run_fastga_stats_raises_when_no_top1_table(mock_find_latest_dir, mock_c
         pass
 
 
+@patch("grit.steps.optional.fastga.find_latest_dir")
+def test_run_fastga_stats_raises_clear_error_on_old_3_column_format(
+    mock_find_latest_dir, mock_ctx, tmp_path
+):
+    """A top1_targets.tsv left over from a fastga run predating the
+    coverage-based rewrite has the old 3-column format and must fail with a
+    clear message telling the curator to rerun fastga, not a bare unpack
+    ValueError from the table-rendering loop."""
+    run_dir = tmp_path / "fastga_run"
+    run_dir.mkdir()
+    top1_file = run_dir / "GCA_x_vs_y.top1_targets.tsv"
+    top1_file.write_text("super\ttop_longest_ref_chr\tlen\nSUPER_1\tchr1\t500\n")
+    mock_find_latest_dir.return_value = run_dir
+    mock_ctx.ticket_id = "RC-4896"
+
+    try:
+        run_fastga_stats(mock_ctx)
+        raise AssertionError("expected ValueError")
+    except ValueError as exc:
+        assert "old 3-column" in str(exc)
+        assert "grit fastga -t RC-4896" in str(exc)
+
+
 @patch("grit.steps.optional.fastga._submit_bsub")
 @patch("grit.steps.optional.fastga.find_reheadered_reference")
 @patch("grit.steps.optional.fastga.find_canonical_fa")
