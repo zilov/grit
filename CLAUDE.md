@@ -43,6 +43,16 @@ All shell commands go through `_run(cmd, print_only)` in `grit/utils/helpers.py`
 
 Any step that shells out to an external script/pipeline should `cd {run_dir} && ...` before invoking it, even when the tool also takes an explicit output-dir flag — nextflow pipelines (e.g. `curationpretext`) always write `.nextflow.log`/`work/`/`.nextflow/` into the invoking cwd regardless of other flags, and `cd`-ing first keeps stray files out of wherever grit happened to be run from. See `fastga.py`, `hic_remapping.py`, `find_reference.py`, `sex_matcher.py` for the pattern.
 
+**Synchronous (non-bsub) tracked steps:** most tracked steps submit a bsub
+job and rely on `_state_update_epilogue` to report completion later. A step
+that does real work synchronously in-process (e.g. `fastga-stats`, which
+runs a fast local PAF-parsing script rather than an HPC job) skips
+`_submit_bsub`/`_state_update_epilogue`/`record_job` entirely: call
+`ctx.tracker.start(step, ...)`, do the work via `_run()` (so `print_only`
+is still respected), then call `ctx.tracker.finish(step, run_dir, "success",
+outputs=...)` directly once the work is done. See `run_fastga_stats` in
+`grit/steps/optional/fastga.py`.
+
 ### HPC module loading
 
 `grit/utils/modules.py` centralises all `module load` version strings in `MODULE_VERSIONS`. Step functions call `module_cmd("TOOL_KEY")` to get the shell fragment `". /etc/profile.d/modules.sh && module purge && module load <module>"`. Updating a tool version = changing one line in `modules.py`.

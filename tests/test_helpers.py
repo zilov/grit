@@ -220,3 +220,19 @@ def test_write_fake_outputs_round_trips_through_collect_outputs_fastga(tmp_path)
 
     found = collect_outputs(_OUTPUT_SPECS, run_dir, "sDipInt39")
     assert found == written
+
+
+def test_write_fake_outputs_round_trips_through_collect_outputs_fastga_stats(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    written = write_fake_outputs("fastga_stats", run_dir, "sDipInt39")
+
+    assert written
+    for key, path in written.items():
+        assert Path(path).is_file()
+
+    from grit.steps.optional.fastga import _OUTPUT_SPECS_STATS
+
+    found = collect_outputs(_OUTPUT_SPECS_STATS, run_dir, "sDipInt39")
+    assert found == written

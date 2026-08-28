@@ -304,6 +304,7 @@ def _auto_step_outputs(
 # be offered here.
 _SCP_TIP_STEPS = [
     ("fastga", "FastGA results", None),
+    ("fastga_stats", "fastga-stats results", None),
     ("busco_synteny", "busco-synteny plot", None),
     ("fastga_synteny", "fastga-synteny plot", None),
     ("hic_remapping", "remapped pretext map", ["hap1_normal_pretext"]),
@@ -342,7 +343,7 @@ def _print_scp_tips(step_latest: dict[str, dict], farm_host: str, tol_id: str) -
 # Steps whose recorded `outputs` hold a specific text file worth reading
 # directly on the farm (via `less`) rather than downloading.
 _LESS_TIP_STEPS = [
-    ("fastga", "top_targets_summary", "top alignment targets"),
+    ("fastga_stats", "top_targets_summary", "top alignment targets"),
 ]
 
 
