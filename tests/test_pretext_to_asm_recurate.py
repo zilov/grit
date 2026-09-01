@@ -204,7 +204,7 @@ def test_haplotig_merge_neither_tracks_nothing(
 @patch("grit.steps.post_curation.pretext_to_asm._run")
 @patch("grit.steps.post_curation.pretext_to_asm.glob.glob")
 @patch("grit.steps.post_curation.pretext_to_asm_recurate.find_canonical_fa")
-def test_prints_ordering_tip(mock_find_fa, mock_glob, mock_run, mock_ctx, tmp_path, capsys):
+def test_prints_canonical_input_tip(mock_find_fa, mock_glob, mock_run, mock_ctx, tmp_path, capsys):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.hap1_prefix = "hap1"
@@ -216,7 +216,7 @@ def test_prints_ordering_tip(mock_find_fa, mock_glob, mock_run, mock_ctx, tmp_pa
     run_pretext_to_asm_recurate(mock_ctx, "hap1", "pretext_to_asm_recurate")
 
     out = capsys.readouterr().out
-    assert "flat mtime" in out
+    assert "current canonical FASTA as input" in out
 
 
 @patch("grit.steps.post_curation.pretext_to_asm._run")

@@ -431,13 +431,13 @@ def show_ticket_history(
         if job_ids:
             live_job_statuses = _check_bjobs(job_ids)
 
-    # Aggregate by step: last run per step
+    # Aggregate by step: full run history per step (in first-seen step order),
+    # plus the last run per step (used only by the tips below, not the table).
+    step_history: dict[str, list[dict]] = {}
     step_latest: dict[str, dict] = {}
-    step_counts: dict[str, int] = {}
     for r in history:
         step = r.get("step", "")
-        if r.get("status") in ("success", "failed"):
-            step_counts[step] = step_counts.get(step, 0) + 1
+        step_history.setdefault(step, []).append(r)
         step_latest[step] = r
 
     table = Table(
@@ -446,7 +446,6 @@ def show_ticket_history(
         header_style="bold cyan",
     )
     table.add_column("Step")
-    table.add_column("Runs", justify="right")
     table.add_column("Last Run")
     table.add_column("Status")
     table.add_column("Canonical", justify="center", no_wrap=True)
@@ -454,84 +453,84 @@ def show_ticket_history(
 
     memlimit_steps: list[str] = []
 
-    for step, entry in step_latest.items():
-        status = entry.get("status", "")
-        job_id = entry.get("job_id") or ""
-        ts = entry.get("timestamp", "")
-        run_dir = Path(entry["run_dir"]) if entry.get("run_dir") else None
+    for step, entries in step_history.items():
+        for entry in entries:
+            status = entry.get("status", "")
+            job_id = entry.get("job_id") or ""
+            ts = entry.get("timestamp", "")
+            run_dir = Path(entry["run_dir"]) if entry.get("run_dir") else None
 
-        # Enrich bsub job status from live bjobs query
-        if status == "started" and job_id and job_id in live_job_statuses:
-            bjobs_status = live_job_statuses[job_id]
-            if bjobs_status in ("DONE", "gone"):
-                # LSF reports the job itself as finished, but for steps that
-                # shell out to an external pipeline (e.g. hic_remapping's
-                # curationpretext.sh) grit never submitted the job itself, so
-                # no -Ep epilogue was wired up to confirm real completion.
-                # Check for the expected output files now rather than waiting
-                # for the job to age out of `bjobs` history (which can take
-                # hours) before ever verifying.
-                if tracker.verify_outputs(step, tol_id, run_dir) in ("ok", "no_files"):
-                    outputs = _auto_step_outputs(
-                        step,
-                        run_dir,
-                        tol_id,
-                        ticket.get("hap1_prefix", "hap1"),
-                        ticket.get("hap2_prefix", "hap2"),
-                    )
-                    tracker.finish(step, run_dir, "success", outputs=outputs or None)
-                    entry["outputs"] = outputs
-                    entry["status"] = "success"
-                    status = "success"
-                else:
-                    status = "done (check)" if bjobs_status == "DONE" else "unknown (gone)"
-            elif bjobs_status == "EXIT":
-                status = "failed (job exited)"
-            elif bjobs_status in ("RUN", "PEND"):
-                status = f"running ({bjobs_status})"
+            # Enrich bsub job status from live bjobs query
+            if status == "started" and job_id and job_id in live_job_statuses:
+                bjobs_status = live_job_statuses[job_id]
+                if bjobs_status in ("DONE", "gone"):
+                    # LSF reports the job itself as finished, but for steps that
+                    # shell out to an external pipeline (e.g. hic_remapping's
+                    # curationpretext.sh) grit never submitted the job itself, so
+                    # no -Ep epilogue was wired up to confirm real completion.
+                    # Check for the expected output files now rather than waiting
+                    # for the job to age out of `bjobs` history (which can take
+                    # hours) before ever verifying.
+                    if tracker.verify_outputs(step, tol_id, run_dir) in ("ok", "no_files"):
+                        outputs = _auto_step_outputs(
+                            step,
+                            run_dir,
+                            tol_id,
+                            ticket.get("hap1_prefix", "hap1"),
+                            ticket.get("hap2_prefix", "hap2"),
+                        )
+                        tracker.finish(step, run_dir, "success", outputs=outputs or None)
+                        entry["outputs"] = outputs
+                        entry["status"] = "success"
+                        status = "success"
+                    else:
+                        status = "done (check)" if bjobs_status == "DONE" else "unknown (gone)"
+                elif bjobs_status == "EXIT":
+                    status = "failed (job exited)"
+                elif bjobs_status in ("RUN", "PEND"):
+                    status = f"running ({bjobs_status})"
 
-        if status == "started":
-            status = "running"
+            if status == "started":
+                status = "running"
 
-        # Surface the LSF TERM_ reason (e.g. TERM_MEMLIMIT) for failed steps
-        if "fail" in status and run_dir is not None:
-            log_file = find_lsf_log(run_dir)
-            reason = parse_lsf_exit_reason(log_file) if log_file else None
-            if reason:
-                status = f"{status} ({reason})"
-                if reason == "TERM_MEMLIMIT":
-                    memlimit_steps.append(step)
+            # Surface the LSF TERM_ reason (e.g. TERM_MEMLIMIT) for failed steps
+            if "fail" in status and run_dir is not None:
+                log_file = find_lsf_log(run_dir)
+                reason = parse_lsf_exit_reason(log_file) if log_file else None
+                if reason:
+                    status = f"{status} ({reason})"
+                    if reason == "TERM_MEMLIMIT":
+                        memlimit_steps.append(step)
 
-        style = ""
-        if "success" in status:
-            style = "green"
-        elif "fail" in status or "EXIT" in status:
-            style = "red"
-        elif "running" in status or status == "started":
-            style = "yellow"
-        elif status == "untracked":
-            style = "dim"
+            style = ""
+            if "success" in status:
+                style = "green"
+            elif "fail" in status or "EXIT" in status:
+                style = "red"
+            elif "running" in status or status == "started":
+                style = "yellow"
+            elif status == "untracked":
+                style = "dim"
 
-        outputs = entry.get("outputs") or {}
-        canonical_mark = _canonical_mark(outputs, canonical_index, canonical_haps)
+            outputs = entry.get("outputs") or {}
+            canonical_mark = _canonical_mark(outputs, canonical_index, canonical_haps)
 
-        table.add_row(
-            step,
-            str(step_counts.get(step, 1)),
-            ts,
-            f"[{style}]{status}[/{style}]" if style else status,
-            canonical_mark,
-            job_id,
-        )
+            table.add_row(
+                step,
+                ts,
+                f"[{style}]{status}[/{style}]" if style else status,
+                canonical_mark,
+                job_id,
+            )
 
     agp_files = sorted(workdir.glob(f"{tol_id}*.pretext.agp_1"), key=lambda p: p.stat().st_mtime)
     if agp_files:
         agp_mtime = datetime.datetime.fromtimestamp(agp_files[-1].stat().st_mtime).strftime(
             "%Y-%m-%dT%H:%M:%S"
         )
-        table.add_row("agp_copied", "-", agp_mtime, "[green]found[/green]", "", "")
+        table.add_row("agp_copied", agp_mtime, "[green]found[/green]", "", "")
     else:
-        table.add_row("agp_copied", "-", "", "[yellow]missing[/yellow]", "", "")
+        table.add_row("agp_copied", "", "[yellow]missing[/yellow]", "", "")
 
     console.print(table)
     console.print()
@@ -588,6 +587,22 @@ def show_ticket_history(
         print_tip(
             f"HiC remapping done — next step:\n"
             f"[bold cyan]grit finalize-qc -t {ticket_id}[/bold cyan]"
+        )
+
+    if step_latest.get("hic_remapping", {}).get("status") == "success":
+        print_tip(
+            "Curation of curated map (optional, before finalize-qc):\n"
+            "1. cp the curated map locally, make edits — tag haplotigs/contaminants/unlocs "
+            "as usual (don't forget to tag old unlocs), paint scaffolds, create an AGP file.\n"
+            "2. scp the AGP file to the recurate folder:\n"
+            f"   [bold cyan]scp ~/curations/work/{tol_id}/{tol_id}*remapped*.agp_1 "
+            f"{farm_host}:{workdir}/recurate/[/bold cyan]\n"
+            "3. Run it: "
+            f"[bold cyan]grit post-curation-recurate -t {ticket_id}[/bold cyan] "
+            f"(or [bold cyan]grit pretext-to-asm-recurate -t {ticket_id}[/bold cyan])\n"
+            "4. Prefer running blast-contaminants / microchromosome-combine / "
+            "rename-and-orient before this — recuration uses the current canonical FASTA "
+            "as input."
         )
 
     if (
