@@ -78,7 +78,9 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
 
 ## Key conventions
 
-- **`--untracked`** — for steps that thread `ctx.untracked` through, every
+- **`--untracked`** — injected into every step by `GritCommand` (same as
+  `-t`/`--print-only`); all `tracker.start()` call sites pass
+  `untracked=ctx.untracked`. Every
   `ctx.tracker.finish(...)` call for that run (including the bsub `-Ep`
   epilogue path, via `_state_update_epilogue(..., untracked=ctx.untracked)`)
   must also pass `untracked=ctx.untracked`. `RunTracker.finish()` writes
@@ -87,7 +89,12 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
   marker with `success`/`failed`, making the run canonical the moment it
   completes (the exact bug fixed in `TODO/tiny.md`). Outputs are still
   recorded on an untracked finish, so `grit retrack -t <ticket> -s <step>` can
-  later promote the run to canonical using its own recorded outputs.
+  later promote the run to canonical using its own recorded outputs. The
+  recovery paths that finish *without* `untracked` (`_refresh_pending_jobs`,
+  `_resolve_gone_job`, `status`'s bjobs fallback, `sex_matcher`'s resubmit
+  guard) only act on records with `status="started"`, which an untracked run
+  never has — for the same reason `record_job()` finds nothing to patch, so an
+  untracked bsub run stores no `job_id` and can't be recovered via bjobs.
 - **No global state** — everything flows through `ctx`
 - **`print_only` everywhere** — every step respects `ctx.print_only`; `_run()` enforces it
 - **`--dry-run`** — a separate mode from `print_only`, for exercising step-sequencing/
@@ -131,7 +138,7 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
   step-sequencing logic this feature exists to exercise.
 
   Per-step design rationale and historical context for each dry-run branch
-  lives in `TODO/done/45_dry_run_mode.md` and `TODO/46_dry_run_remaining_steps.md`,
+  lives in `TODO/done/45_dry_run_mode.md` and `TODO/done/46_dry_run_remaining_steps.md`,
   not here.
 - **`is_single_hap(ctx)`** (`grit/utils/helpers.py`) — true for a `primary`/`paternal`
   (single-hap) assembly; the shared check for gating hap2-fabrication bugs, used by
@@ -169,7 +176,7 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
 
 Design docs and implementation plans for non-trivial changes live in
 `TODO/<number>_<slug>.md` (next number = highest existing + 1), with
-`## Problem` / `## Design` sections — see `TODO/38_busco_shared_step.md` for
+`## Problem` / `## Design` sections — see `TODO/done/38_busco_shared_step.md` for
 the reference format. Small one-off fixes go in `TODO/tiny.md` instead of
 getting their own file. Move a file to `TODO/done/` once implemented. Do not
 use `docs/superpowers/specs/`.

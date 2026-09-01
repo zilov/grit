@@ -34,13 +34,16 @@ Small fixes and improvements — close in one batch when still relevant.
   run that was `--untracked` from the start, not just one marked untracked
   after the fact, using the outputs its own finish() call recorded).
 
-- [ ] **Generalize `--untracked` to all steps** — currently only some steps
-  wire `ctx.untracked` through to `tracker.start(..., untracked=...)`. Worth
-  making this a default option every step gets (via `GritCommand` base class,
-  same pattern as `-t`/`--print-only`) rather than something each step opts
-  into individually. Came up while designing TODO 38 (shared `busco` step)
-  as the mechanism for running a step without it counting as canonical
-  registry state.
+- [x] **Generalize `--untracked` to all steps** — done: `GritCommand` injects
+  `--untracked/-u` for every step (same pattern as `-t`/`--print-only`), and
+  all 16 `tracker.start()` call sites pass `untracked=ctx.untracked`. The
+  `finish()` calls that don't take it are the recovery/promotion paths
+  (`_refresh_pending_jobs`, `_resolve_gone_job`, `status`'s bjobs fallback,
+  `sex_matcher`'s resubmit guard, `retrack`), which only act on records with
+  `status="started"` — an untracked run is written as `status="untracked"`
+  from the start, so it never reaches them. Known limitation: for the same
+  reason `record_job()` finds no `"started"` record to patch, so an untracked
+  bsub run stores no `job_id` and can't be recovered via bjobs.
 
 - [x] **Canonical went backwards: a fresh `pretext-to-asm` left `chr list`
   canonical on the older `rename-and-orient` run (RC-4833)** — the newest
