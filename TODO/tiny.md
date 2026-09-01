@@ -60,3 +60,25 @@ Small fixes and improvements — close in one batch when still relevant.
   canonical file sitting in the row's own run dir, so the step-history
   "Canonical" column agrees with the canonical-files table.
 
+- [ ] **Validate the AGP has a `primary` tag for `primary` + `combine_for_curation`
+  tickets** — a single-hap (`primary`) assembly curated in a combined window
+  needs the primary sequences tagged as such in the AGP; without the tag
+  pretext-to-asm can't tell the primary assembly apart from what was merged
+  into the map, and the run produces a wrong/empty primary FASTA instead of
+  failing. Add a pre-run check on the AGP picked up by
+  `_run_pretext_to_asm_core` (gate it on `is_single_hap(ctx) and
+  ctx.combine_for_curation`): if no `primary` tag is present anywhere in the
+  file, fail before submitting anything, with a message telling the curator to
+  tag the primary scaffolds in PretextView and re-export the AGP.
+
+- [ ] **`pretext-to-asm-recurate`: fail when pre-existing unlocs lost their
+  `unloc` tag** — on a second curation round the scaffolds carried over from
+  the first round already have "unloc" in their names, but the tag itself has
+  to be re-applied in PretextView; curators forget, and the recurated assembly
+  silently promotes those unlocs to normal scaffolds. `grit status`'s recurate
+  tip already says "don't forget to tag old unlocs" (`status.py`), so turn the
+  reminder into a check: in the recurate step, scan the input AGP for SUPER
+  entries whose name contains `unloc` but which carry no `unloc` tag, and fail
+  with the list of offending scaffolds plus a tip to re-tag them and re-export
+  the AGP.
+
