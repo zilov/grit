@@ -750,6 +750,26 @@ def test_show_global_status_shows_ticket_age_and_done_stats(tmp_path, monkeypatc
     assert "Last 3 months:" in out
 
 
+def test_show_global_status_done_total_counts_cleaned_up_tickets(tmp_path, monkeypatch, capsys):
+    """The "Done: N total" stat is historical throughput — it must count
+    tickets already marked cleaned_up by `grit cleanup`, unlike the
+    "Recently completed" list above it (which intentionally hides them)."""
+    registry_dir = tmp_path / ".grit_reg"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
+    reg = RegistryManager(registry_dir=registry_dir)
+
+    for ticket_id in ("RC-OLD", "RC-RECENT"):
+        workdir = tmp_path / ticket_id
+        workdir.mkdir()
+        reg.add_ticket(ticket_id, ticket_id, "species", workdir, status="done")
+    reg.mark_cleaned_up("RC-OLD")
+
+    show_global_status(reg)
+
+    out = capsys.readouterr().out
+    assert "Done: 2 total" in out
+
+
 def test_show_global_status_reads_from_passed_registry_not_default(tmp_path, monkeypatch, capsys):
     """RunTracker(workdir) inside show_global_status must read from the `registry`
     argument it's already given, not lazily build its own default RegistryManager()

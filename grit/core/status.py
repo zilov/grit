@@ -126,7 +126,10 @@ def show_global_status(registry) -> None:
                 f"  [dim]{t['ticket_id']} ({t.get('tol_id', '')}) — {t.get('status', '')}[/dim]"
             )
 
-    all_done = registry.done_tickets(limit=None)
+    # Include already-cleaned-up tickets here (unlike the "Recently completed"
+    # list above, which intentionally only surfaces done_tickets()'s still-relevant
+    # set) — this is a historical throughput count, not a "what to look at" list.
+    all_done = [t for t in registry._load() if t.get("status") == "done"]
     completed_dates = [d for t in all_done if (d := _last_ticket_timestamp(t)) is not None]
 
     now = datetime.datetime.now(datetime.timezone.utc)
