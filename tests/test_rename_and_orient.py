@@ -422,3 +422,108 @@ def test_chained_dry_run_forward_chain_through_canonical_pool(mock_ctx, tmp_path
     rename_output = Path(mock_ctx.tracker.get_output("rename_and_orient", "hap1_fa"))
     assert rename_output != blast_output
     assert find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix) == rename_output
+
+
+@patch("grit.steps.optional.rename_and_orient._submit_bsub")
+@patch("grit.steps.optional.rename_and_orient.glob.glob")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_mapping_table_skips_paf_lookup(mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path):
+    """--mapping-table runs without FastGA: no PAF glob, --mapping-table in the command."""
+    mock_ctx.workdir = tmp_path / "workdir"
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.print_only = False
+
+    mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
+    mock_bsub.return_value = "12345"
+
+    mapping_tsv = tmp_path / "prebuilt.mapping.tsv"
+    mapping_tsv.write_text("query\trenamed_to\tneeds_reverse_complement\n")
+
+    run_rename_and_orient(mock_ctx, mapping_table=mapping_tsv)
+
+    mock_glob.assert_not_called()
+    cmd = mock_bsub.call_args[0][0]
+    assert f"--mapping-table {mapping_tsv}" in cmd
+    assert "--paf" not in cmd
+
+
+@patch("grit.steps.optional.rename_and_orient._submit_bsub")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_mapping_table_missing_raises(mock_find_fa, mock_bsub, mock_ctx, tmp_path):
+    mock_ctx.workdir = tmp_path / "workdir"
+    mock_ctx.print_only = False
+    mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
+
+    with pytest.raises(FileNotFoundError, match="Mapping table not found"):
+        run_rename_and_orient(mock_ctx, mapping_table=tmp_path / "nope.tsv")
+
+    mock_bsub.assert_not_called()
+
+
+@patch("grit.steps.optional.rename_and_orient._submit_bsub")
+@patch("grit.steps.optional.rename_and_orient.glob.glob")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_mapping_table_reused_for_hap2(mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path):
+    """With an explicit mapping table hap2 doesn't wait for hap1's own table."""
+    mock_ctx.workdir = tmp_path / "workdir"
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.print_only = False
+
+    mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
+    mock_bsub.return_value = "12345"
+
+    mapping_tsv = tmp_path / "prebuilt.mapping.tsv"
+    mapping_tsv.touch()
+
+    run_rename_and_orient(mock_ctx, run_hap2=True, mapping_table=mapping_tsv)
+
+    assert mock_bsub.call_count == 2
+    for call in mock_bsub.call_args_list:
+        assert f"--mapping-table {mapping_tsv}" in call[0][0]
+
+
+@patch("grit.steps.optional.rename_and_orient._submit_bsub")
+@patch("grit.steps.optional.rename_and_orient.glob.glob")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_min_coverage_and_plot_alignments_passed(
+    mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path
+):
+    mock_ctx.workdir = tmp_path / "workdir"
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.print_only = False
+
+    mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
+    mock_glob.return_value = [str(tmp_path / "sDipInt39_vs_ref.FastGA.paf")]
+    mock_bsub.return_value = "12345"
+
+    run_rename_and_orient(mock_ctx, min_coverage=0.8, plot_alignments=True)
+
+    cmd = mock_bsub.call_args[0][0]
+    assert "--min-coverage 0.8" in cmd
+    assert "--plot-alignments" in cmd
+
+
+@patch("grit.steps.optional.rename_and_orient._submit_bsub")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_plot_alignments_dropped_in_mapping_table_mode(mock_find_fa, mock_bsub, mock_ctx, tmp_path):
+    mock_ctx.workdir = tmp_path / "workdir"
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.print_only = False
+
+    mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
+    mock_bsub.return_value = "12345"
+
+    mapping_tsv = tmp_path / "prebuilt.mapping.tsv"
+    mapping_tsv.touch()
+
+    run_rename_and_orient(mock_ctx, mapping_table=mapping_tsv, plot_alignments=True)
+
+    assert "--plot-alignments" not in mock_bsub.call_args[0][0]

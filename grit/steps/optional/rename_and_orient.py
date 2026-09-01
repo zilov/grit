@@ -42,17 +42,18 @@ _OUTPUT_SPECS_HAP2: list[tuple[str, str, list[str]]] = [
 def _submit_rename_and_orient_for_hap(
     ctx: CurationContext,
     hap_prefix: str,
-    paf_file: Path,
+    paf_file: Path | None,
     step_name: str,
     *,
     mapping_table: Path | None = None,
+    min_coverage: float | None = None,
+    plot_alignments: bool = False,
 ) -> str | None:
     """
     Submit a bsub job running rename-and-orient for one haplotype.
 
-    For hap1: uses ``--paf`` for alignment.
-    For hap2: pass ``mapping_table`` (the .mapping.tsv from the hap1 run) to
-    use ``--mapping-table`` instead of re-aligning.
+    Uses ``--mapping-table`` when ``mapping_table`` is given (no alignment
+    needed), otherwise ``--paf`` with the FastGA alignment.
 
     Returns the bsub job ID (or None in print_only mode).
     """
@@ -82,6 +83,16 @@ def _submit_rename_and_orient_for_hap(
         f"--output-dir {run_dir} "
         f"--output-prefix {prefix}"
     )
+    if min_coverage is not None:
+        inner_cmd += f" --min-coverage {min_coverage}"
+    if plot_alignments:
+        if mapping_table:
+            # Plots are drawn from PAF alignment blocks, which mapping-table mode never reads.
+            log.warning(
+                "--plot-alignments ignored for %s: no PAF in mapping-table mode", hap_prefix
+            )
+        else:
+            inner_cmd += " --plot-alignments"
 
     bsub_opts = build_bsub_opts(
         group="team135",
@@ -126,7 +137,14 @@ def _dry_run_rename_and_orient_for_hap(ctx: CurationContext, step_name: str) -> 
 # ---------------------------------------------------------------------------
 
 
-def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> None:
+def run_rename_and_orient(
+    ctx: CurationContext,
+    *,
+    run_hap2: bool = False,
+    mapping_table: Path | None = None,
+    min_coverage: float | None = None,
+    plot_alignments: bool = False,
+) -> None:
     """
     Renames and orients chromosomes in the curated FASTA based on FastGA PAF alignment.
 
@@ -134,6 +152,9 @@ def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> No
     also submit hap2 — but only if the hap1 mapping table already exists
     (i.e. hap1 has completed). If not, a message is printed asking to re-run
     with ``--hap2`` after hap1 finishes.
+
+    Pass ``mapping_table`` to reuse a pre-built mapping TSV for every haplotype
+    instead of a FastGA PAF — no ``grit fastga`` run is needed then.
 
     Output files land in each run's own tracked run_dir under
     ``{workdir}/rename_and_orient/`` (hap1) or ``{workdir}/rename_and_orient_hap2/`` (hap2).
@@ -149,30 +170,49 @@ def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> No
         print_done(f"[dry-run] Renamed FASTA → {outputs.get('hap1_fa', ctx.workdir)}")
         return
 
-    # --- find FastGA PAF ---
-    fastga_dir = find_latest_dir(ctx, "fastga")
-    paf_matches = glob.glob(str(fastga_dir / "*FastGA.paf"))
-    if not paf_matches:
-        raise FileNotFoundError(
-            f"No FastGA PAF found in {fastga_dir}\nRun 'grit fastga -t {ctx.ticket_id}' first."
-        )
-    paf_file = Path(sorted(paf_matches)[-1])
-    log.info("FastGA PAF: %s", paf_file)
+    paf_file: Path | None = None
+    if mapping_table is not None:
+        mapping_table = mapping_table.expanduser()
+        if not ctx.print_only and not mapping_table.exists():
+            raise FileNotFoundError(f"Mapping table not found: {mapping_table}")
+        log.info("Mapping table: %s (skipping FastGA PAF)", mapping_table)
+    else:
+        # --- find FastGA PAF ---
+        fastga_dir = find_latest_dir(ctx, "fastga")
+        paf_matches = glob.glob(str(fastga_dir / "*FastGA.paf"))
+        if not paf_matches:
+            raise FileNotFoundError(
+                f"No FastGA PAF found in {fastga_dir}\nRun 'grit fastga -t {ctx.ticket_id}' first."
+            )
+        paf_file = Path(sorted(paf_matches)[-1])
+        log.info("FastGA PAF: %s", paf_file)
 
-    _submit_rename_and_orient_for_hap(ctx, ctx.hap1_prefix, paf_file, "rename_and_orient")
+    _submit_rename_and_orient_for_hap(
+        ctx,
+        ctx.hap1_prefix,
+        paf_file,
+        "rename_and_orient",
+        mapping_table=mapping_table,
+        min_coverage=min_coverage,
+        plot_alignments=plot_alignments,
+    )
 
     if run_hap2:
         print_step_header(ctx.ticket_id, ctx.tol_id, f"Rename and orient ({ctx.hap2_prefix})")
-        hap1_run_dir = find_latest_dir(ctx, "rename_and_orient")
-        hap1_prefix = f"{ctx.tol_id}.{ctx.hap1_prefix}.primary.renamed"
-        mapping_tsv = hap1_run_dir / f"{hap1_prefix}.mapping.tsv"
+        # With an explicit mapping table there is nothing to wait for — hap2
+        # reuses the same table as hap1 instead of the one hap1 produces.
+        mapping_tsv = mapping_table
+        if mapping_tsv is None:
+            hap1_run_dir = find_latest_dir(ctx, "rename_and_orient")
+            hap1_prefix = f"{ctx.tol_id}.{ctx.hap1_prefix}.primary.renamed"
+            mapping_tsv = hap1_run_dir / f"{hap1_prefix}.mapping.tsv"
 
-        if not ctx.print_only and not mapping_tsv.exists():
-            console.print(
-                f"\n[yellow]hap1 mapping table not found yet:[/yellow] {mapping_tsv}\n"
-                f"Re-run with [bold]--hap2[/bold] after hap1 completes."
-            )
-            return
+            if not ctx.print_only and not mapping_tsv.exists():
+                console.print(
+                    f"\n[yellow]hap1 mapping table not found yet:[/yellow] {mapping_tsv}\n"
+                    f"Re-run with [bold]--hap2[/bold] after hap1 completes."
+                )
+                return
 
         _submit_rename_and_orient_for_hap(
             ctx,
@@ -180,6 +220,7 @@ def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> No
             paf_file,
             "rename_and_orient_hap2",
             mapping_table=mapping_tsv,
+            min_coverage=min_coverage,
         )
 
     print_done(f"Job(s) submitted — output → {ctx.workdir / 'rename_and_orient*'}")
@@ -198,14 +239,42 @@ def run_rename_and_orient(ctx: CurationContext, *, run_hap2: bool = False) -> No
     default=False,
     help="Also rename and orient hap2 using the mapping table from hap1 run.",
 )
+@click.option(
+    "--mapping-table",
+    "-mt",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Pre-built mapping TSV to rename/orient with, instead of a FastGA PAF "
+    "(no 'grit fastga' run needed). Used for every haplotype.",
+)
+@click.option(
+    "--min-coverage",
+    "-c",
+    type=click.FloatRange(0.0, 1.0),
+    default=None,
+    help="Minimum coverage threshold for renaming (0.0-1.0)  [rename-and-orient default: 0.5]",
+)
+@click.option(
+    "--plot-alignments",
+    "-P",
+    is_flag=True,
+    default=False,
+    help="Generate scatter plots of PAF alignment blocks per chromosome (PAF mode only).",
+)
 @click.pass_context
-def rename_and_orient_cmd(ctx, run_hap2):
+def rename_and_orient_cmd(ctx, run_hap2, mapping_table, min_coverage, plot_alignments):
     """Rename and orient chromosomes in curated FASTA based on FastGA PAF alignment."""
     from grit.core.click_cli import build_context
 
     curation_ctx = build_context(ctx.obj)
     try:
-        run_rename_and_orient(curation_ctx, run_hap2=run_hap2)
+        run_rename_and_orient(
+            curation_ctx,
+            run_hap2=run_hap2,
+            mapping_table=mapping_table,
+            min_coverage=min_coverage,
+            plot_alignments=plot_alignments,
+        )
     except Exception:
         log.exception("rename-and-orient failed")
         raise SystemExit(1)
