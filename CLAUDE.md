@@ -114,7 +114,7 @@ External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `gr
   `GritCommand.invoke()` refuses `--dry-run` up front for every other (not yet
   ported) step with a `UsageError`. `status`/`untrack`/`retrack` support `--dry-run` as a
   group-level flag (`grit --dry-run status -t <ticket>`, never per-command); the
-  other plain `@cli.command`s (`done`/`reopen`/`remove`/`summary`/`cleanup`)
+  other plain `@cli.command`s (`done`/`reopen`/`remove`/`cleanup`)
   have no dry-run support and raise `UsageError` if `--dry-run` is passed, since
   they mutate the real registry/workdir. Reset the sandbox with
   `rm -rf ~/.grit/dry_run`. See `tests/local_smoke_test.sh`'s dry-run section

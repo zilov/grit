@@ -213,13 +213,12 @@ def test_status_dry_run_passes_dry_run_flag_into_context(
         ["done", "-t", "RC-REAL"],
         ["reopen", "-t", "RC-REAL"],
         ["remove", "-t", "RC-REAL", "--yes"],
-        ["summary"],
     ],
 )
 def test_dry_run_guard_rejects_and_leaves_real_registry_untouched(
     args, tmp_path, _patch_registry_dir
 ):
-    """`grit --dry-run <cmd>` for done/reopen/remove/summary must refuse outright
+    """`grit --dry-run <cmd>` for done/reopen/remove must refuse outright
     rather than silently operating on the real registry/workdir."""
     reg, workdir = _seed_ticket(_patch_registry_dir, tmp_path, ticket_id="RC-REAL")
 

@@ -678,6 +678,56 @@ def test_show_ticket_history_rename_and_orient_can_show_chr(tmp_path, monkeypatc
     assert "chr(1)" in rao_line
 
 
+def test_ticket_age_display_color_thresholds():
+    import datetime
+
+    from grit.core.status import _ticket_age_display
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    def added_at(days_ago):
+        return (now - datetime.timedelta(days=days_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    assert _ticket_age_display(added_at(3)) == "[green]3[/green]"
+    assert _ticket_age_display(added_at(15)) == "[yellow]15[/yellow]"
+    assert _ticket_age_display(added_at(25)) == "[red]25[/red]"
+    assert _ticket_age_display("") == ""
+
+
+def _set_added_at(reg, ticket_id, iso_ts):
+    tickets = reg._load()
+    for t in tickets:
+        if t["ticket_id"] == ticket_id:
+            t["added_at"] = iso_ts
+    reg._save(tickets)
+
+
+def test_show_global_status_shows_ticket_age_and_done_stats(tmp_path, monkeypatch, capsys):
+    import datetime
+
+    registry_dir = tmp_path / ".grit_reg"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
+    reg = RegistryManager(registry_dir=registry_dir)
+
+    workdir = tmp_path / "RC-1234"
+    workdir.mkdir()
+    reg.add_ticket("RC-1234", "sDipInt39", "species", workdir)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    added_at = (now - datetime.timedelta(days=15)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _set_added_at(reg, "RC-1234", added_at)
+
+    done_workdir = tmp_path / "RC-DONE"
+    done_workdir.mkdir()
+    reg.add_ticket("RC-DONE", "aTolDone1", "species", done_workdir, status="done")
+
+    show_global_status(reg)
+
+    out = capsys.readouterr().out
+    assert "15" in out
+    assert "Done: 1 total" in out
+    assert "last 3 months" in out
+
+
 def test_show_global_status_reads_from_passed_registry_not_default(tmp_path, monkeypatch, capsys):
     """RunTracker(workdir) inside show_global_status must read from the `registry`
     argument it's already given, not lazily build its own default RegistryManager()

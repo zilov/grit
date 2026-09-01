@@ -453,18 +453,5 @@ def remove_cmd(ctx, ticket, yes):
     print_done(f"{ticket} ({entry.get('tol_id', '')}) removed — workdir and registry entry gone.")
 
 
-@cli.command("summary")
-@click.pass_context
-def summary_cmd(ctx):
-    """Show ticket counts by status, and done-ticket counts by time period."""
-    from grit.core.registry import RegistryManager
-    from grit.core.status import show_summary
-
-    if getattr(ctx.obj, "dry_run", False):
-        raise click.UsageError("--dry-run is not supported for 'summary'.")
-
-    show_summary(RegistryManager())
-
-
 if __name__ == "__main__":
     cli()

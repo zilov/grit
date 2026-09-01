@@ -11,69 +11,6 @@ from grit.utils.output import console, print_curation_results, print_tip, shorte
 from grit.utils.result_parsers import find_lsf_log, parse_lsf_exit_reason
 
 
-def show_global_status(registry) -> None:
-    """Print a table of all active tickets."""
-    from grit.core.run_tracker import RunTracker
-
-    tickets = registry.all_tickets()
-    if not tickets:
-        console.print(
-            "[dim]No active tickets. Run [bold]grit setup[/bold] to start curation.[/dim]"
-        )
-        return
-
-    table = Table(title="Active Curation Tickets", show_header=True, header_style="bold cyan")
-    table.add_column("Ticket", style="bold")
-    table.add_column("ToL ID")
-    table.add_column("Species")
-    table.add_column("Last Step")
-    table.add_column("Last Run")
-    table.add_column("Status", style="green")
-
-    for t in tickets:
-        workdir = Path(t["workdir"])
-        last_step = ""
-        last_run = ""
-        step_status = ""
-        if workdir.exists():
-            tracker = RunTracker(workdir, registry=registry)
-            history = tracker.history()
-            if history:
-                last_entry = history[-1]
-                last_step = last_entry.get("step", "")
-                last_run = last_entry.get("timestamp", "")
-                raw_status = last_entry.get("status", "")
-                if raw_status == "success":
-                    step_status = "[green]success[/green]"
-                elif raw_status in ("failed",):
-                    step_status = "[red]failed[/red]"
-                elif raw_status == "started":
-                    step_status = "[yellow]started[/yellow]"
-                else:
-                    step_status = raw_status
-            status_display = step_status or t.get("status", "")
-        else:
-            status_display = "[red]workdir missing[/red]"
-        table.add_row(
-            t["ticket_id"],
-            t.get("tol_id", ""),
-            t.get("species", ""),
-            last_step,
-            last_run,
-            status_display,
-        )
-
-    console.print(table)
-
-    done = registry.done_tickets(limit=3)
-    if done:
-        console.print("\n[dim]Recently completed:[/dim]")
-        for t in done:
-            console.print(
-                f"  [dim]{t['ticket_id']} ({t.get('tol_id', '')}) — {t.get('status', '')}[/dim]"
-            )
-
-
 def _parse_ts(ts: str) -> datetime.datetime | None:
     """Parse either registry timestamp format (added_at or step timestamp)."""
     if not ts:
@@ -96,32 +33,90 @@ def _last_ticket_timestamp(ticket: dict) -> datetime.datetime | None:
     return _parse_ts(ticket.get("added_at", ""))
 
 
-def show_summary(registry) -> None:
-    """Print active ticket counts by status, and done-ticket counts by time period."""
-    from collections import Counter
+def _ticket_age_display(added_at: str) -> str:
+    """Render "days since added_at", colored green (<10d) / yellow (<20d) / red (>=20d)."""
+    added = _parse_ts(added_at)
+    if added is None:
+        return ""
+    age_days = (datetime.datetime.now(datetime.timezone.utc) - added).days
+    style = "green" if age_days < 10 else "yellow" if age_days < 20 else "red"
+    return f"[{style}]{age_days}[/{style}]"
 
-    tickets = registry._load()
-    active = [t for t in tickets if t.get("status") != "done"]
-    done = [t for t in tickets if t.get("status") == "done"]
 
-    status_counts = Counter(t.get("status", "unknown") for t in active)
+def show_global_status(registry) -> None:
+    """Print a table of all active tickets, plus overall done-ticket counts."""
+    from grit.core.run_tracker import RunTracker
 
-    table = Table(title="Active tickets by status", show_header=True, header_style="bold cyan")
-    table.add_column("Status")
-    table.add_column("Count", justify="right")
-    for status, count in sorted(status_counts.items(), key=lambda kv: -kv[1]):
-        table.add_row(status, str(count))
-    console.print(table)
+    tickets = registry.all_tickets()
+    if not tickets:
+        console.print(
+            "[dim]No active tickets. Run [bold]grit setup[/bold] to start curation.[/dim]"
+        )
+    else:
+        table = Table(title="Active Curation Tickets", show_header=True, header_style="bold cyan")
+        table.add_column("Ticket", style="bold")
+        table.add_column("Age (days)", justify="right")
+        table.add_column("ToL ID")
+        table.add_column("Species")
+        table.add_column("Last Step")
+        table.add_column("Last Run")
+        table.add_column("Status", style="green")
 
+        for t in tickets:
+            workdir = Path(t["workdir"])
+            last_step = ""
+            last_run = ""
+            step_status = ""
+            if workdir.exists():
+                tracker = RunTracker(workdir, registry=registry)
+                history = tracker.history()
+                if history:
+                    last_entry = history[-1]
+                    last_step = last_entry.get("step", "")
+                    last_run = last_entry.get("timestamp", "")
+                    raw_status = last_entry.get("status", "")
+                    if raw_status == "success":
+                        step_status = "[green]success[/green]"
+                    elif raw_status in ("failed",):
+                        step_status = "[red]failed[/red]"
+                    elif raw_status == "started":
+                        step_status = "[yellow]started[/yellow]"
+                    else:
+                        step_status = raw_status
+                status_display = step_status or t.get("status", "")
+            else:
+                status_display = "[red]workdir missing[/red]"
+            table.add_row(
+                t["ticket_id"],
+                _ticket_age_display(t.get("added_at", "")),
+                t.get("tol_id", ""),
+                t.get("species", ""),
+                last_step,
+                last_run,
+                status_display,
+            )
+
+        console.print(table)
+
+    done = registry.done_tickets(limit=3)
+    if done:
+        console.print("\n[dim]Recently completed:[/dim]")
+        for t in done:
+            console.print(
+                f"  [dim]{t['ticket_id']} ({t.get('tol_id', '')}) — {t.get('status', '')}[/dim]"
+            )
+
+    all_done = registry.done_tickets(limit=None)
     now = datetime.datetime.now(datetime.timezone.utc)
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = day_start - datetime.timedelta(days=now.weekday())
     month_start = day_start.replace(day=1)
     quarter_start_month = (now.month - 1) // 3 * 3 + 1
     quarter_start = day_start.replace(month=quarter_start_month, day=1)
+    three_months_start = day_start - datetime.timedelta(days=90)
 
-    week_n = month_n = quarter_n = 0
-    for t in done:
+    week_n = month_n = quarter_n = three_month_n = 0
+    for t in all_done:
         completed = _last_ticket_timestamp(t)
         if completed is None:
             continue
@@ -131,11 +126,14 @@ def show_summary(registry) -> None:
             month_n += 1
         if completed >= quarter_start:
             quarter_n += 1
+        if completed >= three_months_start:
+            three_month_n += 1
 
     console.print()
     console.print(
-        f"[bold]Done:[/bold] {len(done)} total — "
-        f"{week_n} this week, {month_n} this month, {quarter_n} this quarter"
+        f"[bold]Done:[/bold] {len(all_done)} total — "
+        f"{week_n} this week, {month_n} this month, {quarter_n} this quarter, "
+        f"{three_month_n} last 3 months"
     )
 
 

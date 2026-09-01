@@ -4,7 +4,7 @@ RegistryManager — global ticket registry stored in ~/.grit/grit_registry.json.
 All tickets live in a single file. The ``status`` field controls visibility:
 active tickets (status != "done") appear in ``grit status``; done tickets are
 filtered out but remain in the file so they can be returned to work and queried
-later (e.g. ``grit summary`` for per-period counts).
+later (e.g. ``grit status``'s done-ticket counts by time period).
 
 Registry record format:
     {
