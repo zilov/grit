@@ -92,6 +92,29 @@ def test_collect_outputs_fallback_skipped_when_already_found(tmp_path):
     assert result == {"hap1_fa": str(hap1_fa)}
 
 
+def test_output_specs_resolve_haplotigs_and_chr_list_for_primary_assembly(tmp_path):
+    """A primary assembly's pretext-to-asm output filenames don't carry a
+    {hap1} token before "all_haplotigs"/"chromosome.list" (unlike hap1/hap2
+    assemblies) — the fallback specs must still populate hap1_haplotigs and
+    hap1_chr_list, or `grit status`'s Canonical column silently omits them."""
+    from grit.steps.post_curation.pretext_to_asm import _OUTPUT_SPECS
+    from grit.utils.helpers import collect_outputs
+
+    tol_id = "nxAngMala2"
+    fa = tmp_path / f"{tol_id}.1.primary.curated.fa"
+    fa.write_text("")
+    haplotigs = tmp_path / f"{tol_id}.1.all_haplotigs.curated.fa"
+    haplotigs.write_text("")
+    chr_list = tmp_path / f"{tol_id}.1.primary.chromosome.list.csv"
+    chr_list.write_text("")
+
+    result = collect_outputs(_OUTPUT_SPECS, tmp_path, tol_id, hap1="primary", hap2="alternate")
+
+    assert result["hap1_fa"] == str(fa)
+    assert result["hap1_haplotigs"] == str(haplotigs)
+    assert result["hap1_chr_list"] == str(chr_list)
+
+
 # ---------------------------------------------------------------------------
 # run_pretext_to_asm
 # ---------------------------------------------------------------------------

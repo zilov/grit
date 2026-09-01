@@ -30,12 +30,15 @@ _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("hap2_haplotigs", "{tol_id}.{hap2}.*.all_haplotigs.curated.fa", []),
     ("hap1_chr_list", "{tol_id}.{hap1}.*.chromosome.list.csv", []),
     ("hap2_chr_list", "{tol_id}.{hap2}.*.chromosome.list.csv", []),
-    # fallback: primary assembly naming (tried only if hap1_fa not found above)
+    # fallback: primary assembly naming (tried only if the hap1_* spec above didn't match —
+    # a primary assembly has no {hap1}/"primary" token before these suffixes)
     (
         "hap1_fa",
         "{tol_id}.*.primary.curated.fa",
         ["hap1", "hap2", "all_haplotigs", "additional_haplotigs"],
     ),
+    ("hap1_haplotigs", "{tol_id}.*.all_haplotigs.curated.fa", ["hap1", "hap2"]),
+    ("hap1_chr_list", "{tol_id}.*.primary.chromosome.list.csv", ["hap1", "hap2"]),
 ]
 
 # ---------------------------------------------------------------------------

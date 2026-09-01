@@ -16,7 +16,9 @@ from grit.utils.output import print_done, print_step_header, print_tip
 log = logging.getLogger(__name__)
 
 _RECURATE_TIP = (
-    "This uses the current canonical FASTA as input."
+    "This uses the current canonical FASTA as input.\n"
+    "To remove this recurate output from the canonical pool: "
+    "grit untrack --step {step_name} -t <ticket>"
 )
 
 _NEW_HAPLOTIGS_GLOBS = (
