@@ -450,29 +450,42 @@ def show_ticket_history(
         if job_ids:
             live_job_statuses = _check_bjobs(job_ids)
 
-    # Aggregate by step: full run history per step (in first-seen step order),
-    # plus the last run per step (used only by the tips below, not the table).
+    # Aggregate by step: full run history per step (in first-seen step order).
     step_history: dict[str, list[dict]] = {}
-    step_latest: dict[str, dict] = {}
     for r in history:
-        step = r.get("step", "")
-        step_history.setdefault(step, []).append(r)
-        step_latest[step] = r
+        step_history.setdefault(r.get("step", ""), []).append(r)
 
-    # Drop a "started" row once a later record exists for its run_dir — it's
-    # just that run's start-of-run bookkeeping entry, superseded by the run's
-    # actual outcome (success/failed/untracked). A "started" row with no
-    # later record for its run_dir is a genuinely in-flight run and stays.
+    # Collapse all records of one run into a single row: a run accumulates
+    # several records over its life ("started", the finish record, a later
+    # `untrack`/`retrack`), and only the newest status for its run_dir is
+    # current. The row keeps the run's own timestamp, its job_id and the
+    # freshest recorded outputs.
     for step, entries in step_history.items():
-        step_history[step] = [
-            entry
-            for i, entry in enumerate(entries)
-            if not (
-                entry.get("status") == "started"
-                and entry.get("run_dir") is not None
-                and any(e.get("run_dir") == entry["run_dir"] for e in entries[i + 1 :])
-            )
-        ]
+        merged: list[dict] = []
+        rows_by_run_dir: dict[str, dict] = {}
+        for entry in entries:
+            run_dir = entry.get("run_dir")
+            if run_dir is None:
+                merged.append(entry)
+                continue
+            row = rows_by_run_dir.get(run_dir)
+            if row is None:
+                row = dict(entry)
+                rows_by_run_dir[run_dir] = row
+                merged.append(row)
+                continue
+            row["status"] = entry.get("status", row.get("status"))
+            if entry.get("job_id"):
+                row["job_id"] = entry["job_id"]
+            if entry.get("outputs"):
+                row["outputs"] = entry["outputs"]
+        step_history[step] = merged
+
+    # Last run per step (used only by the tips below, not the table) — taken
+    # from the merged rows so the table's bjobs-recovery updates are visible.
+    step_latest: dict[str, dict] = {
+        step: entries[-1] for step, entries in step_history.items() if entries
+    }
 
     table = Table(
         title=f"Step history — {ticket_id} ({tol_id})",

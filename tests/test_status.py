@@ -314,6 +314,30 @@ def test_show_ticket_history_drops_started_row_once_run_finished(tmp_path, capsy
     assert "success" in out
 
 
+def test_show_ticket_history_untracked_run_replaces_its_success_row(tmp_path, capsys, monkeypatch):
+    """`grit untrack` appends an "untracked" record for a run_dir that already
+    has a "success" one — the table must show one row with the current status,
+    not both."""
+    registry_dir = tmp_path / ".grit_reg"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=registry_dir)
+    reg.add_ticket("RC-1234", "sDipInt39", "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+    run_dir = tracker.start("fastga", "RC-1234", "sDipInt39")
+    tracker.finish("fastga", run_dir, "success")
+    assert tracker.untrack("fastga")
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    assert out.count("fastga") == 1
+    assert "untracked" in out
+    assert "success" not in out
+
+
 def test_show_ticket_history_keeps_genuinely_running_row(tmp_path, capsys, monkeypatch):
     """A step with only a "started" record (no later outcome for that run_dir)
     is actually in flight and must still show as running."""
