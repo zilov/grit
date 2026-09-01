@@ -21,10 +21,19 @@ pretext_to_asm, microchromosome_combine, blast_contaminants,
 rename_and_orient, rename_and_orient_hap2, pretext_to_asm_recurate[_hap2]
 ```
 
-— and, among the steps in that pool that actually have a tracked, still-on-disk
-output for this haplotype, returns the one with the **newest file mtime**. A
-tie (including "only one candidate exists") goes to whichever step is listed
+— and, among the steps in that pool that actually have a still-on-disk output
+for this haplotype, returns the one with the **newest file mtime**. A tie
+(including "only one candidate exists") goes to whichever step is listed
 first above — this only matters as a tie-break, not as a priority order.
+
+A step's candidate is normally its tracked output path. When that step's
+latest successful run recorded no such output key, its latest run dir is
+re-globbed with the step's own `_OUTPUT_SPECS` instead of dropping the step
+from the comparison — otherwise a run whose outputs were recorded
+incompletely would silently hand the canonical slot back to an older step,
+moving canonical *backwards* in time with nothing in `grit status` to show
+it (the RC-4833 symptom: a fresh `pretext-to-asm` left `chr list` canonical
+on the previous `rename-and-orient` run).
 
 If nothing in the pool has a live tracked output, `find_canonical_fa` falls
 back to a filesystem glob in `{workdir}/rename_and_orient/`, and finally to

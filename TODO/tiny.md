@@ -41,3 +41,19 @@ Small fixes and improvements — close in one batch when still relevant.
   into individually. Came up while designing TODO 38 (shared `busco` step)
   as the mechanism for running a step without it counting as canonical
   registry state.
+
+- [x] **Canonical went backwards: a fresh `pretext-to-asm` left `chr list`
+  canonical on the older `rename-and-orient` run (RC-4833)** — the newest
+  `pretext_to_asm` run recorded only `hap1_fa` in its registry `outputs`,
+  even though its run dir held the chromosome list and haplotig FASTA on
+  disk. `_latest_tracked_output()` compared *recorded* paths only, so that
+  run simply dropped out of the chr_list comparison and the stale
+  `rename_and_orient` output won — canonical moving backwards in time with
+  nothing in `grit status` to explain it. Fixed in `_step_output()`
+  (`grit/utils/helpers.py`): when a pool step's latest successful run has no
+  matching output key, its latest run dir is re-globbed with that step's
+  `_OUTPUT_SPECS` (recurate steps via `_output_specs_for_hap`) before the
+  step is skipped. `_canonical_mark()` in `status.py` now also credits a
+  canonical file sitting in the row's own run dir, so the step-history
+  "Canonical" column agrees with the canonical-files table.
+

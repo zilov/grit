@@ -455,3 +455,52 @@ def test_pretext_to_asm_chr_list_rerun_after_rename_and_orient_wins(mock_ctx, tm
     os.utime(pta_chr_list, (2000, 2000))
 
     assert find_canonical_chr_list(mock_ctx, "hap1") == pta_chr_list
+
+
+def test_chr_list_from_newer_run_dir_wins_when_output_key_was_not_recorded(mock_ctx, tmp_path):
+    """A newer pretext_to_asm run whose chr_list never made it into the tracked
+    outputs must still win over an older rename_and_orient one: the file is in
+    that run's dir, so resolution re-globs the run dir instead of silently
+    falling back to the stale step."""
+    import os
+
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    rao_dir = tmp_path / "rename_and_orient" / "2026-01-01T00_00_00"
+    rao_chr_list = _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.chromosome.list.csv")
+    tracker.finish(
+        "rename_and_orient", rao_dir, "success", outputs={"hap1_chr_list": str(rao_chr_list)}
+    )
+
+    pta_dir = tmp_path / "pretext_to_asm" / "2026-01-02T00_00_00"
+    pta_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    pta_chr_list = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.chromosome.list.csv")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_fa": str(pta_fa)})
+
+    os.utime(rao_chr_list, (1000, 1000))
+    os.utime(pta_chr_list, (2000, 2000))
+
+    assert find_canonical_chr_list(mock_ctx, "hap1") == pta_chr_list
+
+
+def test_chr_list_of_latest_run_beats_earlier_run_of_the_same_step(mock_ctx, tmp_path):
+    """When the latest run of a step recorded no chr_list, an earlier run of
+    that same step must not stand in for it — the latest run dir's own file is
+    what the step currently offers."""
+    import os
+
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    old_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
+    old_chr_list = _write(old_dir / f"{mock_ctx.tol_id}.hap1.1.chromosome.list.csv")
+    tracker.finish(
+        "pretext_to_asm", old_dir, "success", outputs={"hap1_chr_list": str(old_chr_list)}
+    )
+
+    new_dir = tmp_path / "pretext_to_asm" / "2026-01-03T00_00_00"
+    new_fa = _write(new_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    new_chr_list = _write(new_dir / f"{mock_ctx.tol_id}.hap1.1.chromosome.list.csv")
+    tracker.finish("pretext_to_asm", new_dir, "success", outputs={"hap1_fa": str(new_fa)})
+
+    os.utime(old_chr_list, (1000, 1000))
+    os.utime(new_chr_list, (2000, 2000))
+
+    assert find_canonical_chr_list(mock_ctx, "hap1") == new_chr_list

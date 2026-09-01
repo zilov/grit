@@ -7,6 +7,7 @@ from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
 from grit.core.status import (
     _canonical_haps,
+    _canonical_mark,
     _print_less_tips,
     _print_scp_tips,
     _resolve_canonical_files,
@@ -930,3 +931,26 @@ def test_show_ticket_history_dry_run_with_yaml_override_builds_ctx_and_shows_mar
     assert "fa" in pta_line
     # Single-hap ticket — no hap suffix needed since there's only one candidate.
     assert "fa(" not in pta_line
+
+
+def test_canonical_mark_credits_unrecorded_file_in_the_run_dir(tmp_path):
+    """A canonical file this run produced but never recorded still marks the
+    row, so the history table agrees with the canonical-files table."""
+    run_dir = tmp_path / "pretext_to_asm" / "2026-01-02T00_00_00"
+    fa = run_dir / "tolId.hap1.1.curated.fa"
+    chr_list = run_dir / "tolId.hap1.1.chromosome.list.csv"
+    index = {str(fa): [("fa", "hap1")], str(chr_list): [("chr_list", "hap1")]}
+
+    mark = _canonical_mark({"hap1_fa": str(fa)}, index, ["hap1"], run_dir)
+
+    assert "fa" in mark and "chr" in mark
+
+
+def test_canonical_mark_ignores_canonical_files_from_another_run_dir(tmp_path):
+    """Only this row's own run dir counts — a canonical file elsewhere must not
+    mark an unrelated run."""
+    run_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
+    other_chr_list = tmp_path / "rename_and_orient" / "2026-01-02T00_00_00" / "tolId.chr.csv"
+    index = {str(other_chr_list): [("chr_list", "hap1")]}
+
+    assert _canonical_mark({}, index, ["hap1"], run_dir) == ""

@@ -361,30 +361,64 @@ def _recurate_step_name(ctx: "CurationContext", hap_prefix: str) -> str:
     return "pretext_to_asm_recurate"
 
 
+def _step_output(
+    ctx: "CurationContext", step: str, key_variants: list[str], hap_prefix: str
+) -> Path | None:
+    """
+    Path *step* currently offers for any of *key_variants*, or None.
+
+    Falls back to re-globbing the step's latest run dir with its output specs
+    when the tracked outputs hold no such key, so a run whose outputs were
+    recorded incompletely still competes with its real on-disk files instead of
+    handing the canonical slot to an older step.
+    """
+    for k in key_variants:
+        val = ctx.tracker.get_output(step, k)
+        if val and Path(val).exists():
+            return Path(val)
+
+    run_dir = ctx.tracker.latest_run_dir(step)
+    if not run_dir or not run_dir.exists():
+        return None
+    if step.startswith("pretext_to_asm_recurate"):
+        from grit.steps.post_curation.pretext_to_asm_recurate import _output_specs_for_hap
+
+        specs = _output_specs_for_hap(ctx, hap_prefix)
+    else:
+        specs = _get_step_specs(step)
+    if not specs:
+        return None
+    outputs = collect_outputs(
+        specs, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
+    )
+    for k in key_variants:
+        val = outputs.get(k)
+        if val and Path(val).exists():
+            return Path(val)
+    return None
+
+
 def _latest_tracked_output(
     ctx: "CurationContext",
     steps: list[str],
     key_variants: list[str],
+    hap_prefix: str,
 ) -> Path | None:
     """
     Among *steps* (tracker step names), return the Path with the newest
-    mtime whose tracker output for any of *key_variants* still exists on
-    disk. Steps with no matching output are skipped. Ties (equal mtime, or
-    only one candidate) resolve to the first-listed step in *steps*.
+    mtime whose output for any of *key_variants* still exists on disk. Steps
+    with no matching output are skipped. Ties (equal mtime, or only one
+    candidate) resolve to the first-listed step in *steps*.
     """
     if not ctx.tracker:
         return None
     best: tuple[float, int, Path] | None = None  # (mtime, -priority_index, path)
     for idx, step in enumerate(steps):
-        for k in key_variants:
-            val = ctx.tracker.get_output(step, k)
-            if val and Path(val).exists():
-                p = Path(val)
-                mtime = p.stat().st_mtime
-                candidate = (mtime, -idx, p)
-                if best is None or candidate[:2] > best[:2]:
-                    best = candidate
-                break
+        p = _step_output(ctx, step, key_variants, hap_prefix)
+        if p:
+            candidate = (p.stat().st_mtime, -idx, p)
+            if best is None or candidate[:2] > best[:2]:
+                best = candidate
     return best[2] if best else None
 
 
@@ -422,7 +456,7 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
             "rename_and_orient_hap2",
             _recurate_step_name(ctx, hap_prefix),
         ]
-        canonical = _latest_tracked_output(ctx, pool, keys)
+        canonical = _latest_tracked_output(ctx, pool, keys, hap_prefix)
         if canonical:
             return canonical
 
@@ -477,7 +511,7 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
             f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_haplotigs",
         ]
         pool = ["pretext_to_asm", _recurate_step_name(ctx, hap_prefix)]
-        canonical = _latest_tracked_output(ctx, pool, keys)
+        canonical = _latest_tracked_output(ctx, pool, keys, hap_prefix)
         if canonical:
             return canonical
 
@@ -565,7 +599,7 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
             "rename_and_orient_hap2",
             _recurate_step_name(ctx, hap_prefix),
         ]
-        canonical = _latest_tracked_output(ctx, pool, keys)
+        canonical = _latest_tracked_output(ctx, pool, keys, hap_prefix)
         if canonical:
             return canonical
 

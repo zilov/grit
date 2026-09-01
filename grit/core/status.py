@@ -225,12 +225,19 @@ def _canonical_type_index(
 
 
 def _canonical_mark(
-    outputs: dict, canonical_index: dict[str, list[tuple[str, str]]], haps: list
+    outputs: dict,
+    canonical_index: dict[str, list[tuple[str, str]]],
+    haps: list,
+    run_dir: Path | None = None,
 ) -> str:
     """
     Render this row's "Canonical" cell: which output type(s) — and, when a
-    ticket has more than one haplotype, which haplotype-index(es) — of its
-    recorded `outputs` currently resolve as canonical. Empty string when none do.
+    ticket has more than one haplotype, which haplotype-index(es) — this run
+    currently owns. Empty string when none do.
+
+    Canonical files living in *run_dir* count even when the run's recorded
+    `outputs` never captured them, matching the resolver's re-glob of the
+    latest run dir.
 
     Kept deliberately compact (e.g. "fa(1),hap(1)") since this cell sits in a
     fixed-width table column alongside step names that already run long.
@@ -238,6 +245,11 @@ def _canonical_mark(
     matches: list[tuple[str, str]] = []
     for v in outputs.values():
         matches.extend(canonical_index.get(str(v), []))
+    if run_dir is not None:
+        recorded = {str(v) for v in outputs.values()}
+        for path_str, types in canonical_index.items():
+            if path_str not in recorded and Path(path_str).parent == run_dir:
+                matches.extend(types)
     if not matches:
         return ""
 
@@ -560,7 +572,7 @@ def show_ticket_history(
                 style = "dim"
 
             outputs = entry.get("outputs") or {}
-            canonical_mark = _canonical_mark(outputs, canonical_index, canonical_haps)
+            canonical_mark = _canonical_mark(outputs, canonical_index, canonical_haps, run_dir)
 
             table.add_row(
                 step,
