@@ -292,6 +292,47 @@ def test_show_ticket_history_prints_microchromosome_tip_for_bird_tol_id(tmp_path
     assert any("microchromosome-second-shot" in t for t in tips)
 
 
+def test_show_ticket_history_drops_started_row_once_run_finished(tmp_path, capsys, monkeypatch):
+    """The tracker always writes a "started" row before a run's real outcome
+    (success/failed/untracked) for the same run_dir — that bookkeeping row
+    must not linger in the table once the run has actually finished."""
+    registry_dir = tmp_path / ".grit_reg"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=registry_dir)
+    reg.add_ticket("RC-1234", "sDipInt39", "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+    run_dir = tracker.start("fastga", "RC-1234", "sDipInt39")
+    tracker.finish("fastga", run_dir, "success")
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    assert "running" not in out
+    assert "success" in out
+
+
+def test_show_ticket_history_keeps_genuinely_running_row(tmp_path, capsys, monkeypatch):
+    """A step with only a "started" record (no later outcome for that run_dir)
+    is actually in flight and must still show as running."""
+    registry_dir = tmp_path / ".grit_reg"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=registry_dir)
+    reg.add_ticket("RC-1234", "sDipInt39", "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+    tracker.start("fastga", "RC-1234", "sDipInt39")
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    assert "running" in out
+
+
 def test_show_ticket_history_skips_microchromosome_tip_for_non_bird_tol_id(tmp_path, monkeypatch):
     reg = _make_ticket(tmp_path, monkeypatch, "sDipInt39")
 

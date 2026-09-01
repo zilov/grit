@@ -440,6 +440,21 @@ def show_ticket_history(
         step_history.setdefault(step, []).append(r)
         step_latest[step] = r
 
+    # Drop a "started" row once a later record exists for its run_dir — it's
+    # just that run's start-of-run bookkeeping entry, superseded by the run's
+    # actual outcome (success/failed/untracked). A "started" row with no
+    # later record for its run_dir is a genuinely in-flight run and stays.
+    for step, entries in step_history.items():
+        step_history[step] = [
+            entry
+            for i, entry in enumerate(entries)
+            if not (
+                entry.get("status") == "started"
+                and entry.get("run_dir") is not None
+                and any(e.get("run_dir") == entry["run_dir"] for e in entries[i + 1 :])
+            )
+        ]
+
     table = Table(
         title=f"Step history — {ticket_id} ({tol_id})",
         show_header=True,
