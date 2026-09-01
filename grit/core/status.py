@@ -23,6 +23,26 @@ def _parse_ts(ts: str) -> datetime.datetime | None:
     return None
 
 
+_MONTH_ABBR = (
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+)  # fmt: skip
+
+
+def _prior_month_bounds(
+    now: datetime.datetime, months_back: int
+) -> tuple[datetime.datetime, datetime.datetime, str]:
+    """Return (start, end, short label) for the calendar month `months_back`
+    months before `now`'s month — e.g. months_back=1 is last month."""
+    month = now.month - months_back
+    year = now.year
+    while month <= 0:
+        month += 12
+        year -= 1
+    start = now.replace(year=year, month=month, day=1, hour=0, minute=0, second=0, microsecond=0)
+    end = start.replace(year=year + 1, month=1) if month == 12 else start.replace(month=month + 1)
+    return start, end, _MONTH_ABBR[month - 1]
+
+
 def _last_ticket_timestamp(ticket: dict) -> datetime.datetime | None:
     """Best-effort timestamp for when a ticket last changed — latest step, else added_at."""
     steps = ticket.get("steps", [])
@@ -107,33 +127,31 @@ def show_global_status(registry) -> None:
             )
 
     all_done = registry.done_tickets(limit=None)
+    completed_dates = [d for t in all_done if (d := _last_ticket_timestamp(t)) is not None]
+
     now = datetime.datetime.now(datetime.timezone.utc)
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = day_start - datetime.timedelta(days=now.weekday())
     month_start = day_start.replace(day=1)
     quarter_start_month = (now.month - 1) // 3 * 3 + 1
     quarter_start = day_start.replace(month=quarter_start_month, day=1)
-    three_months_start = day_start - datetime.timedelta(days=90)
 
-    week_n = month_n = quarter_n = three_month_n = 0
-    for t in all_done:
-        completed = _last_ticket_timestamp(t)
-        if completed is None:
-            continue
-        if completed >= week_start:
-            week_n += 1
-        if completed >= month_start:
-            month_n += 1
-        if completed >= quarter_start:
-            quarter_n += 1
-        if completed >= three_months_start:
-            three_month_n += 1
+    week_n = sum(1 for d in completed_dates if d >= week_start)
+    month_n = sum(1 for d in completed_dates if d >= month_start)
+    quarter_n = sum(1 for d in completed_dates if d >= quarter_start)
 
     console.print()
     console.print(
         f"[bold]Done:[/bold] {len(all_done)} total — "
-        f"{week_n} this week, {month_n} this month, {quarter_n} this quarter, "
-        f"{three_month_n} last 3 months"
+        f"{week_n} this week, {month_n} this month, {quarter_n} this quarter"
+    )
+
+    monthly = [
+        (label, sum(1 for d in completed_dates if start <= d < end))
+        for start, end, label in (_prior_month_bounds(now, n) for n in (1, 2, 3))
+    ]
+    console.print(
+        "[dim]Last 3 months:[/dim] " + ", ".join(f"{label} {count}" for label, count in monthly)
     )
 
 

@@ -694,6 +694,28 @@ def test_ticket_age_display_color_thresholds():
     assert _ticket_age_display("") == ""
 
 
+def test_prior_month_bounds_wraps_year():
+    import datetime
+
+    from grit.core.status import _prior_month_bounds
+
+    now = datetime.datetime(2026, 2, 15, tzinfo=datetime.timezone.utc)
+
+    start, end, label = _prior_month_bounds(now, 1)
+    assert (start, end, label) == (
+        datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc),
+        datetime.datetime(2026, 2, 1, tzinfo=datetime.timezone.utc),
+        "Jan",
+    )
+
+    start, end, label = _prior_month_bounds(now, 2)
+    assert (start, end, label) == (
+        datetime.datetime(2025, 12, 1, tzinfo=datetime.timezone.utc),
+        datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc),
+        "Dec",
+    )
+
+
 def _set_added_at(reg, ticket_id, iso_ts):
     tickets = reg._load()
     for t in tickets:
@@ -725,7 +747,7 @@ def test_show_global_status_shows_ticket_age_and_done_stats(tmp_path, monkeypatc
     out = capsys.readouterr().out
     assert "15" in out
     assert "Done: 1 total" in out
-    assert "last 3 months" in out
+    assert "Last 3 months:" in out
 
 
 def test_show_global_status_reads_from_passed_registry_not_default(tmp_path, monkeypatch, capsys):
