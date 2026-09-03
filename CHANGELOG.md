@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-03
+
 ### Added
 
 - `pretext-to-asm-recurate` step (with `--hap2`) for a second curation round on an already-remapped pretext map, plus the `post-curation-recurate` composite that chains it with the rest of post-curation.
@@ -27,6 +29,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- `blast-contaminants` no longer leaves an empty `alternate/` directory behind for a single-haplotype ticket in `--dry-run`, which the real run never creates.
 - A corrupt or unreadable `~/.grit/grit_registry.json` no longer erases every ticket and all step history: reads now fail closed with a `RegistryError` naming the backups to restore from, instead of reading as an empty registry that the next write installs.
 - An `--untracked` run no longer becomes canonical the moment it finishes: `RunTracker.finish()` keeps writing `status="untracked"` instead of overwriting it with `success`/`failed`.
 - A run whose registry `outputs` were recorded incompletely no longer hands the canonical slot back to an older step — the step's latest run dir is re-globbed with its own `_OUTPUT_SPECS` first, so canonical can never move backwards in time.
