@@ -61,6 +61,22 @@ def run_qv(ctx: CurationContext) -> None:
     log.info("qv | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "QV analysis")
 
+    if ctx.dry_run:
+        run_dir = (
+            ctx.tracker.start("qv", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+            if ctx.tracker
+            else None
+        )
+        qv_dir = ctx.assembly_curated_dir / "merquryk"
+        qv_dir.mkdir(parents=True, exist_ok=True)
+        (qv_dir / f"{ctx.tol_id}.qv").write_text("fake\n")
+        (qv_dir / f"{ctx.tol_id}.completeness.stats").write_text("fake\n")
+        if ctx.tracker and run_dir:
+            outputs = _find_qv_outputs(ctx) or None
+            ctx.tracker.finish("qv", run_dir, "success", outputs=outputs, untracked=ctx.untracked)
+        print_done(f"[dry-run] QV analysis → {qv_dir}")
+        return
+
     run_dir = (
         ctx.tracker.start("qv", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
         if ctx.tracker
@@ -75,7 +91,7 @@ def run_qv(ctx: CurationContext) -> None:
 
     if ctx.tracker and run_dir:
         outputs = None if ctx.print_only else (_find_qv_outputs(ctx) or None)
-        ctx.tracker.finish("qv", run_dir, "success", outputs=outputs)
+        ctx.tracker.finish("qv", run_dir, "success", outputs=outputs, untracked=ctx.untracked)
 
     print_done("QV analysis done")
 

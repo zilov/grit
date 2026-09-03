@@ -1,4 +1,4 @@
-"""Blast scaffolds for contaminant detection using deconBlast."""
+"""Blast scaffolds for contaminant detection using decon_fasta."""
 
 from __future__ import annotations
 
@@ -9,10 +9,17 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _clean_species_name, _run, find_curated_fa
+from grit.utils.helpers import (
+    _clean_species_name,
+    _run,
+    find_canonical_fa,
+    is_single_hap,
+    write_fake_outputs,
+)
 from grit.utils.output import (
     print_done,
     print_step_header,
+    print_tip,
 )
 
 log = logging.getLogger(__name__)
@@ -23,6 +30,14 @@ log = logging.getLogger(__name__)
 
 # Path to lineage script
 LINEAGE_SCRIPT = "/software/grit/projects/vgp_curation_scripts/get_lineage_from_species.rb"
+# Blasts scaffolds (headers matching .*SCAFFOLD_\d+.*) and writes a taxonomy.txt
+# with lineage per blast hit into the given --outdir.
+DECON_SCRIPT = "~mh6/git_checkouts/reblast/bin/decon_fasta"
+
+_OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
+    ("hap1_fa", "{hap1}/{tol_id}.{hap1}.*.decontaminated.fa", []),
+    ("hap2_fa", "{hap2}/{tol_id}.{hap2}.*.decontaminated.fa", []),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -35,15 +50,20 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     Run blast contaminants search in shrapnel scaffolds, once per haplotype.
 
     This step identifies potential contaminants in the curated assembly by blasting
-    scaffolds against a database and filtering based on taxonomic lineage. It always
-    reads the raw ``pretext_to_asm`` output as input (never a previous
-    ``blast_contaminants`` run's own output) and writes a distinctly-named
-    decontaminated FASTA into its own run_dir — the original curated FASTA is never
-    modified or moved, so re-running or invalidating this step cannot lose data.
+    scaffolds against a database and filtering based on taxonomic lineage. It reads
+    whatever is currently canonical for this haplotype and writes a distinctly-named
+    decontaminated FASTA into its own ``run_dir/<hap_prefix>/`` subdirectory, alongside
+    that haplotype's ``decon_fasta`` output and ``contaminated.bed`` — the original
+    curated FASTA is never modified or moved, so re-running or invalidating this step
+    cannot lose data.
 
     Requires:
-        - Curated FASTA file(s) from ``pretext_to_asm`` in the workdir.
-        - Access to ~mh6/decon_blastBTK and related scripts.
+        - A resolvable canonical FASTA for each haplotype — run ``pretext-to-asm`` first.
+        - Access to ``decon_fasta`` and related scripts.
+
+    If no non-target-phylum hits are found, no scaffolds are removed: no
+    decontaminated FASTA is written and the haplotype's canonical output is
+    left untouched.
 
     Prints:
         Step header, file paths, commands executed.
@@ -51,25 +71,64 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     log.info("blast-contaminants | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Blast contaminants search")
 
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start(
+            "blast_contaminants", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
+        )
+        outputs = write_fake_outputs(
+            "blast_contaminants",
+            run_dir,
+            ctx.tol_id,
+            hap1=ctx.hap1_prefix,
+            hap2=ctx.hap2_prefix,
+        )
+        if is_single_hap(ctx):
+            # write_fake_outputs always writes both _OUTPUT_SPECS entries (keyed
+            # "hap1_fa"/"hap2_fa" regardless of assembly_type); drop the hap2 key
+            # AND delete the file itself, so a single-hap dry-run's tracked outputs
+            # and on-disk state both match what a real run would actually produce.
+            path = outputs.pop("hap2_fa", None)
+            if path:
+                Path(path).unlink(missing_ok=True)
+                # outputs are grouped one directory per haplotype, and the real
+                # single-hap path never creates the second one.
+                hap_dir = Path(path).parent
+                if hap_dir != run_dir and not any(hap_dir.iterdir()):
+                    hap_dir.rmdir()
+        ctx.tracker.finish(
+            "blast_contaminants", run_dir, "success", outputs=outputs, untracked=ctx.untracked
+        )
+        dest = outputs.get("hap1_fa", run_dir)
+        print_done(f"[dry-run] Decontaminated FASTA → {dest}")
+        return
+
     run_dir = (
         ctx.tracker.start("blast_contaminants", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
         if ctx.tracker
         else None
     )
 
-    is_single_hap = ctx.hap1_prefix in ("primary", "paternal")
-    haps_to_process = [ctx.hap1_prefix] if is_single_hap else [ctx.hap1_prefix, ctx.hap2_prefix]
+    haps_to_process = (
+        [ctx.hap1_prefix] if is_single_hap(ctx) else [ctx.hap1_prefix, ctx.hap2_prefix]
+    )
 
     try:
         outputs: dict[str, str] = {}
         for hap_prefix in haps_to_process:
             dest = _blast_contaminants_for_hap(ctx, hap_prefix, run_dir)
-            outputs[f"{hap_prefix}_fa"] = str(dest)
+            if dest is not None:
+                outputs[f"{hap_prefix}_fa"] = str(dest)
         if ctx.tracker and run_dir:
-            ctx.tracker.finish("blast_contaminants", run_dir, "success", outputs=outputs or None)
+            ctx.tracker.finish(
+                "blast_contaminants",
+                run_dir,
+                "success",
+                outputs=outputs or None,
+                untracked=ctx.untracked,
+            )
     except Exception:
         if ctx.tracker and run_dir:
-            ctx.tracker.finish("blast_contaminants", run_dir, "failed")
+            ctx.tracker.finish("blast_contaminants", run_dir, "failed", untracked=ctx.untracked)
         raise
 
     print_done("Contaminant blasting completed")
@@ -77,8 +136,11 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
 
 def _blast_contaminants_for_hap(
     ctx: CurationContext, hap_prefix: str, run_dir: Path | None
-) -> Path:
-    """Blast one haplotype's curated FASTA and return the decontaminated output path."""
+) -> Path | None:
+    """
+    Blast one haplotype's curated FASTA and return the decontaminated output path,
+    or ``None`` if no non-target-phylum hits were found (canonical is left untouched).
+    """
     # Get target phylum from species lineage
     cleaned_species = _clean_species_name(ctx.species)
     log.info("[%s] Species: %s", hap_prefix, cleaned_species)
@@ -92,53 +154,30 @@ def _blast_contaminants_for_hap(
     target_phylum = lineage_parts[3] if len(lineage_parts) > 3 else "Unknown"
     log.info("[%s] Target phylum: %s", hap_prefix, target_phylum)
 
-    # 1. Find this haplotype's curated FASTA from pretext_to_asm — always the raw
-    #    output, never a previous blast_contaminants run's own decontaminated FASTA.
-    curated_fasta = find_curated_fa(ctx, hap_prefix)
+    # 1. Find this haplotype's currently canonical FASTA — whatever step most
+    #    recently produced it (pretext_to_asm, microchromosome_combine, a previous
+    #    rename_and_orient/blast_contaminants, or a recurate run).
+    curated_fasta = find_canonical_fa(ctx, hap_prefix)
     log.info("[%s] Curated FASTA: %s", hap_prefix, curated_fasta)
 
-    # 2. Create blast.me file
-    blast_me = ctx.workdir / f"blast_{hap_prefix}.me"
-    log.info("[%s] Blast input file: %s", hap_prefix, blast_me)
+    # All of this haplotype's outputs — decon_fasta's own out_dir, the bed
+    # filter, and the final decontaminated FASTA — live together under one
+    # per-haplotype subdirectory of the run_dir.
+    hap_dir = (run_dir or ctx.workdir) / hap_prefix
+    _run(f"mkdir -p {hap_dir}", ctx.print_only)
 
-    header_cmd = f"echo 'header' > {blast_me}"
-    _run(header_cmd, ctx.print_only)
-
-    # Extract scaffold IDs (assuming SCAFFOLD_X or HAP_SCAFFOLD_X format)
-    extract_cmd = (
-        f"perl -nE 'say \"true,$1\" if /([HAP_\\d]*SCAFFOLD_\\d+)/i' {curated_fasta} >> {blast_me}"
-    )
-    _run(extract_cmd, ctx.print_only)
-
-    # 3. Run decon_blastBTK
-    blast_out_dir = ctx.workdir / f"blast_out_dir_{hap_prefix}"
-    blast_cmd = f"~mh6/decon_blastBTK -b {blast_me} -f {curated_fasta} -o {blast_out_dir}"
-    _run(blast_cmd, ctx.print_only)
+    # 2. Blast scaffolds and write per-hit lineage — decon_fasta finds SCAFFOLD_N
+    #    headers itself, so no separate blast.me extraction step is needed.
+    blast_out_dir = hap_dir / "blast_out_dir"
+    decon_cmd = f"{DECON_SCRIPT} --fasta {curated_fasta} --outdir {blast_out_dir}"
+    _run(decon_cmd, ctx.print_only)
     log.info("[%s] Blast output dir: %s", hap_prefix, blast_out_dir)
 
-    # 4. Extract taxonomic information
     taxonomy_txt = blast_out_dir / "taxonomy.txt"
-    cd_cmd = f"cd {blast_out_dir}"
-    _run(cd_cmd, ctx.print_only)
-
-    taxonomy_cmd = (
-        "head -1 *out | "
-        "grep -i -e ^SCAFFOLD -e ^HAP | "
-        "perl -nE '"
-        "s/PREDICTED:|MAG:|TPA_\\w+://; "
-        "@F=split; "
-        "chomp; "
-        "@F[14]=~s/,//g; "
-        '$F[14].=" ".$F[15] if $F[14] eq "sp."; '
-        'print "$_\t"; '
-        'say `{LINEAGE_SCRIPT} "$F[13] $F[14]"`;\' '
-        f"> {taxonomy_txt}"
-    )
-    _run(taxonomy_cmd, ctx.print_only)
     log.info("[%s] Taxonomy file: %s", hap_prefix, taxonomy_txt)
 
-    # 5. Create contaminated.bed (filter non-target phylum hits)
-    contaminated_bed = ctx.workdir / f"{ctx.tol_id}.{hap_prefix}.contaminated.bed"
+    # 3. Create contaminated.bed (filter non-target phylum hits)
+    contaminated_bed = hap_dir / f"{ctx.tol_id}.{hap_prefix}.contaminated.bed"
     bed_cmd = (
         f"grep -v {target_phylum} {taxonomy_txt} | "
         "perl -anE 'say \"$F[0]\\t0\\t10000\\tREMOVE\"' "
@@ -147,22 +186,27 @@ def _blast_contaminants_for_hap(
     _run(bed_cmd, ctx.print_only)
     log.info("[%s] Contaminated BED: %s", hap_prefix, contaminated_bed)
 
-    # 6. Remove contamination — writes {curated_fasta}.cleaned.fa next to the
-    #    (untouched) original; the original pretext_to_asm output is never renamed
-    #    or moved, so it stays intact regardless of how this step turns out.
+    if not ctx.print_only and contaminated_bed.stat().st_size == 0:
+        print_tip(f"[{hap_prefix}] No contaminants found — canonical FASTA left unchanged.")
+        return None
+
+    # 4. Remove contamination — remove_contamination_bed writes its output next
+    #    to the (untouched) original as ``<curated_fasta.name>_cleaned``; the
+    #    original pretext_to_asm output is never renamed or moved, so it stays
+    #    intact regardless of how this step turns out.
     remove_cmd = f"~mh6/remove_contamination_bed -f {curated_fasta} -c {contaminated_bed}"
     _run(remove_cmd, ctx.print_only)
 
-    cleaned_fasta = curated_fasta.with_suffix(".cleaned.fa")
-    dest = (
-        run_dir or ctx.workdir
-    ) / f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.decontaminated.fa"
+    cleaned_fasta = curated_fasta.with_name(curated_fasta.name + "_cleaned")
+    dest = hap_dir / f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.decontaminated.fa"
 
     if not ctx.print_only:
-        if cleaned_fasta.exists():
-            _run(f"mv {cleaned_fasta} {dest}", ctx.print_only)
-        else:
-            log.warning("[%s] Cleaned FASTA not found: %s", hap_prefix, cleaned_fasta)
+        if not cleaned_fasta.exists():
+            raise RuntimeError(
+                f"[{hap_prefix}] remove_contamination_bed did not produce the expected "
+                f"cleaned FASTA: {cleaned_fasta}"
+            )
+        _run(f"mv {cleaned_fasta} {dest}", ctx.print_only)
     else:
         log.info("[%s] Would move: %s -> %s", hap_prefix, cleaned_fasta, dest)
 

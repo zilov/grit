@@ -1,10 +1,17 @@
 """Tests for RegistryManager."""
 
+import json
+import os
 from pathlib import Path
 
 import pytest
 
-from grit.core.registry import RegistryManager
+from grit.core.registry import (
+    SNAPSHOT_RETENTION,
+    RegistryError,
+    RegistryManager,
+    dry_run_root,
+)
 
 
 @pytest.fixture
@@ -290,3 +297,126 @@ def test_done_tickets_include_cleaned_returns_all(reg):
 
     done = reg.done_tickets(limit=None, include_cleaned=True)
     assert {t["ticket_id"] for t in done} == {"RC-1", "RC-2"}
+
+
+def test_dry_run_root_is_isolated_subdir_of_home():
+    root = dry_run_root()
+    assert root == Path.home() / ".grit" / "dry_run"
+    assert root != Path.home() / ".grit"
+
+
+# ----------------------------------------------------------------------
+# Fail-closed loading (CORR-01)
+# ----------------------------------------------------------------------
+
+
+def test_missing_registry_reads_as_empty(reg):
+    assert reg.all_tickets() == []
+
+
+def test_unreadable_registry_raises_instead_of_reading_as_empty(reg):
+    reg.registry_path.write_text("{ this is not json")
+    with pytest.raises(RegistryError):
+        reg.all_tickets()
+
+
+def test_unreadable_registry_is_not_overwritten_by_the_next_write(reg):
+    reg.add_ticket("RC-1234", "sDipInt39", "species", Path("/work"))
+    reg.registry_path.write_text("{ truncated")
+
+    with pytest.raises(RegistryError):
+        reg.add_ticket("RC-9999", "sOther1", "species", Path("/work2"))
+
+    assert reg.registry_path.read_text() == "{ truncated"
+
+
+def test_unreadable_registry_error_names_the_backup_to_restore_from(reg):
+    reg.add_ticket("RC-1234", "sDipInt39", "species", Path("/work"))
+    reg.add_ticket("RC-5678", "sOther1", "species", Path("/work2"))
+    reg.registry_path.write_text("{ truncated")
+
+    with pytest.raises(RegistryError) as exc:
+        reg.all_tickets()
+
+    assert str(reg.backup_path) in str(exc.value)
+
+
+# ----------------------------------------------------------------------
+# Backups
+# ----------------------------------------------------------------------
+
+
+def test_save_copies_the_previous_version_to_the_backup(reg):
+    reg.add_ticket("RC-1234", "sDipInt39", "species", Path("/work"))
+    reg.add_ticket("RC-5678", "sOther1", "species", Path("/work2"))
+
+    backed_up = json.loads(reg.backup_path.read_text())
+    assert [t["ticket_id"] for t in backed_up] == ["RC-1234"]
+
+
+def test_first_save_of_the_day_keeps_a_dated_snapshot(reg):
+    reg.add_ticket("RC-1234", "sDipInt39", "species", Path("/work"))
+    reg.add_ticket("RC-5678", "sOther1", "species", Path("/work2"))
+
+    snapshots = sorted(reg.dir.glob("grit_registry.2*.json"))
+    assert len(snapshots) == 1
+    assert [t["ticket_id"] for t in json.loads(snapshots[0].read_text())] == ["RC-1234"]
+
+
+def test_dated_snapshot_is_not_overwritten_later_the_same_day(reg):
+    reg.add_ticket("RC-1234", "sDipInt39", "species", Path("/work"))
+    reg.add_ticket("RC-5678", "sOther1", "species", Path("/work2"))
+    reg.add_ticket("RC-9999", "sThird1", "species", Path("/work3"))
+
+    snapshots = sorted(reg.dir.glob("grit_registry.2*.json"))
+    assert len(snapshots) == 1
+    assert [t["ticket_id"] for t in json.loads(snapshots[0].read_text())] == ["RC-1234"]
+
+
+def test_dated_snapshots_are_pruned_to_the_retention_window(reg):
+    for day in range(1, 12):
+        (reg.dir / f"grit_registry.2020-01-{day:02d}.json").write_text("[]")
+    reg.add_ticket("RC-1234", "sDipInt39", "species", Path("/work"))
+    reg.add_ticket("RC-5678", "sOther1", "species", Path("/work2"))
+
+    snapshots = sorted(p.name for p in reg.dir.glob("grit_registry.2*.json"))
+    assert len(snapshots) == SNAPSHOT_RETENTION
+    assert "grit_registry.2020-01-01.json" not in snapshots
+
+
+# ----------------------------------------------------------------------
+# Write safety (CORR-02 interim mitigation, SEC-03)
+# ----------------------------------------------------------------------
+
+
+def test_temp_file_is_not_a_path_shared_between_writers(reg, monkeypatch):
+    seen = []
+    monkeypatch.setattr(os, "replace", lambda src, dst: seen.append(Path(src)))
+
+    reg.add_ticket("RC-1234", "sDipInt39", "species", Path("/work"))
+
+    assert seen, "expected _save to install the registry via os.replace"
+    for src in seen:
+        assert src.name != "grit_registry.tmp"
+        assert str(os.getpid()) in src.name
+
+
+def test_failed_install_leaves_no_orphan_temp_file(reg, monkeypatch):
+    def boom(src, dst):
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(os, "replace", boom)
+
+    with pytest.raises(OSError):
+        reg.add_ticket("RC-1234", "sDipInt39", "species", Path("/work"))
+
+    assert list(reg.dir.glob("*.tmp*")) == []
+
+
+def test_registry_and_backups_are_written_user_only(reg):
+    reg.add_ticket("RC-1234", "sDipInt39", "species", Path("/work"))
+    reg.add_ticket("RC-5678", "sOther1", "species", Path("/work2"))
+
+    written = [reg.registry_path, reg.backup_path, *reg.dir.glob("grit_registry.2*.json")]
+    for path in written:
+        assert path.stat().st_mode & 0o777 == 0o600, path

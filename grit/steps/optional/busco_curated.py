@@ -14,6 +14,7 @@ from grit.utils.helpers import (
     build_bsub_opts,
     find_latest_dir,
 )
+from grit.utils.modules import module_cmd
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -27,6 +28,20 @@ log = logging.getLogger(__name__)
 
 _BUSCO_SIF = "/nfs/treeoflife-01/teams/grit/users/mh6/singularity/busco.sif"
 _BUSCO_LINEAGES = "/lustre/scratch122/tol/resources/busco/latest/lineages"
+
+
+# ---------------------------------------------------------------------------
+# Dry-run
+# ---------------------------------------------------------------------------
+
+
+def _dry_run_busco_curated(ctx: CurationContext) -> Path:
+    """Write a placeholder BUSCO output dir/file directly under ctx.workdir."""
+    output_dir = ctx.workdir / f"{ctx.tol_id}_busco_singularity"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    placeholder = output_dir / "placeholder.txt"
+    placeholder.write_text("fake\n")
+    return output_dir
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +67,7 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     Command structure:
         bsub -q normal -e e_busco_{mem_gb} -o o_busco_{mem_gb} -n 32 -M {mem_mb} \\
             -R'select[mem>{mem_mb}] rusage[mem={mem_mb}] span[hosts=1]' \\
-            singularity exec -B /lustre {_BUSCO_SIF} busco \\
+            module load grit && singularity exec -B /lustre {_BUSCO_SIF} busco \\
                 -i {input_fa} -o {output_dir} -m genome \\
                 -l {_BUSCO_LINEAGES}/{lineage} -c 32 -f
 
@@ -61,6 +76,15 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     """
     log.info("busco-curated | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO on curated genome")
+
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start(
+            "busco_curated", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
+        )
+        output_dir = _dry_run_busco_curated(ctx)
+        ctx.tracker.finish("busco_curated", run_dir, "success", untracked=ctx.untracked)
+        print_done(f"[dry-run] BUSCO on curated genome → {output_dir}")
+        return
 
     # --- find curated FASTA ---
     # haplotig-files writes *.curated.fa into the pretext_to_asm run dir, not workdir root
@@ -102,6 +126,7 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     # --- build inner command ---
     busco_lineage = str(Path(_BUSCO_LINEAGES) / lineage)
     inner_cmd = (
+        f"{module_cmd('GRIT')} && "
         f"singularity exec -B /lustre {_BUSCO_SIF} busco "
         f"-i {curated_fa} -o {output_dir} -m genome "
         f"-l {busco_lineage} -c 32 -f"
@@ -122,7 +147,11 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     )
 
     # --- submit ---
-    epilogue = _state_update_epilogue(ctx.workdir, "busco_curated", run_dir) if run_dir else None
+    epilogue = (
+        _state_update_epilogue(ctx.workdir, "busco_curated", run_dir, untracked=ctx.untracked)
+        if run_dir
+        else None
+    )
     job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
     if ctx.tracker and run_dir and job_id:
         ctx.tracker.record_job("busco_curated", run_dir, job_id)

@@ -1,5 +1,6 @@
 """Tests for find_reference step."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -142,7 +143,32 @@ def test_local_missing_file_with_tracker_marks_failed(mock_run, mock_ctx, tmp_pa
     mock_tracker.start.assert_called_once()
 
     # Verify tracker.finish was called with "failed" status
-    mock_tracker.finish.assert_called_once_with("find_reference", mock_run_dir, "failed")
+    mock_tracker.finish.assert_called_once_with(
+        "find_reference", mock_run_dir, "failed", untracked=mock_ctx.untracked
+    )
 
     # Verify _run was not called (file check failed before attempting any prep)
     mock_run.assert_not_called()
+
+
+@patch("grit.steps.pre_curation.find_reference._run")
+def test_dry_run_short_circuits_and_writes_placeholder(mock_run, mock_ctx, tmp_path):
+    """dry_run must skip the download/reheader command entirely and write a
+    placeholder reheadered FASTA directly into the tracked run_dir."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+    mock_ctx.dry_run = True
+
+    find_closest_reference(mock_ctx)
+
+    mock_run.assert_not_called()
+
+    history = mock_ctx.tracker.history("find_reference")
+    assert history[-1]["status"] == "success"
+    placeholder = Path(history[-1]["run_dir"]) / f"{mock_ctx.tol_id}_reheader.fna"
+    assert placeholder.exists()

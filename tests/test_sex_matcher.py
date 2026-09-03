@@ -1,5 +1,6 @@
 """Tests for run_sex_matcher's handling of stale 'started' history entries."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from grit.steps.pre_curation.sex_matcher import run_sex_matcher
@@ -78,3 +79,36 @@ def test_started_entry_with_dead_job_and_no_output_resubmits(
         "sex_matcher", ctx.workdir / "sex_matcher" / "run1", "failed"
     )
     mock_bsub.assert_called_once()
+
+
+@patch("grit.steps.pre_curation.sex_matcher._check_bjobs")
+@patch("grit.steps.pre_curation.sex_matcher._submit_bsub")
+def test_dry_run_short_circuits_before_idempotency_and_tolid_checks(
+    mock_bsub, mock_check_bjobs, mock_ctx, tmp_path
+):
+    """dry_run must sit before the tol_id-prefix validation and before any
+    tracker-history/bjobs idempotency check — a bogus tol_id and a stale
+    'started' history entry must not stop the dry-run branch."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    ctx = mock_ctx
+    ctx.workdir = tmp_path
+    # Genuinely fails the real check: lowercased ("xxnotaninsect1") does not
+    # start with any of _INSECT_PREFIXES ("ic", "il", "id", "n").
+    ctx.tol_id = "xxNotAnInsect1"
+    ctx.print_only = False
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(ctx.ticket_id, ctx.tol_id, ctx.species, ctx.workdir)
+    ctx.tracker = RunTracker(tmp_path, registry=registry)
+    ctx.dry_run = True
+
+    run_sex_matcher(ctx)
+
+    mock_bsub.assert_not_called()
+    mock_check_bjobs.assert_not_called()
+
+    history = ctx.tracker.history("sex_matcher")
+    assert history[-1]["status"] == "success"
+    placeholder = Path(history[-1]["run_dir"]) / "Best_match_1"
+    assert placeholder.exists()

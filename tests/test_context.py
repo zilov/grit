@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from grit.core.context import CurationContext, _derive_workdir, _detect_assembly_type
-from tests.conftest import TEST_USER_CONFIG, TEST_YAML_PRIMARY
+from tests.conftest import TEST_USER_CONFIG, TEST_YAML_HAP1, TEST_YAML_PRIMARY
 
 # --- _detect_assembly_type ---
 
@@ -176,3 +176,89 @@ def test_real_primary_curated_dir(real_ctx_primary):
     ctx = real_ctx_primary
     assert str(ctx.assembly_curated_dir).endswith("assembly/curated/xbLimHian1.1")
     assert "20240425" not in str(ctx.assembly_curated_dir)
+
+
+# --- dry_run isolation ---
+
+
+def test_dry_run_flag_threads_through_to_context():
+    ctx = CurationContext.from_ticket(
+        "RC-1234", TEST_USER_CONFIG, yaml_override=TEST_YAML_HAP1, dry_run=True
+    )
+    assert ctx.dry_run is True
+
+
+def test_dry_run_defaults_to_false(mock_ctx):
+    assert mock_ctx.dry_run is False
+
+
+def test_dry_run_workdir_isolated_from_real_workdir(tmp_path, monkeypatch):
+    """A dry_run=True context's workdir/tracker registry must live under
+    dry_run_root(), never under the real derived workdir or ~/.grit."""
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+
+    real_ctx = CurationContext.from_ticket(
+        "RC-1234", TEST_USER_CONFIG, yaml_override=TEST_YAML_HAP1, dry_run=False
+    )
+    dry_ctx = CurationContext.from_ticket(
+        "RC-1234", TEST_USER_CONFIG, yaml_override=TEST_YAML_HAP1, dry_run=True
+    )
+
+    assert dry_ctx.workdir != real_ctx.workdir
+    assert tmp_path in dry_ctx.workdir.parents or dry_ctx.workdir == tmp_path
+    assert "assembly/draft" not in str(real_ctx.workdir)
+
+    # tracker's underlying registry points at the monkeypatched dry_run_root, not ~/.grit
+    assert dry_ctx.tracker._registry.dir == tmp_path
+    assert dry_ctx.tracker.workdir == dry_ctx.workdir
+
+
+def test_print_only_takes_precedence_over_dry_run(tmp_path, monkeypatch):
+    """Per the binding global constraint: if both --print-only and --dry-run are
+    set, --print-only wins — dry_run resolves to False and the real (non-sandboxed)
+    workdir is used, not dry_run_root()."""
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+
+    ctx = CurationContext.from_ticket(
+        "RC-1234",
+        TEST_USER_CONFIG,
+        yaml_override=TEST_YAML_HAP1,
+        print_only=True,
+        dry_run=True,
+    )
+
+    assert ctx.dry_run is False
+    assert "assembly/draft" not in str(ctx.workdir)
+    assert tmp_path not in ctx.workdir.parents and ctx.workdir != tmp_path
+
+
+def test_dry_run_isolates_every_writable_path(tmp_path, monkeypatch):
+    """Regression guard: every real-filesystem path a dry-run context computes
+    must live under the monkeypatched dry_run_root(), not the real derived
+    location — not just workdir. Catches future fields with the same bug as
+    assembly_curated_dir (constructed straight from the real YAML draft path,
+    with no dry_run isolation) before they cause data loss."""
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+
+    ctx = CurationContext.from_yaml("RC-1234", TEST_YAML_HAP1, TEST_USER_CONFIG, dry_run=True)
+
+    assert tmp_path in ctx.workdir.parents or ctx.workdir == tmp_path
+    assert tmp_path in ctx.assembly_curated_dir.parents or ctx.assembly_curated_dir == tmp_path
+    assert ctx.assembly_curated_dir != ctx.workdir
+    assert "assembly/curated" not in str(ctx.assembly_curated_dir)
+
+
+def test_dry_run_workdir_is_keyed_by_ticket_id_not_tol_id(tmp_path, monkeypatch):
+    """Two dry-run tickets sharing a YAML fixture (hence the same tol_id) must
+    get independent sandboxes — a real curator never runs two tickets for the
+    same tol_id at once, but a developer testing two different --dry-run
+    pipeline orderings against the same species fixture does exactly that."""
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+
+    ctx_a = CurationContext.from_yaml("scenario-a", TEST_YAML_HAP1, TEST_USER_CONFIG, dry_run=True)
+    ctx_b = CurationContext.from_yaml("scenario-b", TEST_YAML_HAP1, TEST_USER_CONFIG, dry_run=True)
+
+    assert ctx_a.tol_id == ctx_b.tol_id  # same species/YAML fixture
+    assert ctx_a.workdir != ctx_b.workdir
+    assert ctx_a.workdir == tmp_path / "scenario-a"
+    assert ctx_a.assembly_curated_dir != ctx_b.assembly_curated_dir

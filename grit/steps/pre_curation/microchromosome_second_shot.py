@@ -1,12 +1,20 @@
 """Microchromosome second-shot curation: pre-curation step."""
 
 import logging
+from pathlib import Path
 
 import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, collect_outputs, find_canonical_chr_list, find_canonical_fa
+from grit.utils.helpers import (
+    _run,
+    collect_outputs,
+    find_canonical_chr_list,
+    find_canonical_fa,
+    is_single_hap,
+    write_fake_outputs,
+)
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -66,13 +74,38 @@ def run_microchromosome_second_shot(ctx: CurationContext) -> None:
     log.info("microchromosome-second-shot | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Microchromosome second-shot curation")
 
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start(
+            "microchromosome_second_shot", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
+        )
+        outputs = write_fake_outputs("microchromosome_second_shot", run_dir, ctx.tol_id)
+        if is_single_hap(ctx):
+            # write_fake_outputs always writes both hap1/hap2 _OUTPUT_SPECS entries;
+            # drop the hap2 ones (and delete the files it wrote) so a single-hap
+            # dry-run leaves neither a tracked key nor an on-disk file that a later
+            # real microchromosome-combine's filesystem glob could mistake for a
+            # genuine hap2.
+            for key in ("hap2_large_fa", "hap2_large_chr"):
+                path = outputs.pop(key, None)
+                if path:
+                    Path(path).unlink(missing_ok=True)
+        ctx.tracker.finish(
+            "microchromosome_second_shot",
+            run_dir,
+            "success",
+            outputs=outputs,
+            untracked=ctx.untracked,
+        )
+        print_done(f"[dry-run] Microchromosome second-shot curation complete → {run_dir}")
+        return
+
     # --- find curated fastas and chr lists via the canonical lookup chain ---
     # (rename_and_orient/blast_contaminants output preferred, pretext_to_asm fallback —
     # same resolution fastga/rename-and-orient use, not a hand-rolled glob).
-    is_single_hap = ctx.hap1_prefix in ("primary", "paternal")
+    single_hap = is_single_hap(ctx)
     hap1_fa = find_canonical_fa(ctx, ctx.hap1_prefix)
     hap1_chr = find_canonical_chr_list(ctx, ctx.hap1_prefix)
-    has_hap2 = not is_single_hap
+    has_hap2 = not single_hap
     if has_hap2:
         hap2_fa = find_canonical_fa(ctx, ctx.hap2_prefix)
         hap2_chr = find_canonical_chr_list(ctx, ctx.hap2_prefix)
@@ -103,11 +136,17 @@ def run_microchromosome_second_shot(ctx: CurationContext) -> None:
                 _OUTPUT_SPECS, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
             )
             ctx.tracker.finish(
-                "microchromosome_second_shot", run_dir, "success", outputs=outputs or None
+                "microchromosome_second_shot",
+                run_dir,
+                "success",
+                outputs=outputs or None,
+                untracked=ctx.untracked,
             )
     except Exception:
         if ctx.tracker:
-            ctx.tracker.finish("microchromosome_second_shot", run_dir, "failed")
+            ctx.tracker.finish(
+                "microchromosome_second_shot", run_dir, "failed", untracked=ctx.untracked
+            )
         raise
 
     # --- print scp of micro pretext map to local for curation ---

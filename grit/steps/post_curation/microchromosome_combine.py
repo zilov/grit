@@ -9,7 +9,13 @@ import rich_click as click
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.steps.post_curation.pretext_to_asm import _run_pretext_to_asm_core
-from grit.utils.helpers import _run, collect_outputs, find_latest_dir
+from grit.utils.helpers import (
+    _run,
+    collect_outputs,
+    find_latest_dir,
+    is_single_hap,
+    write_fake_outputs,
+)
 from grit.utils.output import print_done, print_step_header
 
 log = logging.getLogger(__name__)
@@ -78,6 +84,28 @@ def run_microchromosome_combine(ctx: CurationContext) -> None:
     """
     log.info("microchromosome-combine | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Microchromosome combine")
+
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start(
+            "microchromosome_combine", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
+        )
+        outputs = write_fake_outputs("microchromosome_combine", run_dir, ctx.tol_id)
+        if is_single_hap(ctx):
+            # microchromosome-second-shot's own tooling always names dual-hap
+            # outputs with the literal "hap1"/"hap2" token regardless of YAML
+            # key — but a single-hap (primary/alternate) assembly never has a
+            # genuine second haplotype to combine, so drop the hap2 stub AND
+            # delete the file itself, matching what a real run would produce.
+            for key in ("hap2_fa", "hap2_chr_list"):
+                path = outputs.pop(key, None)
+                if path:
+                    Path(path).unlink(missing_ok=True)
+        ctx.tracker.finish(
+            "microchromosome_combine", run_dir, "success", outputs=outputs, untracked=ctx.untracked
+        )
+        dest = outputs.get("hap1_fa", run_dir)
+        print_done(f"[dry-run] Microchromosome combine complete. Final merged FASTAs → {dest}")
+        return
 
     second_shot_dir = find_latest_dir(ctx, "microchromosome_second_shot")
 
@@ -165,11 +193,17 @@ def run_microchromosome_combine(ctx: CurationContext) -> None:
         if ctx.tracker:
             outputs = collect_outputs(_OUTPUT_SPECS, run_dir, ctx.tol_id)
             ctx.tracker.finish(
-                "microchromosome_combine", run_dir, "success", outputs=outputs or None
+                "microchromosome_combine",
+                run_dir,
+                "success",
+                outputs=outputs or None,
+                untracked=ctx.untracked,
             )
     except Exception:
         if ctx.tracker:
-            ctx.tracker.finish("microchromosome_combine", run_dir, "failed")
+            ctx.tracker.finish(
+                "microchromosome_combine", run_dir, "failed", untracked=ctx.untracked
+            )
         raise
 
     print_done(f"Microchromosome combine complete. Final merged FASTAs in: {run_dir}")

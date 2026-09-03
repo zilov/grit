@@ -11,7 +11,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, find_canonical_fa
+from grit.utils.helpers import _run, find_canonical_fa, write_fake_outputs
 from grit.utils.modules import module_cmd
 from grit.utils.output import console, print_done, print_step_header, print_tip
 
@@ -123,7 +123,7 @@ def _submit_hic_remapping(
                 ctx.tracker.record_job(step_name, run_dir, m.group(1))
     except Exception:
         if ctx.tracker:
-            ctx.tracker.finish(step_name, run_dir, "failed")
+            ctx.tracker.finish(step_name, run_dir, "failed", untracked=ctx.untracked)
         raise
 
     remapped_pattern = str(run_dir / "pretext_maps_processed" / f"{sample}*normal.pretext")
@@ -132,6 +132,16 @@ def _submit_hic_remapping(
     )
     console.print("\n[bold]After remapping, copy the map to your local machine:[/bold]")
     console.print(f"  [green]{scp_cmd}[/green]")
+
+
+def _dry_run_hic_remapping_for_hap(ctx: CurationContext, step_name: str) -> dict[str, str]:
+    """Write a placeholder remapped pretext map directly into this hap's tracked run_dir."""
+    run_dir = ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+    outputs = write_fake_outputs(
+        step_name, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
+    )
+    ctx.tracker.finish(step_name, run_dir, "success", outputs=outputs, untracked=ctx.untracked)
+    return outputs
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +186,17 @@ def run_hic_remapping(
     if overrides:
         log.info("Path overrides: %s", {k: str(v) for k, v in overrides.items()})
     print_step_header(ctx.ticket_id, ctx.tol_id, "HiC remapping")
+
+    if ctx.dry_run:
+        outputs: dict[str, str] = {}
+        if run_hap1:
+            outputs.update(_dry_run_hic_remapping_for_hap(ctx, "hic_remapping"))
+        if run_hap2:
+            print_step_header(ctx.ticket_id, ctx.tol_id, f"HiC remapping ({ctx.hap2_prefix})")
+            outputs.update(_dry_run_hic_remapping_for_hap(ctx, "hic_remapping_hap2"))
+        placeholder = outputs.get("hap1_pretext") or outputs.get("hap2_pretext") or ctx.workdir
+        print_done(f"[dry-run] Remapped pretext map → {placeholder}")
+        return
 
     if run_hap1:
         _submit_hic_remapping(ctx, ctx.hap1_prefix, "hic_remapping", assembly=assembly)

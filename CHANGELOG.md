@@ -4,6 +4,62 @@ All notable changes to this project are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+## [0.4.0] - 2026-09-03
+
+### Added
+
+- `pretext-to-asm-recurate` step (with `--hap2`) for a second curation round on an already-remapped pretext map, plus the `post-curation-recurate` composite that chains it with the rest of post-curation.
+- `retrack` command to promote an `--untracked` run back to canonical using the outputs its own run recorded.
+- `--dry-run` mode: every supported step writes placeholder outputs into an isolated `~/.grit/dry_run/` sandbox instead of running real commands, so step sequencing, tracking and canonical resolution can be exercised end to end without farm/NFS access. `--print-only` takes precedence when both are given.
+- `--untracked` flag on every step via the `GritCommand` base class, for running a step without it counting as canonical registry state.
+- `rename-and-orient` gained `--mapping-table`, `--min-coverage` and `--plot-alignments`.
+- `fastga-stats` as its own synchronous tracked step, decoupled from the `fastga` bsub job, skipping re-computation when results already exist.
+- `grit status -t` shows a "Canonical" column marking which run currently owns each output type (`fa`/`hap`/`chr`), a ticket age column, and per-month counts for done tickets; the global status absorbed the old summary.
+- `recuration-canonical-priority.md`: curator-facing decision path and flowchart for canonical resolution.
+- Registry backups: every write keeps the version it replaces as `grit_registry.json.bak`, plus a once-a-day `grit_registry.<date>.json` snapshot (seven kept).
+
+### Changed
+
+- Canonical file resolution (`find_canonical_fa`/`find_canonical_chr_list`/`find_canonical_haplotigs`) replaced its fixed step-priority tiers with a single flat pool compared by file mtime — whichever qualifying step ran most recently wins. This unblocks chaining `blast-contaminants`/`rename-and-orient` after a recurate round without running `grit untrack` first.
+- `fastga-stats` picks its best PAF target by summed non-overlapping alignment coverage instead of the single longest alignment (new `paf_top_targets_by_coverage.py`, replacing `paf_top_targets_add_top_longest.py`); the top-targets table gained a fourth column.
+- `blast-contaminants` uses `decon_fasta` instead of `decon_blastBTK`, groups its outputs per haplotype and fails loudly instead of silently producing nothing.
+- `rename-and-orient` is resolved as an external dependency at submission time (constraint `>=1.2.2`) rather than assuming a path.
+
+### Fixed
+
+- `blast-contaminants` no longer leaves an empty `alternate/` directory behind for a single-haplotype ticket in `--dry-run`, which the real run never creates.
+- A corrupt or unreadable `~/.grit/grit_registry.json` no longer erases every ticket and all step history: reads now fail closed with a `RegistryError` naming the backups to restore from, instead of reading as an empty registry that the next write installs.
+- An `--untracked` run no longer becomes canonical the moment it finishes: `RunTracker.finish()` keeps writing `status="untracked"` instead of overwriting it with `success`/`failed`.
+- A run whose registry `outputs` were recorded incompletely no longer hands the canonical slot back to an older step — the step's latest run dir is re-globbed with its own `_OUTPUT_SPECS` first, so canonical can never move backwards in time.
+- `pretext-to-asm` records its haplotig FASTA and chromosome list for primary (single-haplotype) assemblies, not just hap-prefixed ones.
+- `rename-and-orient` tracks its chromosome-list output, not just the FASTA, and writes into its own run dir rather than a shared output dir.
+- `fastga` captures every file matched by a multi-match output spec instead of only the last one.
+- `fastga-stats` marks its tracker record failed on a script error or missing output instead of leaving it stuck as "started", and fails with a clear message on a stale 3-column top-targets file.
+- `grit status` no longer inflates run counts: all records of one run collapse into a single history row, superseded "started" rows are dropped, and cleaned-up tickets count towards the done total again.
+- The `--dry-run` sandbox is keyed by ticket ID rather than ToL ID, and single-haplotype tickets no longer leave stray hap2/alternate placeholder files behind.
+
+### Security
+
+- Everything `RegistryManager` writes (the registry, its backup and its snapshots) is created mode 0600 and installed through a temp file named for the writing host and pid, so concurrent writers on different nodes can no longer install each other's partial output through a shared `grit_registry.tmp`.
+
+## [0.3.5] - 2026-08-19
+
+### Fixed
+
+- `sex-matcher` accepts nematode ToL IDs (`n` prefix).
+
+## [0.3.4] - 2026-08-14
+
+### Fixed
+
+- Bundled script paths (`fastga`, `sex-matcher`, `busco-synteny`) resolve correctly when grit is installed as a package rather than run from a clone.
+
+### Changed
+
+- README installs grit as a `uv` tool straight from git, with no local clone needed.
+
 ## [0.3.3] - 2026-08-14
 
 ### Added

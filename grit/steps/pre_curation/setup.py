@@ -341,6 +341,26 @@ def run_setup(ctx: CurationContext) -> None:
     """
     log.info("setup | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
 
+    if ctx.dry_run:
+        from grit.core.registry import RegistryManager, dry_run_root
+
+        ctx.workdir.mkdir(parents=True, exist_ok=True)
+        RegistryManager(registry_dir=dry_run_root()).add_ticket(
+            ctx.ticket_id,
+            ctx.tol_id,
+            ctx.species,
+            ctx.workdir,
+            hap1_prefix=ctx.hap1_prefix,
+            hap2_prefix=ctx.hap2_prefix,
+        )
+        run_dir = ctx.tracker.start(
+            "setup_curation", ctx.ticket_id, ctx.tol_id, create_dir=False, untracked=ctx.untracked
+        )
+        (ctx.workdir / "original.fa").write_bytes(b">fake\nACGT\n")
+        ctx.tracker.finish("setup_curation", run_dir, "success", untracked=ctx.untracked)
+        print_done(f"[dry-run] ticket registered, workdir → {ctx.workdir}")
+        return
+
     # Record in global registry
     if not ctx.print_only:
         from grit.core.registry import RegistryManager
@@ -365,10 +385,10 @@ def run_setup(ctx: CurationContext) -> None:
         setup_curation(ctx)
         print_pretext_scp_commands(ctx)
         if ctx.tracker and not ctx.print_only:
-            ctx.tracker.finish("setup_curation", run_dir, "success")
+            ctx.tracker.finish("setup_curation", run_dir, "success", untracked=ctx.untracked)
     except Exception:
         if ctx.tracker and not ctx.print_only:
-            ctx.tracker.finish("setup_curation", run_dir, "failed")
+            ctx.tracker.finish("setup_curation", run_dir, "failed", untracked=ctx.untracked)
         raise
 
     if any(ctx.tol_id.lower().startswith(p) for p in _INSECT_PREFIXES):

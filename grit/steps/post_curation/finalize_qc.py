@@ -16,6 +16,7 @@ from grit.utils.helpers import (
     find_canonical_fa,
     find_canonical_haplotigs,
     find_latest_dir,
+    is_single_hap,
     pta_curated_fa_exists,
 )
 from grit.utils.output import console, print_done, print_step_header
@@ -161,6 +162,54 @@ def finalize_for_qc(
     log.info("finalize-qc | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Finalize for QC")
 
+    # primary/alternate (and paternal/maternal) assemblies use version-only dest naming
+    # and only copy hap1 files — downstream scripts expect {tol_id}.{version}.primary.curated.fa
+    # hap1/hap2 assemblies copy both haplotypes with {tol_id}.{hap}.{version}.primary.curated.fa
+    def _dest_name(hap_prefix: str, suffix: str) -> str:
+        if is_single_hap(ctx):
+            return f"{ctx.tol_id}.{ctx.release_version}.{suffix}"
+        return f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.{suffix}"
+
+    if ctx.dry_run:
+        run_dir = (
+            ctx.tracker.start("finalize_qc", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+            if ctx.tracker
+            else None
+        )
+
+        dest_dir = curated_dir or ctx.assembly_curated_dir
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        haps_to_process = (
+            [ctx.hap1_prefix] if is_single_hap(ctx) else [ctx.hap1_prefix, ctx.hap2_prefix]
+        )
+        for hap_prefix in haps_to_process:
+            (dest_dir / _dest_name(hap_prefix, "primary.curated.fa")).write_text("fake\n")
+            haplotig_suffix = (
+                "all_haplotigs.curated.fa"
+                if ctx.combine_for_curation
+                else "additional_haplotigs.curated.fa"
+            )
+            (dest_dir / _dest_name(hap_prefix, haplotig_suffix)).write_text("fake\n")
+            (dest_dir / _dest_name(hap_prefix, "primary.chromosome.list.csv")).write_text("fake\n")
+
+        qv_dir = dest_dir / "merquryk"
+        if not qv_dir.exists():
+            from grit.steps.post_curation.qv import run_qv
+
+            run_qv(ctx)
+
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish(
+                "finalize_qc",
+                run_dir,
+                "success",
+                outputs={"curated_dir": str(dest_dir)},
+                untracked=ctx.untracked,
+            )
+        print_done(f"[dry-run] Curated dir → {dest_dir}")
+        return
+
     if not ctx.print_only:
         _raise_if_yaml_pta_mismatch(ctx)
 
@@ -172,22 +221,14 @@ def finalize_for_qc(
 
     dest_dir = curated_dir or ctx.assembly_curated_dir
 
-    # primary/alternate (and paternal/maternal) assemblies use version-only dest naming
-    # and only copy hap1 files — downstream scripts expect {tol_id}.{version}.primary.curated.fa
-    # hap1/hap2 assemblies copy both haplotypes with {tol_id}.{hap}.{version}.primary.curated.fa
-    _IS_SINGLE_HAP = ctx.hap1_prefix in ("primary", "paternal")
-
-    def _dest_name(hap_prefix: str, suffix: str) -> str:
-        if _IS_SINGLE_HAP:
-            return f"{ctx.tol_id}.{ctx.release_version}.{suffix}"
-        return f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.{suffix}"
-
     # 1. mkdir
     _run(f"mkdir -p {dest_dir}", ctx.print_only)
     log.info("Curated dir: %s", dest_dir)
 
     # Which haplotypes to process: primary/alternate → hap1 only; hap1/hap2 → both
-    haps_to_process = [ctx.hap1_prefix] if _IS_SINGLE_HAP else [ctx.hap1_prefix, ctx.hap2_prefix]
+    haps_to_process = (
+        [ctx.hap1_prefix] if is_single_hap(ctx) else [ctx.hap1_prefix, ctx.hap2_prefix]
+    )
 
     # 2a. primary assembly FAs
     assembly_overrides = {ctx.hap1_prefix: hap1_assembly, ctx.hap2_prefix: hap2_assembly}
@@ -282,7 +323,11 @@ def finalize_for_qc(
 
     if ctx.tracker and run_dir:
         ctx.tracker.finish(
-            "finalize_qc", run_dir, "success", outputs={"curated_dir": str(dest_dir)}
+            "finalize_qc",
+            run_dir,
+            "success",
+            outputs={"curated_dir": str(dest_dir)},
+            untracked=ctx.untracked,
         )
 
     from grit.utils.output import print_curation_results, print_tip

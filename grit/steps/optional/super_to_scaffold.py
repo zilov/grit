@@ -12,10 +12,16 @@ from rich.table import Table
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import find_hap_agp
+from grit.utils.helpers import find_hap_agp, is_single_hap, write_fake_outputs
 from grit.utils.output import console, print_done, print_step_header
 
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Output specs
+# ---------------------------------------------------------------------------
+
+_OUTPUT_SPECS = [("table_csv", "{tol_id}.super_to_scaffold.csv", [])]
 
 # ---------------------------------------------------------------------------
 # AGP parsing
@@ -117,8 +123,20 @@ def run_super_to_scaffold(ctx: CurationContext) -> None:
     log.info("super-to-scaffold | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Super to scaffold")
 
-    is_single_hap = ctx.hap1_prefix in ("primary", "paternal")
-    haps_to_process = [ctx.hap1_prefix] if is_single_hap else [ctx.hap1_prefix, ctx.hap2_prefix]
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start(
+            "super_to_scaffold", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
+        )
+        outputs = write_fake_outputs("super_to_scaffold", run_dir, ctx.tol_id)
+        ctx.tracker.finish(
+            "super_to_scaffold", run_dir, "success", outputs=outputs, untracked=ctx.untracked
+        )
+        print_done(f"[dry-run] Table saved → {outputs.get('table_csv', run_dir)}")
+        return
+
+    haps_to_process = (
+        [ctx.hap1_prefix] if is_single_hap(ctx) else [ctx.hap1_prefix, ctx.hap2_prefix]
+    )
 
     if ctx.print_only:
         for hap_prefix in haps_to_process:
@@ -134,7 +152,7 @@ def run_super_to_scaffold(ctx: CurationContext) -> None:
     # Even for a hap1/hap2 assembly, curation may have been done in a single
     # combined window (e.g. combine_for_curation) — in that case there is no
     # separate hap2 AGP, so hap2 is dropped rather than treated as an error.
-    if not is_single_hap:
+    if not is_single_hap(ctx):
         try:
             find_hap_agp(ctx, ctx.hap2_prefix)
         except FileNotFoundError:
@@ -174,11 +192,15 @@ def run_super_to_scaffold(ctx: CurationContext) -> None:
 
         if ctx.tracker:
             ctx.tracker.finish(
-                "super_to_scaffold", run_dir, "success", outputs={"table_csv": str(csv_path)}
+                "super_to_scaffold",
+                run_dir,
+                "success",
+                outputs={"table_csv": str(csv_path)},
+                untracked=ctx.untracked,
             )
     except Exception:
         if ctx.tracker:
-            ctx.tracker.finish("super_to_scaffold", run_dir, "failed")
+            ctx.tracker.finish("super_to_scaffold", run_dir, "failed", untracked=ctx.untracked)
         raise
 
     print_done(f"Table saved → {csv_path}")

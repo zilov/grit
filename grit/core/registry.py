@@ -4,7 +4,7 @@ RegistryManager — global ticket registry stored in ~/.grit/grit_registry.json.
 All tickets live in a single file. The ``status`` field controls visibility:
 active tickets (status != "done") appear in ``grit status``; done tickets are
 filtered out but remain in the file so they can be returned to work and queried
-later (e.g. ``grit summary`` for per-period counts).
+later (e.g. ``grit status``'s done-ticket counts by time period).
 
 Registry record format:
     {
@@ -19,6 +19,23 @@ Registry record format:
 
 ``cleaned_up`` is only set (to True) once ``grit cleanup`` has processed a
 done ticket with no errors; absent/false means it hasn't been cleaned yet.
+
+Durability. The registry is the only record of step history, and it is written
+from every login and compute node over NFS, so reads and writes are deliberately
+defensive:
+
+* reading fails closed — an existing but unparseable registry raises
+  ``RegistryError`` rather than reading as ``[]``, because an empty read
+  followed by a write would erase every ticket;
+* every write first copies the version it replaces to ``grit_registry.json.bak``
+  and, once a day, to ``grit_registry.<date>.json`` (the last
+  ``SNAPSHOT_RETENTION`` days are kept);
+* writes install through a temp file named for the writing host and pid, so two
+  concurrent writers cannot splice each other's partial output, and files are
+  created mode 0600.
+
+Writes are still not serialised across hosts: a concurrent read-modify-write can
+lose a record. That fix is a storage-format decision, tracked separately.
 """
 
 from __future__ import annotations
@@ -26,13 +43,31 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 from datetime import datetime, timezone
 from pathlib import Path
+
+import click
 
 log = logging.getLogger(__name__)
 
 _DEFAULT_DIR = Path.home() / ".grit"
 _REGISTRY_FILENAME = "grit_registry.json"
+
+SNAPSHOT_RETENTION = 7
+
+
+class RegistryError(click.ClickException):
+    """The registry exists but cannot be trusted; refuse to read or overwrite it.
+
+    A ClickException so the curator gets the message and exit code 1 rather than a
+    traceback; it is still an ordinary exception when raised outside the CLI.
+    """
+
+
+def dry_run_root() -> Path:
+    """Isolated sandbox root for --dry-run mode: never the real ~/.grit state."""
+    return Path.home() / ".grit" / "dry_run"
 
 
 class RegistryManager:
@@ -41,6 +76,7 @@ class RegistryManager:
     def __init__(self, registry_dir: Path | None = None) -> None:
         self.dir = registry_dir or _DEFAULT_DIR
         self.registry_path = self.dir / _REGISTRY_FILENAME
+        self.backup_path = self.dir / f"{_REGISTRY_FILENAME}.bak"
 
     # ------------------------------------------------------------------
     # Public API
@@ -292,16 +328,56 @@ class RegistryManager:
         # other bsub steps: leave as-is until epilogue fix propagates
 
     def _load(self) -> list[dict]:
+        """Return the registry document; raise RegistryError if it exists but is unreadable."""
         if not self.registry_path.exists():
             return []
         try:
             return json.loads(self.registry_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            log.warning("Registry: could not read %s", self.registry_path)
-            return []
+        except (json.JSONDecodeError, OSError) as exc:
+            raise RegistryError(self._unreadable_message(exc)) from exc
+
+    def _unreadable_message(self, exc: Exception) -> str:
+        """Curator-facing explanation of an unreadable registry, naming what to restore from."""
+        lines = [
+            f"Registry {self.registry_path} exists but could not be read ({exc}).",
+            "Refusing to continue: writing now would replace it with an empty registry.",
+        ]
+        restore_from = [p for p in (self.backup_path, *reversed(self._snapshots())) if p.exists()]
+        if restore_from:
+            lines.append("Restore the newest one that looks right:")
+            lines += [f"  cp {p} {self.registry_path}" for p in restore_from]
+        else:
+            lines.append(f"No backup found in {self.dir}.")
+        return "\n".join(lines)
+
+    def _snapshots(self) -> list[Path]:
+        """Dated snapshot files, oldest first."""
+        return sorted(self.dir.glob(f"{self.registry_path.stem}.2*.json"))
 
     def _save(self, data: list[dict]) -> None:
         self.dir.mkdir(exist_ok=True)
-        tmp = self.registry_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, indent=2))
-        os.replace(tmp, self.registry_path)
+        if self.registry_path.exists():
+            self._backup_current()
+        self._atomic_write(self.registry_path, json.dumps(data, indent=2))
+
+    def _backup_current(self) -> None:
+        """Keep the version about to be replaced: always as .bak, once a day as a snapshot."""
+        current = self.registry_path.read_text()
+        self._atomic_write(self.backup_path, current)
+        today = datetime.now().strftime("%Y-%m-%d")
+        snapshot = self.dir / f"{self.registry_path.stem}.{today}.json"
+        if not snapshot.exists():
+            self._atomic_write(snapshot, current)
+        for stale in self._snapshots()[:-SNAPSHOT_RETENTION]:
+            stale.unlink(missing_ok=True)
+
+    def _atomic_write(self, path: Path, text: str) -> None:
+        """Install text at path via a temp file private to this writer, mode 0600."""
+        tmp = path.with_name(f"{path.name}.tmp.{socket.gethostname()}.{os.getpid()}")
+        try:
+            tmp.write_text(text)
+            tmp.chmod(0o600)
+            os.replace(tmp, path)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise

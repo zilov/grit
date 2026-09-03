@@ -17,13 +17,18 @@ from grit.utils.output import console
 log = logging.getLogger(__name__)
 
 
+def is_single_hap(ctx: CurationContext) -> bool:
+    """True if this ticket's assembly has no genuine second haplotype (primary/paternal)."""
+    return ctx.hap1_prefix in ("primary", "paternal")
+
+
 def require_workdir(ctx: CurationContext) -> None:
     """
     Abort with a helpful message if ctx.workdir does not exist on disk.
 
-    Skipped in print_only mode (workdir may not exist yet during dry-runs).
+    Skipped in print_only and dry_run mode (workdir may not exist yet).
     """
-    if ctx.print_only:
+    if ctx.print_only or ctx.dry_run:
         return
     if not ctx.workdir.exists():
         log.error(
@@ -81,17 +86,22 @@ def _submit_bsub(
     return output
 
 
-def _state_update_epilogue(workdir: Path, step: str, run_dir: Path) -> str:
+def _state_update_epilogue(workdir: Path, step: str, run_dir: Path, untracked: bool = False) -> str:
     """
     Build the bsub -Ep epilogue command that calls `grit _state-update` when a job finishes.
 
     Uses $LSB_JOBEXIT_STAT (set by LSF in epilogue environment) to determine success vs failed.
     The `grit` command must be on $PATH on compute nodes.
+
+    Pass ``untracked=True`` when the job was submitted for a run started with
+    ``tracker.start(untracked=True)``, so the epilogue's `finish()` call doesn't
+    clobber the untracked marker with 'success'/'failed'.
     """
     grit_bin = sys.argv[0]  # full path — ensures grit is found in bsub epilogue environment
+    untracked_flag = " --untracked" if untracked else ""
     return (
         f"{grit_bin} _state-update --workdir {workdir} --step {step} --run-dir {run_dir} "
-        f"--status $([ $LSB_JOBEXIT_STAT -eq 0 ] && echo success || echo failed)"
+        f"--status $([ $LSB_JOBEXIT_STAT -eq 0 ] && echo success || echo failed){untracked_flag}"
     )
 
 
@@ -242,15 +252,31 @@ def build_less_tip(file: str | None, label: str) -> str | None:
 
 
 def inputs_newer_than_curated_fa(
-    workdir: Path, tol_id: str, pta_dir: Path | None, extra_inputs: list[Path] = ()
+    workdir: Path,
+    tol_id: str,
+    pta_dir: Path | None,
+    extra_inputs: list[Path] = (),
+    *,
+    agp_glob: str | None = None,
 ) -> bool:
-    """Return True if the AGP or any extra_inputs are newer than the curated FASTA in pta_dir."""
+    """
+    Return True if the AGP or any extra_inputs are newer than the curated FASTA in pta_dir.
+
+    *agp_glob* is a filename pattern (not a full path) globbed inside *workdir*;
+    pass it to scope the check to one specific AGP (e.g. a single haplotype's
+    recuration AGP) so unrelated AGPs in the same directory can't trigger a
+    spurious re-run. Defaults to the generic
+    ``{tol_id}*.pretext.agp_1`` → ``{tol_id}*.agp*`` fallback chain.
+    """
     curated_fas = list(pta_dir.glob(f"{tol_id}*.curated.fa")) if pta_dir else []
     if not curated_fas:
         return False
-    agp_files = list(workdir.glob(f"{tol_id}*.pretext.agp_1")) or list(
-        workdir.glob(f"{tol_id}*.agp*")
-    )
+    if agp_glob:
+        agp_files = list(workdir.glob(agp_glob))
+    else:
+        agp_files = list(workdir.glob(f"{tol_id}*.pretext.agp_1")) or list(
+            workdir.glob(f"{tol_id}*.agp*")
+        )
     input_files = agp_files + [p for p in extra_inputs if p.exists()]
     if not input_files:
         return False
@@ -328,15 +354,86 @@ def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     return Path(sorted(matches)[-1])
 
 
+def _recurate_step_name(ctx: "CurationContext", hap_prefix: str) -> str:
+    """Tracker step name recording this haplotype's pretext-to-asm-recurate run."""
+    if hap_prefix == ctx.hap2_prefix:
+        return "pretext_to_asm_recurate_hap2"
+    return "pretext_to_asm_recurate"
+
+
+def _step_output(
+    ctx: "CurationContext", step: str, key_variants: list[str], hap_prefix: str
+) -> Path | None:
+    """
+    Path *step* currently offers for any of *key_variants*, or None.
+
+    Falls back to re-globbing the step's latest run dir with its output specs
+    when the tracked outputs hold no such key, so a run whose outputs were
+    recorded incompletely still competes with its real on-disk files instead of
+    handing the canonical slot to an older step.
+    """
+    for k in key_variants:
+        val = ctx.tracker.get_output(step, k)
+        if val and Path(val).exists():
+            return Path(val)
+
+    run_dir = ctx.tracker.latest_run_dir(step)
+    if not run_dir or not run_dir.exists():
+        return None
+    if step.startswith("pretext_to_asm_recurate"):
+        from grit.steps.post_curation.pretext_to_asm_recurate import _output_specs_for_hap
+
+        specs = _output_specs_for_hap(ctx, hap_prefix)
+    else:
+        specs = _get_step_specs(step)
+    if not specs:
+        return None
+    outputs = collect_outputs(
+        specs, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
+    )
+    for k in key_variants:
+        val = outputs.get(k)
+        if val and Path(val).exists():
+            return Path(val)
+    return None
+
+
+def _latest_tracked_output(
+    ctx: "CurationContext",
+    steps: list[str],
+    key_variants: list[str],
+    hap_prefix: str,
+) -> Path | None:
+    """
+    Among *steps* (tracker step names), return the Path with the newest
+    mtime whose output for any of *key_variants* still exists on disk. Steps
+    with no matching output are skipped. Ties (equal mtime, or only one
+    candidate) resolve to the first-listed step in *steps*.
+    """
+    if not ctx.tracker:
+        return None
+    best: tuple[float, int, Path] | None = None  # (mtime, -priority_index, path)
+    for idx, step in enumerate(steps):
+        p = _step_output(ctx, step, key_variants, hap_prefix)
+        if p:
+            candidate = (p.stat().st_mtime, -idx, p)
+            if best is None or candidate[:2] > best[:2]:
+                best = candidate
+    return best[2] if best else None
+
+
 def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
     Find the canonical assembly FASTA for *hap_prefix*.
 
-    Priority:
-      1. Tracker outputs — rename_and_orient → rename_and_orient_hap2 →
-         blast_contaminants → microchromosome_combine → pretext_to_asm
-      2. ``rename_and_orient`` output — {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.fa
-      3. ``pretext_to_asm`` output   — via find_curated_fa (excludes haplotig files)
+    Resolution order:
+      1. Tracker outputs across a single ordered pool (``pretext_to_asm``,
+         ``microchromosome_combine``, ``blast_contaminants``,
+         ``rename_and_orient``, ``rename_and_orient_hap2``, this haplotype's
+         ``pretext_to_asm_recurate``), compared by mtime — the freshest
+         existing file wins outright, ties going to the first-listed step.
+      2. Filesystem glob in {workdir}/rename_and_orient*/*/{tol_id}.{hap_prefix}.*.fa
+      3. ``pretext_to_asm`` output via find_curated_fa (excludes haplotig files)
 
     Dot-delimited token matching avoids "primary" prefix colliding with the
     ".primary.curated.fa" filename suffix shared by all curated FAs.
@@ -350,49 +447,51 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     }
 
     if ctx.tracker:
-        for step in (
+        keys = [f"{hap_prefix}_fa", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_fa"]
+        pool = [
+            "pretext_to_asm",
+            "microchromosome_combine",
+            "blast_contaminants",
             "rename_and_orient",
             "rename_and_orient_hap2",
-            "blast_contaminants",
-            "microchromosome_combine",
-            "pretext_to_asm",
-        ):
-            for k in (f"{hap_prefix}_fa", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_fa"):
-                val = ctx.tracker.get_output(step, k)
-                if val and Path(val).exists():
-                    return Path(val)
+            _recurate_step_name(ctx, hap_prefix),
+        ]
+        canonical = _latest_tracked_output(ctx, pool, keys, hap_prefix)
+        if canonical:
+            return canonical
 
-    rao_dir = ctx.workdir / "rename_and_orient"
-    if rao_dir.exists():
+    def _rao_search(token: str) -> list[str]:
+        rao_pattern = ctx.workdir / "rename_and_orient*" / "*" / f"{ctx.tol_id}.{token}.*.fa"
+        return [
+            f for f in glob.glob(str(rao_pattern)) if not any(kw in f for kw in _HAPLOTIG_KEYWORDS)
+        ]
 
-        def _rao_search(token: str) -> list[str]:
-            return [
-                f
-                for f in glob.glob(str(rao_dir / f"{ctx.tol_id}.{token}.*.fa"))
-                if not any(kw in f for kw in _HAPLOTIG_KEYWORDS)
-            ]
-
-        matches = _rao_search(hap_prefix)
-        if not matches and hap_prefix in _PTA_ALIASES:
-            matches = _rao_search(_PTA_ALIASES[hap_prefix])
-        if matches:
-            return Path(sorted(matches)[-1])
+    matches = _rao_search(hap_prefix)
+    if not matches and hap_prefix in _PTA_ALIASES:
+        matches = _rao_search(_PTA_ALIASES[hap_prefix])
+    if matches:
+        return Path(sorted(matches)[-1])
     return find_curated_fa(ctx, hap_prefix)
 
 
 def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
-    Find the haplotig FASTA for *hap_prefix* in the latest pretext_to_asm run dir.
+    Find the haplotig FASTA for *hap_prefix*.
 
-    Priority:
-      1. Tracker outputs — pretext_to_asm step
-      2. Filesystem glob in the latest pretext_to_asm run dir
+    Resolution order:
+      1. Tracker outputs across a small ordered pool (``pretext_to_asm``,
+         this haplotype's ``pretext_to_asm_recurate``), compared by mtime —
+         the freshest existing file wins outright, ties going to the
+         first-listed step.
+      2. Filesystem glob in the latest pretext_to_asm run dir.
 
     pretext-to-asm naming by curation type:
       - dual hap:   ``{tol_id}.1.haplotigs.fa``                      (no hap prefix, combined)
       - single hap: ``{tol_id}.1.additional_haplotigs.curated.fa``
       - merged:     ``{tol_id}.1.all_haplotigs.curated.fa``
       - after haplotig-files step: ``{tol_id}.{hap_prefix}.1.all_haplotigs.curated.fa``
+      - after pretext-to-asm-recurate (prior + new merged):
+        ``{tol_id}.{hap_prefix}.{release_version}.all_haplotigs.curated.fa``
 
     Hap-specific patterns are tried first (dot-delimited token + alias); no-prefix
     patterns are only tried for ``hap1_prefix`` to avoid double-copying the same file.
@@ -407,14 +506,14 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
     }
 
     if ctx.tracker:
-        for step in ("pretext_to_asm",):
-            for k in (
-                f"{hap_prefix}_haplotigs",
-                f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_haplotigs",
-            ):
-                val = ctx.tracker.get_output(step, k)
-                if val and Path(val).exists():
-                    return Path(val)
+        keys = [
+            f"{hap_prefix}_haplotigs",
+            f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_haplotigs",
+        ]
+        pool = ["pretext_to_asm", _recurate_step_name(ctx, hap_prefix)]
+        canonical = _latest_tracked_output(ctx, pool, keys, hap_prefix)
+        if canonical:
+            return canonical
 
     pta_dir = find_latest_dir(ctx, "pretext_to_asm")
 
@@ -465,11 +564,14 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
     Find the canonical chromosome list CSV for *hap_prefix*.
 
-    Priority:
-      1. Tracker outputs — rename_and_orient → rename_and_orient_hap2 →
-         microchromosome_combine → pretext_to_asm
+    Resolution order:
+      1. Tracker outputs across a single ordered pool (``pretext_to_asm``,
+         ``microchromosome_combine``, ``rename_and_orient``,
+         ``rename_and_orient_hap2``, this haplotype's
+         ``pretext_to_asm_recurate``), compared by mtime — the freshest
+         existing file wins outright, ties going to the first-listed step.
       2. ``rename_and_orient`` output —
-         {workdir}/rename_and_orient/{tol_id}.{hap_prefix}.*.chromosome.list.csv
+         {workdir}/rename_and_orient*/*/{tol_id}.{hap_prefix}.*.chromosome.list.csv
       3. ``pretext_to_asm`` output — {tol_id}.{hap_prefix}.*.chromosome.list.csv
       4. ``pretext_to_asm`` no-hap-prefix format (single hap / merged) —
          {tol_id}.{version}.primary.chromosome.list.csv
@@ -489,30 +591,32 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     }
 
     if ctx.tracker:
-        for step in (
+        keys = [f"{hap_prefix}_chr_list", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_chr_list"]
+        pool = [
+            "pretext_to_asm",
+            "microchromosome_combine",
             "rename_and_orient",
             "rename_and_orient_hap2",
-            "microchromosome_combine",
-            "pretext_to_asm",
-        ):
-            for k in (
-                f"{hap_prefix}_chr_list",
-                f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_chr_list",
-            ):
-                val = ctx.tracker.get_output(step, k)
-                if val and Path(val).exists():
-                    return Path(val)
+            _recurate_step_name(ctx, hap_prefix),
+        ]
+        canonical = _latest_tracked_output(ctx, pool, keys, hap_prefix)
+        if canonical:
+            return canonical
 
     def _search_dir(directory: Path, token: str) -> list[str]:
         return glob.glob(str(directory / f"{ctx.tol_id}.{token}.*.chromosome.list.csv"))
 
-    rao_dir = ctx.workdir / "rename_and_orient"
-    if rao_dir.exists():
-        matches = _search_dir(rao_dir, hap_prefix)
-        if not matches and hap_prefix in _PTA_ALIASES:
-            matches = _search_dir(rao_dir, _PTA_ALIASES[hap_prefix])
-        if matches:
-            return Path(sorted(matches)[-1])
+    def _search_rao(token: str) -> list[str]:
+        rao_pattern = (
+            ctx.workdir / "rename_and_orient*" / "*" / f"{ctx.tol_id}.{token}.*.chromosome.list.csv"
+        )
+        return glob.glob(str(rao_pattern))
+
+    matches = _search_rao(hap_prefix)
+    if not matches and hap_prefix in _PTA_ALIASES:
+        matches = _search_rao(_PTA_ALIASES[hap_prefix])
+    if matches:
+        return Path(sorted(matches)[-1])
 
     pta_dir = find_latest_dir(ctx, "pretext_to_asm")
     matches = _search_dir(pta_dir, hap_prefix)
@@ -685,23 +789,83 @@ def _clean_species_name(species: str) -> str:
     return f"{words[0]} {second}"
 
 
+# Join separator for a "multi" spec's output value — several matched files
+# for one key are stored as a single string so the tracker's outputs dict
+# stays dict[str, str] end to end; split on this to recover the file list.
+MULTI_OUTPUT_SEP = "\n"
+
+
 def collect_outputs(
-    specs: list[tuple[str, str, list[str]]],
+    specs: list[tuple[str, str, list[str]] | tuple[str, str, list[str], bool]],
     run_dir: Path,
     tol_id: str,
     *,
     hap1: str = "hap1",
     hap2: str = "hap2",
 ) -> dict[str, str]:
-    """Glob for step outputs once and return {key: path_str} dict."""
+    """
+    Glob for step outputs once and return {key: path_str} dict.
+
+    A 4-element spec `(key, pattern, excludes, multi=True)` keeps every match
+    (not just the last one), joined with MULTI_OUTPUT_SEP — for a glob like
+    "*.idx" that legitimately matches more than one meaningful file (e.g.
+    fastga's separate ref/query dgenies indexes).
+    """
     outputs: dict[str, str] = {}
-    for key, pattern, excludes in specs:
+    for spec in specs:
+        key, pattern, excludes = spec[0], spec[1], spec[2]
+        multi = spec[3] if len(spec) > 3 else False
         if key in outputs:  # already found via earlier spec (fallback skip)
             continue
         glob_pattern = pattern.format(tol_id=tol_id, hap1=hap1, hap2=hap2)
         matches = [f for f in run_dir.glob(glob_pattern) if not any(e in f.name for e in excludes)]
-        if matches:
+        if not matches:
+            continue
+        if multi:
+            outputs[key] = MULTI_OUTPUT_SEP.join(str(f) for f in sorted(matches))
+        else:
             outputs[key] = str(sorted(matches)[-1])
+    return outputs
+
+
+def write_fake_outputs(
+    step: str,
+    run_dir: Path,
+    tol_id: str,
+    *,
+    hap1: str = "hap1",
+    hap2: str = "hap2",
+    content: dict[str, bytes] | None = None,
+) -> dict[str, str]:
+    """
+    Write one placeholder file per _OUTPUT_SPECS entry for *step*, returning {key: path}.
+
+    Any ``*``/``?`` wildcard in a spec's glob pattern is filled with the fixed
+    placeholder token ``"1"`` to produce a concrete filename. A 4-element
+    "multi" spec (see collect_outputs) writes two placeholder files instead
+    of one, joined with MULTI_OUTPUT_SEP, so dry-run mirrors the real
+    multi-file case.
+    """
+    outputs: dict[str, str] = {}
+    for spec in _get_step_specs(step):
+        key, pattern, _excludes = spec[0], spec[1], spec[2]
+        multi = spec[3] if len(spec) > 3 else False
+        if key in outputs:  # already written via earlier spec (fallback skip)
+            continue
+        data = content.get(key, b">fake\nACGT\n") if content else b">fake\nACGT\n"
+        tokens = ["1", "2"] if multi else ["1"]
+        file_paths = []
+        for token in tokens:
+            rel_path = (
+                pattern.format(tol_id=tol_id, hap1=hap1, hap2=hap2)
+                .replace("*", token)
+                .replace("?", token)
+            )
+            file_path = run_dir / rel_path
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_bytes(data)
+            file_paths.append(file_path)
+        outputs[key] = MULTI_OUTPUT_SEP.join(str(p) for p in file_paths)
     return outputs
 
 
@@ -711,11 +875,13 @@ def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
 
     _MAP = {
         "pretext_to_asm": ("grit.steps.post_curation.pretext_to_asm", "_OUTPUT_SPECS"),
+        "blast_contaminants": ("grit.steps.optional.blast_contaminants", "_OUTPUT_SPECS"),
         "rename_and_orient": ("grit.steps.optional.rename_and_orient", "_OUTPUT_SPECS"),
         "rename_and_orient_hap2": ("grit.steps.optional.rename_and_orient", "_OUTPUT_SPECS_HAP2"),
         "hic_remapping": ("grit.steps.post_curation.hic_remapping", "_OUTPUT_SPECS"),
         "hic_remapping_hap2": ("grit.steps.post_curation.hic_remapping", "_OUTPUT_SPECS_HAP2"),
         "fastga": ("grit.steps.optional.fastga", "_OUTPUT_SPECS"),
+        "fastga_stats": ("grit.steps.optional.fastga", "_OUTPUT_SPECS_STATS"),
         "busco_synteny": ("grit.steps.optional.busco_synteny", "_OUTPUT_SPECS"),
         "fastga_synteny": ("grit.steps.optional.fastga_synteny", "_OUTPUT_SPECS"),
         "microchromosome_second_shot": (
@@ -728,6 +894,10 @@ def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
         ),
         "microchromosome_combine": (
             "grit.steps.post_curation.microchromosome_combine",
+            "_OUTPUT_SPECS",
+        ),
+        "super_to_scaffold": (
+            "grit.steps.optional.super_to_scaffold",
             "_OUTPUT_SPECS",
         ),
     }

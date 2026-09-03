@@ -1,13 +1,28 @@
 """Tests for the super-to-scaffold AGP parser."""
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
-from grit.steps.optional.super_to_scaffold import _natural_super_key, _parse_agp_supers
+from grit.steps.optional.super_to_scaffold import (
+    _natural_super_key,
+    _parse_agp_supers,
+    run_super_to_scaffold,
+)
 from grit.utils.helpers import find_hap_agp
 
 _FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def _attach_tracker(ctx, tmp_path):
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    ctx.workdir = tmp_path
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(ctx.ticket_id, ctx.tol_id, ctx.species, tmp_path)
+    ctx.tracker = RunTracker(tmp_path, registry=reg)
 
 
 def _rows_by_super(rows):
@@ -166,3 +181,32 @@ def test_find_hap_agp_falls_back_to_combined_window(mock_ctx, tmp_path):
     assert find_hap_agp(mock_ctx, mock_ctx.hap1_prefix) == combined_agp
     with pytest.raises(FileNotFoundError):
         find_hap_agp(mock_ctx, mock_ctx.hap2_prefix)
+
+
+@patch("grit.steps.optional.super_to_scaffold.find_hap_agp")
+def test_run_super_to_scaffold_dry_run_short_circuits(mock_find_hap_agp, mock_ctx, tmp_path):
+    """dry_run must skip AGP lookup entirely and write a fake CSV."""
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.dry_run = True
+
+    run_super_to_scaffold(mock_ctx)
+
+    mock_find_hap_agp.assert_not_called()
+    csv_path = mock_ctx.tracker.get_output("super_to_scaffold", "table_csv")
+    assert csv_path is not None
+    assert Path(csv_path).exists()
+
+
+@patch("grit.steps.optional.super_to_scaffold.find_hap_agp")
+def test_run_super_to_scaffold_dry_run_single_hap(mock_find_hap_agp, mock_ctx_primary, tmp_path):
+    """A single-hap (primary/alternate) assembly's dry-run must still succeed
+    without ever consulting hap-gating logic (find_hap_agp is never called)."""
+    _attach_tracker(mock_ctx_primary, tmp_path)
+    mock_ctx_primary.dry_run = True
+
+    run_super_to_scaffold(mock_ctx_primary)
+
+    mock_find_hap_agp.assert_not_called()
+    csv_path = mock_ctx_primary.tracker.get_output("super_to_scaffold", "table_csv")
+    assert csv_path is not None
+    assert Path(csv_path).exists()

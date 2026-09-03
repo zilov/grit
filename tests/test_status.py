@@ -2,10 +2,20 @@
 
 from unittest.mock import patch
 
+from grit.core.context import CurationContext
 from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
-from grit.core.status import _print_less_tips, _print_scp_tips, show_ticket_history
-from tests.conftest import TEST_USER_CONFIG
+from grit.core.status import (
+    _canonical_haps,
+    _canonical_mark,
+    _print_less_tips,
+    _print_scp_tips,
+    _resolve_canonical_files,
+    show_global_status,
+    show_ticket_history,
+)
+from grit.utils.output import console
+from tests.conftest import TEST_USER_CONFIG, TEST_YAML_HAP1, TEST_YAML_PRIMARY, plain
 
 
 @patch("grit.core.status.print_tip")
@@ -69,6 +79,49 @@ def test_print_scp_tips_hic_remapping_both_haps_prints_two_tips(mock_print_tip):
 
 
 @patch("grit.core.status.print_tip")
+def test_print_scp_tips_splits_multi_value_output_into_separate_files(mock_print_tip):
+    """fastga's 'idx' output is a MULTI_OUTPUT_SEP-joined pair (ref + query
+    dgenies index) — both must reach the scp command, not just one."""
+    step_latest = {
+        "fastga": {
+            "status": "success",
+            "outputs": {
+                "idx": "/lustre/foo/ref_name.idx\n/lustre/foo/query_name.idx",
+                "paf": "/lustre/foo/run.paf",
+            },
+        },
+    }
+
+    _print_scp_tips(step_latest, "farm22", "sDipInt39")
+
+    mock_print_tip.assert_called_once()
+    tip = mock_print_tip.call_args[0][0]
+    assert "scp farm22:/lustre/foo/ref_name.idx" in tip
+    assert "scp farm22:/lustre/foo/query_name.idx" in tip
+    assert "scp farm22:/lustre/foo/run.paf" in tip
+
+
+@patch("grit.core.status.print_tip")
+def test_print_scp_tips_offers_fastga_stats_outputs(mock_print_tip):
+    step_latest = {
+        "fastga_stats": {
+            "status": "success",
+            "outputs": {
+                "top1_targets": "/lustre/foo/Rf_vs_Qu.top1_targets.tsv",
+                "top_targets_summary": "/lustre/foo/Rf_vs_Qu.top_targets_summary.txt",
+            },
+        },
+    }
+
+    _print_scp_tips(step_latest, "farm22", "sDipInt39")
+
+    mock_print_tip.assert_called_once()
+    tip = mock_print_tip.call_args[0][0]
+    assert "scp farm22:/lustre/foo/Rf_vs_Qu.top1_targets.tsv" in tip
+    assert "scp farm22:/lustre/foo/Rf_vs_Qu.top_targets_summary.txt" in tip
+
+
+@patch("grit.core.status.print_tip")
 def test_print_scp_tips_skips_step_without_outputs(mock_print_tip):
     step_latest = {"fastga": {"status": "success", "outputs": {}}}
 
@@ -99,12 +152,12 @@ def test_print_scp_tips_skips_step_not_in_history(mock_print_tip):
 
 
 @patch("grit.core.status.print_tip")
-def test_print_less_tips_prints_for_successful_fastga(mock_print_tip):
+def test_print_less_tips_prints_for_successful_fastga_stats(mock_print_tip):
     step_latest = {
-        "fastga": {
+        "fastga_stats": {
             "status": "success",
             "outputs": {
-                "paf": "/lustre/foo/Rf_vs_Qu.FastGA.paf",
+                "top1_targets": "/lustre/foo/Rf_vs_Qu.top1_targets.tsv",
                 "top_targets_summary": "/lustre/foo/Rf_vs_Qu.top_targets_summary.txt",
             },
         },
@@ -119,7 +172,9 @@ def test_print_less_tips_prints_for_successful_fastga(mock_print_tip):
 
 @patch("grit.core.status.print_tip")
 def test_print_less_tips_skips_step_missing_summary_output(mock_print_tip):
-    step_latest = {"fastga": {"status": "success", "outputs": {"paf": "/lustre/foo/x.paf"}}}
+    step_latest = {
+        "fastga_stats": {"status": "success", "outputs": {"top1_targets": "/lustre/foo/x.tsv"}}
+    }
 
     _print_less_tips(step_latest)
 
@@ -129,7 +184,7 @@ def test_print_less_tips_skips_step_missing_summary_output(mock_print_tip):
 @patch("grit.core.status.print_tip")
 def test_print_less_tips_skips_failed_step(mock_print_tip):
     step_latest = {
-        "fastga": {
+        "fastga_stats": {
             "status": "failed",
             "outputs": {"top_targets_summary": "/lustre/foo/x.top_targets_summary.txt"},
         },
@@ -238,6 +293,71 @@ def test_show_ticket_history_prints_microchromosome_tip_for_bird_tol_id(tmp_path
     assert any("microchromosome-second-shot" in t for t in tips)
 
 
+def test_show_ticket_history_drops_started_row_once_run_finished(tmp_path, capsys, monkeypatch):
+    """The tracker always writes a "started" row before a run's real outcome
+    (success/failed/untracked) for the same run_dir — that bookkeeping row
+    must not linger in the table once the run has actually finished."""
+    registry_dir = tmp_path / ".grit_reg"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=registry_dir)
+    reg.add_ticket("RC-1234", "sDipInt39", "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+    run_dir = tracker.start("fastga", "RC-1234", "sDipInt39")
+    tracker.finish("fastga", run_dir, "success")
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    assert "running" not in out
+    assert "success" in out
+
+
+def test_show_ticket_history_untracked_run_replaces_its_success_row(tmp_path, capsys, monkeypatch):
+    """`grit untrack` appends an "untracked" record for a run_dir that already
+    has a "success" one — the table must show one row with the current status,
+    not both."""
+    registry_dir = tmp_path / ".grit_reg"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=registry_dir)
+    reg.add_ticket("RC-1234", "sDipInt39", "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+    run_dir = tracker.start("fastga", "RC-1234", "sDipInt39")
+    tracker.finish("fastga", run_dir, "success")
+    assert tracker.untrack("fastga")
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    assert out.count("fastga") == 1
+    assert "untracked" in out
+    assert "success" not in out
+
+
+def test_show_ticket_history_keeps_genuinely_running_row(tmp_path, capsys, monkeypatch):
+    """A step with only a "started" record (no later outcome for that run_dir)
+    is actually in flight and must still show as running."""
+    registry_dir = tmp_path / ".grit_reg"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=registry_dir)
+    reg.add_ticket("RC-1234", "sDipInt39", "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+    tracker.start("fastga", "RC-1234", "sDipInt39")
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    assert "running" in out
+
+
 def test_show_ticket_history_skips_microchromosome_tip_for_non_bird_tol_id(tmp_path, monkeypatch):
     reg = _make_ticket(tmp_path, monkeypatch, "sDipInt39")
 
@@ -301,3 +421,536 @@ def test_show_ticket_history_resolves_done_job_without_waiting_for_gone(
 
     history = tracker.history("hic_remapping")
     assert history[-1]["status"] == "success"
+
+
+def test_canonical_haps_dual_hap():
+    ctx = CurationContext.from_yaml("RC-1234", TEST_YAML_HAP1, TEST_USER_CONFIG)
+    assert _canonical_haps(ctx) == ["hap1", "hap2"]
+
+
+def test_resolve_canonical_files_missing_returns_none_per_type(mock_ctx):
+    mock_ctx.tracker = None  # no tracker, no filesystem outputs anywhere
+
+    resolved = _resolve_canonical_files(mock_ctx, _canonical_haps(mock_ctx))
+
+    assert set(resolved.keys()) == {"hap1", "hap2"}
+    for by_type in resolved.values():
+        assert by_type == {"fa": None, "haplotigs": None, "chr_list": None}
+
+
+def test_resolve_canonical_files_finds_curated_fa(tmp_path, mock_ctx):
+    mock_ctx.tracker = None
+    mock_ctx.workdir = tmp_path
+    pta_dir = tmp_path / "pretext_to_asm" / "2025-06-02T14_00_00"
+    pta_dir.mkdir(parents=True)
+    fa_file = pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa"
+    fa_file.write_text(">seq\nACGT\n")
+
+    resolved = _resolve_canonical_files(mock_ctx, ["hap1"])
+
+    assert resolved["hap1"]["fa"] == fa_file
+    # No haplotigs/chr-list files were created here.
+    assert resolved["hap1"]["haplotigs"] is None
+    assert resolved["hap1"]["chr_list"] is None
+
+
+def _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id="sDipInt39"):
+    """Build a workdir + registry + a CurationContext wired to the same tracker,
+    and patch CurationContext.from_ticket (as called inside show_ticket_history)
+    to return it — avoiding real Jira access."""
+    registry_dir = tmp_path / ".grit_reg"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=registry_dir)
+    reg.add_ticket("RC-1234", tol_id, "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+
+    ctx = CurationContext.from_yaml("RC-1234", TEST_YAML_HAP1, TEST_USER_CONFIG)
+    ctx.workdir = workdir
+    ctx.tol_id = tol_id
+    ctx.tracker = RunTracker(workdir, registry=reg)
+
+    monkeypatch.setattr(
+        "grit.core.context.CurationContext.from_ticket",
+        classmethod(lambda cls, *a, **kw: ctx),
+    )
+    return reg, tracker
+
+
+def test_show_ticket_history_marks_step_holding_canonical_output(tmp_path, monkeypatch, capsys):
+    tol_id = "sDipInt39"
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    pta_dir = tracker.start("pretext_to_asm", "RC-1234", tol_id)
+    fa_file = pta_dir / f"{tol_id}.hap1.1.curated.fa"
+    fa_file.write_text(">seq\nACGT\n")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_fa": str(fa_file)})
+
+    fastga_dir = tracker.start("fastga", "RC-1234", tol_id)
+    other_file = fastga_dir / "other.paf"
+    other_file.write_text("x")
+    tracker.finish("fastga", fastga_dir, "success", outputs={"paf": str(other_file)})
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    lines = out.splitlines()
+
+    pta_line = next(line for line in lines if "pretext_to_asm" in line and "success" in line)
+    fastga_line = next(line for line in lines if "fastga" in line and "success" in line)
+
+    assert "fa(1)" in pta_line
+    assert "fa(" not in fastga_line
+
+
+def test_show_ticket_history_no_marker_when_no_outputs_recorded(tmp_path, monkeypatch, capsys):
+    tol_id = "sDipInt39"
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    run_dir = tracker.start("setup_curation", "RC-1234", tol_id)
+    tracker.finish("setup_curation", run_dir, "success")
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    lines = out.splitlines()
+
+    setup_line = next(line for line in lines if "setup_curation" in line)
+    agp_line = next(line for line in lines if "agp_copied" in line)
+
+    for marker in ("fa(", "hap(", "chr("):
+        assert marker not in setup_line
+        assert marker not in agp_line
+
+
+def test_show_ticket_history_disambiguates_fa_vs_haplotigs_chr_list_owners(
+    tmp_path, monkeypatch, capsys
+):
+    """Reproduces the exact 4-row bug report: `pretext_to_asm_recurate[_hap2]` and
+    `rename_and_orient[_hap2]` are BOTH genuinely canonical at once, but for
+    different output types — recurate still owns haplotigs/chr_list, while
+    rename_and_orient (run later, with a fresher fa) has taken over the fa. The
+    old bare ★ marker could not tell these apart; the new per-type marker must."""
+    import os
+
+    monkeypatch.setattr(console, "width", 200)
+    tol_id = "sDipInt39"
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    def _write(path, mtime_offset):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(">seq\nACGT\n")
+        now = tracker.workdir.stat().st_mtime
+        os.utime(path, (now + mtime_offset, now + mtime_offset))
+
+    recurate_dir = tracker.start("pretext_to_asm_recurate", "RC-1234", tol_id)
+    recurate_hap = recurate_dir / f"{tol_id}.hap1.2.all_haplotigs.curated.fa"
+    recurate_chr = recurate_dir / f"{tol_id}.hap1.2.chromosome.list.csv"
+    _write(recurate_hap, 10)
+    _write(recurate_chr, 10)
+    tracker.finish(
+        "pretext_to_asm_recurate",
+        recurate_dir,
+        "success",
+        outputs={"hap1_haplotigs": str(recurate_hap), "hap1_chr_list": str(recurate_chr)},
+    )
+
+    recurate_hap2_dir = tracker.start("pretext_to_asm_recurate_hap2", "RC-1234", tol_id)
+    recurate_hap2_hap = recurate_hap2_dir / f"{tol_id}.hap2.2.all_haplotigs.curated.fa"
+    recurate_hap2_chr = recurate_hap2_dir / f"{tol_id}.hap2.2.chromosome.list.csv"
+    _write(recurate_hap2_hap, 10)
+    _write(recurate_hap2_chr, 10)
+    tracker.finish(
+        "pretext_to_asm_recurate_hap2",
+        recurate_hap2_dir,
+        "success",
+        outputs={"hap2_haplotigs": str(recurate_hap2_hap), "hap2_chr_list": str(recurate_hap2_chr)},
+    )
+
+    rao_dir = tracker.start("rename_and_orient", "RC-1234", tol_id)
+    rao_fa = rao_dir / f"{tol_id}.hap1.3.renamed.fa"
+    _write(rao_fa, 20)
+    tracker.finish("rename_and_orient", rao_dir, "success", outputs={"hap1_fa": str(rao_fa)})
+
+    rao_hap2_dir = tracker.start("rename_and_orient_hap2", "RC-1234", tol_id)
+    rao_hap2_fa = rao_hap2_dir / f"{tol_id}.hap2.3.renamed.fa"
+    _write(rao_hap2_fa, 20)
+    tracker.finish(
+        "rename_and_orient_hap2", rao_hap2_dir, "success", outputs={"hap2_fa": str(rao_hap2_fa)}
+    )
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    lines = out.splitlines()
+
+    recurate_line = next(
+        line for line in lines if "pretext_to_asm_recurate " in line + " " and "success" in line
+    )
+    recurate_hap2_line = next(
+        line for line in lines if "pretext_to_asm_recurate_hap2" in line and "success" in line
+    )
+    rao_line = next(
+        line for line in lines if "rename_and_orient " in line + " " and "success" in line
+    )
+    rao_hap2_line = next(
+        line for line in lines if "rename_and_orient_hap2" in line and "success" in line
+    )
+
+    # recurate rows: canonical for haplotigs + chr_list, NOT for fa.
+    assert "hap(1)" in recurate_line
+    assert "chr(1)" in recurate_line
+    assert "fa(" not in recurate_line
+    assert "hap(2)" in recurate_hap2_line
+    assert "chr(2)" in recurate_hap2_line
+    assert "fa(" not in recurate_hap2_line
+
+    # rename_and_orient rows: canonical for fa only, NOT haplotigs/chr_list.
+    assert "fa(1)" in rao_line
+    assert "hap(" not in rao_line
+    assert "chr(" not in rao_line
+    assert "fa(2)" in rao_hap2_line
+    assert "hap(" not in rao_hap2_line
+    assert "chr(" not in rao_hap2_line
+
+
+def test_show_ticket_history_marker_shows_multiple_types_from_one_step(
+    tmp_path, monkeypatch, capsys
+):
+    """When a single step's row owns more than one canonical output type at once
+    (the common case — pretext_to_asm producing fa + haplotigs + chr_list together),
+    the marker lists every owned type on that one row."""
+    monkeypatch.setattr(console, "width", 200)
+    tol_id = "sDipInt39"
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    pta_dir = tracker.start("pretext_to_asm", "RC-1234", tol_id)
+    fa_file = pta_dir / f"{tol_id}.hap1.1.curated.fa"
+    hap_file = pta_dir / f"{tol_id}.hap1.1.all_haplotigs.curated.fa"
+    chr_file = pta_dir / f"{tol_id}.hap1.1.chromosome.list.csv"
+    for f in (fa_file, hap_file, chr_file):
+        f.write_text(">seq\nACGT\n")
+    tracker.finish(
+        "pretext_to_asm",
+        pta_dir,
+        "success",
+        outputs={
+            "hap1_fa": str(fa_file),
+            "hap1_haplotigs": str(hap_file),
+            "hap1_chr_list": str(chr_file),
+        },
+    )
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    pta_line = next(
+        line for line in out.splitlines() if "pretext_to_asm " in line + " " and "success" in line
+    )
+
+    assert "fa(1)" in pta_line
+    assert "hap(1)" in pta_line
+    assert "chr(1)" in pta_line
+
+
+def test_show_ticket_history_rename_and_orient_can_show_chr(tmp_path, monkeypatch, capsys):
+    """Regression: after rename_and_orient's _OUTPUT_SPECS gained a chr_list
+    key, its row can legitimately show `chr` (in addition to `fa`) once its
+    chromosome-list output is the freshest tracked one for this haplotype —
+    a scenario that was previously impossible since rename_and_orient never
+    had a tracked chr_list output at all."""
+    import os
+
+    monkeypatch.setattr(console, "width", 200)
+    tol_id = "sDipInt39"
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    def _write(path, mtime_offset):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(">seq\nACGT\n")
+        now = tracker.workdir.stat().st_mtime
+        os.utime(path, (now + mtime_offset, now + mtime_offset))
+
+    pta_dir = tracker.start("pretext_to_asm", "RC-1234", tol_id)
+    pta_chr = pta_dir / f"{tol_id}.hap1.1.chromosome.list.csv"
+    _write(pta_chr, 10)
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_chr_list": str(pta_chr)})
+
+    rao_dir = tracker.start("rename_and_orient", "RC-1234", tol_id)
+    rao_fa = rao_dir / f"{tol_id}.hap1.primary.renamed.fa"
+    rao_chr = rao_dir / f"{tol_id}.hap1.primary.renamed.chromosome.list.csv"
+    _write(rao_fa, 20)
+    _write(rao_chr, 20)
+    tracker.finish(
+        "rename_and_orient",
+        rao_dir,
+        "success",
+        outputs={"hap1_fa": str(rao_fa), "hap1_chr_list": str(rao_chr)},
+    )
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    rao_line = next(
+        line
+        for line in out.splitlines()
+        if "rename_and_orient " in line + " " and "success" in line
+    )
+
+    assert "fa(1)" in rao_line
+    assert "chr(1)" in rao_line
+
+
+def test_ticket_age_display_color_thresholds():
+    import datetime
+
+    from grit.core.status import _ticket_age_display
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    def added_at(days_ago):
+        return (now - datetime.timedelta(days=days_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    assert _ticket_age_display(added_at(3)) == "[green]3[/green]"
+    assert _ticket_age_display(added_at(15)) == "[yellow]15[/yellow]"
+    assert _ticket_age_display(added_at(25)) == "[red]25[/red]"
+    assert _ticket_age_display("") == ""
+
+
+def test_prior_month_bounds_wraps_year():
+    import datetime
+
+    from grit.core.status import _prior_month_bounds
+
+    now = datetime.datetime(2026, 2, 15, tzinfo=datetime.timezone.utc)
+
+    start, end, label = _prior_month_bounds(now, 1)
+    assert (start, end, label) == (
+        datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc),
+        datetime.datetime(2026, 2, 1, tzinfo=datetime.timezone.utc),
+        "Jan",
+    )
+
+    start, end, label = _prior_month_bounds(now, 2)
+    assert (start, end, label) == (
+        datetime.datetime(2025, 12, 1, tzinfo=datetime.timezone.utc),
+        datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc),
+        "Dec",
+    )
+
+
+def _set_added_at(reg, ticket_id, iso_ts):
+    tickets = reg._load()
+    for t in tickets:
+        if t["ticket_id"] == ticket_id:
+            t["added_at"] = iso_ts
+    reg._save(tickets)
+
+
+def test_show_global_status_shows_ticket_age_and_done_stats(tmp_path, monkeypatch, capsys):
+    import datetime
+
+    registry_dir = tmp_path / ".grit_reg"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
+    reg = RegistryManager(registry_dir=registry_dir)
+
+    workdir = tmp_path / "RC-1234"
+    workdir.mkdir()
+    reg.add_ticket("RC-1234", "sDipInt39", "species", workdir)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    added_at = (now - datetime.timedelta(days=15)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _set_added_at(reg, "RC-1234", added_at)
+
+    done_workdir = tmp_path / "RC-DONE"
+    done_workdir.mkdir()
+    reg.add_ticket("RC-DONE", "aTolDone1", "species", done_workdir, status="done")
+
+    show_global_status(reg)
+
+    out = plain(capsys.readouterr().out)
+    assert "15" in out
+    assert "Done: 1 total" in out
+    assert "Last 3 months:" in out
+
+
+def test_show_global_status_done_total_counts_cleaned_up_tickets(tmp_path, monkeypatch, capsys):
+    """The "Done: N total" stat is historical throughput — it must count
+    tickets already marked cleaned_up by `grit cleanup`, unlike the
+    "Recently completed" list above it (which intentionally hides them)."""
+    registry_dir = tmp_path / ".grit_reg"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
+    reg = RegistryManager(registry_dir=registry_dir)
+
+    for ticket_id in ("RC-OLD", "RC-RECENT"):
+        workdir = tmp_path / ticket_id
+        workdir.mkdir()
+        reg.add_ticket(ticket_id, ticket_id, "species", workdir, status="done")
+    reg.mark_cleaned_up("RC-OLD")
+
+    show_global_status(reg)
+
+    out = plain(capsys.readouterr().out)
+    assert "Done: 2 total" in out
+
+
+def test_show_global_status_reads_from_passed_registry_not_default(tmp_path, monkeypatch, capsys):
+    """RunTracker(workdir) inside show_global_status must read from the `registry`
+    argument it's already given, not lazily build its own default RegistryManager()
+    pointed at a different location."""
+    default_dir = tmp_path / "default_registry"
+    passed_dir = tmp_path / "passed_registry"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", default_dir)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=passed_dir)
+    reg.add_ticket("RC-1234", "sDipInt39", "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+    run_dir = tracker.start("fastga", "RC-1234", "sDipInt39")
+    tracker.finish("fastga", run_dir, "success")
+
+    show_global_status(reg)
+
+    out = capsys.readouterr().out
+    assert "fastga" in out
+    assert "success" in out
+
+
+def _make_dry_run_ticket_with_ctx(tmp_path, monkeypatch, tol_id="sDipInt39"):
+    """Seed a ticket+step in a dry-run-isolated registry/workdir (distinct from the
+    default registry dir), and patch CurationContext.from_ticket to capture the
+    kwargs it's called with and return a ctx wired to that same dry-run workdir."""
+    default_dir = tmp_path / "default_registry"
+    dry_dir = tmp_path / "dry_run_root"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", default_dir)
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: dry_dir)
+
+    workdir = dry_dir / tol_id
+    workdir.mkdir(parents=True)
+    reg = RegistryManager(registry_dir=dry_dir)
+    reg.add_ticket("RC-DRY", tol_id, "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+
+    captured_kwargs: dict = {}
+
+    def fake_from_ticket(cls, ticket_id, user_config, **kwargs):
+        captured_kwargs.update(kwargs)
+        ctx = CurationContext.from_yaml(
+            "RC-DRY", TEST_YAML_HAP1, TEST_USER_CONFIG, dry_run=kwargs.get("dry_run", False)
+        )
+        ctx.workdir = workdir
+        ctx.tol_id = tol_id
+        ctx.tracker = tracker
+        return ctx
+
+    monkeypatch.setattr(
+        "grit.core.context.CurationContext.from_ticket",
+        classmethod(fake_from_ticket),
+    )
+    return reg, tracker, captured_kwargs
+
+
+def test_show_ticket_history_dry_run_reads_isolated_registry_and_context(
+    tmp_path, monkeypatch, capsys
+):
+    tol_id = "sDipInt39"
+    reg, tracker, captured_kwargs = _make_dry_run_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    run_dir = tracker.start("rename_and_orient", "RC-DRY", tol_id)
+    tracker.finish("rename_and_orient", run_dir, "success")
+
+    show_ticket_history(reg, "RC-DRY", TEST_USER_CONFIG, dry_run=True)
+
+    out = capsys.readouterr().out
+
+    # CurationContext.from_ticket was called with dry_run=True.
+    assert captured_kwargs.get("dry_run") is True
+    # RunTracker read the passed-in (dry-run-isolated) registry's step history.
+    assert "rename_and_orient" in out
+    assert "success" in out
+
+
+def test_show_ticket_history_dry_run_false_does_not_see_dry_run_ticket(tmp_path, monkeypatch):
+    """A real (non-dry-run) registry lookup for the same ticket ID must not pick up
+    the dry-run registry's data — the two registries are entirely separate objects,
+    so a real lookup with a real (empty) registry simply won't find the ticket."""
+    tol_id = "sDipInt39"
+    dry_reg, tracker, _ = _make_dry_run_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    run_dir = tracker.start("rename_and_orient", "RC-DRY", tol_id)
+    tracker.finish("rename_and_orient", run_dir, "success")
+
+    real_registry_dir = tmp_path / "real_registry"
+    real_reg = RegistryManager(registry_dir=real_registry_dir)
+
+    with patch("grit.core.status.console") as mock_console:
+        show_ticket_history(real_reg, "RC-DRY", TEST_USER_CONFIG, dry_run=False)
+
+    printed = " ".join(str(call.args[0]) for call in mock_console.print.call_args_list)
+    assert "not found" in printed
+    assert "rename_and_orient" not in printed
+
+
+def test_show_ticket_history_dry_run_with_yaml_override_builds_ctx_and_shows_marker(
+    tmp_path, monkeypatch, capsys
+):
+    """A synthetic dry-run ticket has no real Jira issue, so from_ticket would
+    normally raise and skip the canonical-files table / canonical marker entirely
+    (ctx stays None). Passing yaml_override bypasses the Jira fetch, letting
+    the real CurationContext build succeed against the dry-run-isolated workdir
+    — the canonical files table and marker must then actually be produced."""
+    tol_id = "ilHelSara1"
+    ticket_id = "RC-DRY"
+    dry_dir = tmp_path / "dry_run_root"
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: dry_dir)
+
+    workdir = dry_dir / ticket_id  # dry-run workdirs are keyed by ticket_id, not tol_id
+    workdir.mkdir(parents=True)
+    reg = RegistryManager(registry_dir=dry_dir)
+    reg.add_ticket(ticket_id, tol_id, "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+
+    run_dir = tracker.start("pretext_to_asm", "RC-DRY", tol_id)
+    curated_fa = run_dir / f"{tol_id}.1.primary.curated.fa"
+    curated_fa.write_text(">SCAFFOLD_1\nACGT\n")
+    tracker.finish("pretext_to_asm", run_dir, "success", outputs={"hap1_fa": str(curated_fa)})
+
+    show_ticket_history(
+        reg, "RC-DRY", TEST_USER_CONFIG, dry_run=True, yaml_override=TEST_YAML_PRIMARY
+    )
+
+    out = capsys.readouterr().out
+    assert "Could not build curation context" not in out
+    assert "Canonical files" in out
+
+    pta_line = next(
+        line for line in out.splitlines() if "pretext_to_asm" in line and "success" in line
+    )
+    assert "fa" in pta_line
+    # Single-hap ticket — no hap suffix needed since there's only one candidate.
+    assert "fa(" not in pta_line
+
+
+def test_canonical_mark_credits_unrecorded_file_in_the_run_dir(tmp_path):
+    """A canonical file this run produced but never recorded still marks the
+    row, so the history table agrees with the canonical-files table."""
+    run_dir = tmp_path / "pretext_to_asm" / "2026-01-02T00_00_00"
+    fa = run_dir / "tolId.hap1.1.curated.fa"
+    chr_list = run_dir / "tolId.hap1.1.chromosome.list.csv"
+    index = {str(fa): [("fa", "hap1")], str(chr_list): [("chr_list", "hap1")]}
+
+    mark = _canonical_mark({"hap1_fa": str(fa)}, index, ["hap1"], run_dir)
+
+    assert "fa" in mark and "chr" in mark
+
+
+def test_canonical_mark_ignores_canonical_files_from_another_run_dir(tmp_path):
+    """Only this row's own run dir counts — a canonical file elsewhere must not
+    mark an unrelated run."""
+    run_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
+    other_chr_list = tmp_path / "rename_and_orient" / "2026-01-02T00_00_00" / "tolId.chr.csv"
+    index = {str(other_chr_list): [("chr_list", "hap1")]}
+
+    assert _canonical_mark({}, index, ["hap1"], run_dir) == ""

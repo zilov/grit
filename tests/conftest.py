@@ -4,12 +4,28 @@ Test fixtures for grit.
 mock_ctx — ready-made CurationContext built from test YAML without accessing Jira/NFS/Lustre.
 """
 
+import re as _re
 from pathlib import Path as _Path
 
 import pytest
 import yaml as _yaml
 
 from grit.core.context import CurationContext
+
+_ANSI = _re.compile(r"\x1b\[[0-9;]*m")
+_BOX = {ord(ch): " " for ch in "\u2502\u256d\u256e\u256f\u2570\u2500"}
+
+
+def plain(output: str) -> str:
+    """CLI output with colour codes and rich's panel decoration removed.
+
+    rich-click paints and boxes error messages whenever it believes the stream
+    is a terminal, which it does under CI but not under a plain local pytest
+    run — so a literal substring check against result.output passes on a laptop
+    and fails in CI. Compare against this instead.
+    """
+    return " ".join(_ANSI.sub("", output).translate(_BOX).split())
+
 
 # --- test USER_CONFIG ---
 TEST_USER_CONFIG = {

@@ -13,6 +13,7 @@ from grit.utils.helpers import (
     build_bsub_opts,
     find_canonical_fa,
     find_reheadered_reference,
+    write_fake_outputs,
 )
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
@@ -65,6 +66,17 @@ def run_busco_synteny(
     log.info("busco-synteny | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO synteny")
 
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start(
+            "busco_synteny", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
+        )
+        outputs = write_fake_outputs("busco_synteny", run_dir, ctx.tol_id)
+        ctx.tracker.finish(
+            "busco_synteny", run_dir, "success", outputs=outputs, untracked=ctx.untracked
+        )
+        print_done(f"[dry-run] BUSCO synteny plot → {outputs.get('png', run_dir)}")
+        return
+
     from grit.steps.pre_curation.find_reference import reheader_reference
 
     # --- find reference ---
@@ -99,7 +111,11 @@ def run_busco_synteny(
         output="o_busco_synt",
         run_dir=run_dir,
     )
-    epilogue = _state_update_epilogue(ctx.workdir, "busco_synteny", run_dir) if run_dir else None
+    epilogue = (
+        _state_update_epilogue(ctx.workdir, "busco_synteny", run_dir, untracked=ctx.untracked)
+        if run_dir
+        else None
+    )
     job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
     if ctx.tracker and run_dir and job_id:
         ctx.tracker.record_job("busco_synteny", run_dir, job_id)

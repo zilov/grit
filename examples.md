@@ -151,8 +151,8 @@ grit setup -t RC-1234 --print-only
 # Step status for a ticket
 grit status -t RC-1234
 
-# Summary across all tickets
-grit summary
+# Summary across all tickets (active tickets + done-ticket counts by period)
+grit status
 
 # Increase bsub ram for some steps
 grit [step] -t RC-1234 --bsub-ram NUM

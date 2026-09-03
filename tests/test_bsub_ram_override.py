@@ -97,7 +97,7 @@ def test_busco_curated_bsub_ram_override(mock_bsub, mock_ctx):
 
 @patch("grit.steps.optional.rename_and_orient._submit_bsub")
 @patch("grit.steps.optional.rename_and_orient.glob.glob")
-@patch("grit.steps.optional.rename_and_orient.find_curated_fa")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
 def test_rename_and_orient_default_memory(mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path / "workdir"
     mock_ctx.print_only = False
@@ -113,7 +113,7 @@ def test_rename_and_orient_default_memory(mock_find_fa, mock_glob, mock_bsub, mo
 
 @patch("grit.steps.optional.rename_and_orient._submit_bsub")
 @patch("grit.steps.optional.rename_and_orient.glob.glob")
-@patch("grit.steps.optional.rename_and_orient.find_curated_fa")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
 def test_rename_and_orient_bsub_ram_override(
     mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path
 ):

@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from click.testing import CliRunner
 
 from grit.steps.post_curation import (
     finalize_for_qc,
@@ -91,6 +92,29 @@ def test_collect_outputs_fallback_skipped_when_already_found(tmp_path):
     assert result == {"hap1_fa": str(hap1_fa)}
 
 
+def test_output_specs_resolve_haplotigs_and_chr_list_for_primary_assembly(tmp_path):
+    """A primary assembly's pretext-to-asm output filenames don't carry a
+    {hap1} token before "all_haplotigs"/"chromosome.list" (unlike hap1/hap2
+    assemblies) — the fallback specs must still populate hap1_haplotigs and
+    hap1_chr_list, or `grit status`'s Canonical column silently omits them."""
+    from grit.steps.post_curation.pretext_to_asm import _OUTPUT_SPECS
+    from grit.utils.helpers import collect_outputs
+
+    tol_id = "nxAngMala2"
+    fa = tmp_path / f"{tol_id}.1.primary.curated.fa"
+    fa.write_text("")
+    haplotigs = tmp_path / f"{tol_id}.1.all_haplotigs.curated.fa"
+    haplotigs.write_text("")
+    chr_list = tmp_path / f"{tol_id}.1.primary.chromosome.list.csv"
+    chr_list.write_text("")
+
+    result = collect_outputs(_OUTPUT_SPECS, tmp_path, tol_id, hap1="primary", hap2="alternate")
+
+    assert result["hap1_fa"] == str(fa)
+    assert result["hap1_haplotigs"] == str(haplotigs)
+    assert result["hap1_chr_list"] == str(chr_list)
+
+
 # ---------------------------------------------------------------------------
 # run_pretext_to_asm
 # ---------------------------------------------------------------------------
@@ -148,8 +172,189 @@ def test_run_pretext_to_asm_print_only_skips_checks(mock_run, mock_ctx, tmp_path
     # Should not raise even though files don't exist
     run_pretext_to_asm(mock_ctx)
 
-    calls = [str(c) for c in mock_run.call_args_list]
-    assert any("pretext-to-asm" in c for c in calls)
+
+@patch("grit.steps.post_curation.pretext_to_asm._run")
+@patch("grit.steps.post_curation.pretext_to_asm.glob.glob")
+def test_run_pretext_to_asm_dry_run_writes_fake_fasta_with_scaffold_headers(
+    mock_glob, mock_run, mock_ctx, tmp_path
+):
+    """Dry-run must skip real AGP/subprocess work and write a fake curated FASTA
+    with SCAFFOLD_ headers, tracked under the real _OUTPUT_SPECS keys."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.dry_run = True
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+
+    run_pretext_to_asm(mock_ctx)
+
+    mock_run.assert_not_called()
+    mock_glob.assert_not_called()
+
+    hap1_fa_path = mock_ctx.tracker.get_output("pretext_to_asm", "hap1_fa")
+    assert hap1_fa_path is not None
+    hap1_fa = Path(hap1_fa_path)
+    assert hap1_fa.exists()
+    content = hap1_fa.read_text()
+    assert "SCAFFOLD_1" in content
+    assert "SCAFFOLD_2" in content
+
+    hap2_fa_path = mock_ctx.tracker.get_output("pretext_to_asm", "hap2_fa")
+    assert hap2_fa_path is not None
+    assert "HAP_SCAFFOLD_1" in Path(hap2_fa_path).read_text()
+
+
+def test_run_pretext_to_asm_dry_run_single_hap_omits_hap2_outputs(mock_ctx_primary, tmp_path):
+    """A primary/alternate (single-hap) ticket's dry-run must not fabricate hap2
+    outputs — same class of bug already fixed once in blast_contaminants."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx_primary.workdir = tmp_path
+    mock_ctx_primary.dry_run = True
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(
+        mock_ctx_primary.ticket_id,
+        mock_ctx_primary.tol_id,
+        mock_ctx_primary.species,
+        mock_ctx_primary.workdir,
+    )
+    mock_ctx_primary.tracker = RunTracker(tmp_path, registry=registry)
+
+    run_pretext_to_asm(mock_ctx_primary)
+
+    last_run = mock_ctx_primary.tracker.history("pretext_to_asm")[-1]
+    tracked_outputs = last_run["outputs"]
+    assert "hap1_fa" in tracked_outputs
+    assert "hap2_fa" not in tracked_outputs
+    assert "hap2_haplotigs" not in tracked_outputs
+    assert "hap2_chr_list" not in tracked_outputs
+
+    # Popping the tracker keys isn't enough — a leftover file would still be
+    # findable by any glob-based (not tracker-based) hap2 detection downstream.
+    run_dir = last_run["run_dir"]
+    assert list(Path(run_dir).glob("*.hap2.*")) == []
+    assert list(Path(run_dir).glob("*.alternate.*")) == []
+    assert "hap2_chr_list" not in tracked_outputs
+
+
+def test_run_pretext_to_asm_dry_run_output_resolves_via_find_canonical_fa(mock_ctx, tmp_path):
+    """The fake FASTA written in dry-run mode must resolve through the real
+    canonical-FASTA resolution pool, not just via tracker bookkeeping."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.utils.helpers import find_canonical_fa
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.dry_run = True
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+
+    run_pretext_to_asm(mock_ctx)
+
+    expected = Path(mock_ctx.tracker.get_output("pretext_to_asm", "hap1_fa"))
+    resolved = find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix)
+    assert resolved == expected
+
+
+@patch("grit.steps.post_curation.pretext_to_asm._run")
+@patch("grit.steps.post_curation.pretext_to_asm.glob.glob")
+def test_run_pretext_to_asm_core_custom_agp_glob(mock_glob, mock_run, mock_ctx, tmp_path):
+    """A custom agp_glob overrides the default {tol_id}*.agp* pattern."""
+    from grit.steps.post_curation.pretext_to_asm import _run_pretext_to_asm_core
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    original_fa = tmp_path / "original.fa"
+    original_fa.write_text("")
+    agp = str(tmp_path / "sDipInt39.hap1.recurate.agp")
+    mock_glob.return_value = [agp]
+    mock_run.return_value = ""
+
+    _run_pretext_to_asm_core(
+        mock_ctx,
+        "pretext_to_asm_recurate",
+        original_fa,
+        "missing",
+        tmp_path,
+        "sDipInt39.fa",
+        [],
+        agp_glob="sDipInt39*hap1*.agp*",
+    )
+
+    glob_pattern = mock_glob.call_args[0][0]
+    assert glob_pattern == str(tmp_path / "sDipInt39*hap1*.agp*")
+
+
+@patch("grit.steps.post_curation.pretext_to_asm._run")
+@patch("grit.steps.post_curation.pretext_to_asm.glob.glob")
+def test_run_pretext_to_asm_core_default_agp_glob_unchanged(
+    mock_glob, mock_run, mock_ctx, tmp_path
+):
+    """Omitting agp_glob keeps today's {tol_id}*.agp* pattern (no regression)."""
+    from grit.steps.post_curation.pretext_to_asm import _run_pretext_to_asm_core
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    original_fa = tmp_path / "original.fa"
+    original_fa.write_text("")
+    agp = str(tmp_path / "sDipInt39.agp")
+    mock_glob.return_value = [agp]
+    mock_run.return_value = ""
+
+    _run_pretext_to_asm_core(
+        mock_ctx, "pretext_to_asm", original_fa, "missing", tmp_path, "sDipInt39.fa", []
+    )
+
+    glob_pattern = mock_glob.call_args[0][0]
+    assert glob_pattern == str(tmp_path / "sDipInt39*.agp*")
+
+
+@patch("grit.steps.post_curation.pretext_to_asm._run")
+@patch("grit.steps.post_curation.pretext_to_asm.glob.glob")
+def test_run_pretext_to_asm_core_output_transform_runs_before_collect_outputs(
+    mock_glob, mock_run, mock_ctx, tmp_path
+):
+    """output_transform can write a file that collect_outputs then picks up,
+    all within the single finish() call collect_outputs feeds into."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.post_curation.pretext_to_asm import _run_pretext_to_asm_core
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    original_fa = tmp_path / "original.fa"
+    original_fa.write_text("")
+    agp = str(tmp_path / "sDipInt39.agp")
+    mock_glob.return_value = [agp]
+    mock_run.return_value = ""
+
+    def _write_extra_file(run_dir):
+        (run_dir / "hap1.extra_output.fa").write_text(">seq\nACGT\n")
+
+    output_specs = [("hap1_extra", "hap1.extra_output.fa", [])]
+    run_dir = _run_pretext_to_asm_core(
+        mock_ctx,
+        "pretext_to_asm",
+        original_fa,
+        "missing",
+        tmp_path,
+        "sDipInt39.fa",
+        output_specs,
+        output_transform=_write_extra_file,
+    )
+
+    assert mock_ctx.tracker.get_output("pretext_to_asm", "hap1_extra") == str(
+        run_dir / "hap1.extra_output.fa"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -489,6 +694,83 @@ def test_run_hic_remapping_hifi_dir_override(mock_find_fa, mock_run, mock_ctx, t
     assert str(hifi_path) in cmd
     assert "/lustre/pacbio_original" not in cmd
     assert "--read_type hifi" in cmd
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_dry_run_hap1_only(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    """dry_run with default run_hap1=True/run_hap2=False must skip curationpretext.sh
+    entirely and track a fake hap1 pretext map only."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.dry_run = True
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+
+    run_hic_remapping(mock_ctx)
+
+    mock_run.assert_not_called()
+    mock_find_fa.assert_not_called()
+
+    hap1_pretext = mock_ctx.tracker.get_output("hic_remapping", "hap1_pretext")
+    assert hap1_pretext is not None
+    assert Path(hap1_pretext).exists()
+
+    assert mock_ctx.tracker.history("hic_remapping_hap2") == []
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_dry_run_hap2(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    """dry_run with run_hap2=True must additionally track a fake hap2 pretext map,
+    tracked separately under hic_remapping_hap2."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.dry_run = True
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+
+    run_hic_remapping(mock_ctx, run_hap2=True)
+
+    mock_run.assert_not_called()
+    mock_find_fa.assert_not_called()
+
+    hap1_pretext = mock_ctx.tracker.get_output("hic_remapping", "hap1_pretext")
+    hap2_pretext = mock_ctx.tracker.get_output("hic_remapping_hap2", "hap2_pretext")
+    assert hap1_pretext is not None and Path(hap1_pretext).exists()
+    assert hap2_pretext is not None and Path(hap2_pretext).exists()
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_dry_run_hap2_exclusive_skips_hap1(
+    mock_find_fa, mock_run, mock_ctx, tmp_path
+):
+    """dry_run with run_hap1=False, run_hap2=True must fake hap2 only."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.dry_run = True
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+
+    run_hic_remapping(mock_ctx, run_hap1=False, run_hap2=True)
+
+    mock_run.assert_not_called()
+    mock_find_fa.assert_not_called()
+
+    assert mock_ctx.tracker.history("hic_remapping") == []
+    hap2_pretext = mock_ctx.tracker.get_output("hic_remapping_hap2", "hap2_pretext")
+    assert hap2_pretext is not None
+    assert Path(hap2_pretext).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -1073,3 +1355,339 @@ def test_finalize_for_qc_raises_on_reverse_yaml_pta_mismatch(
     mock_find_haplotigs.assert_not_called()
     mock_find_csv.assert_not_called()
     mock_run.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# run_qv — dry-run
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.post_curation.qv._run")
+def test_run_qv_dry_run(mock_run, mock_ctx, tmp_path):
+    """dry_run must not shell out, but must write stub merquryk files that
+    _find_qv_outputs(ctx) resolves and registers on the tracker."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.dry_run = True
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    run_qv(mock_ctx)
+
+    mock_run.assert_not_called()
+
+    qv_file = mock_ctx.tracker.get_output("qv", "qv")
+    completeness_file = mock_ctx.tracker.get_output("qv", "completeness_stats")
+    assert qv_file is not None and Path(qv_file).exists()
+    assert completeness_file is not None and Path(completeness_file).exists()
+
+
+# ---------------------------------------------------------------------------
+# finalize_for_qc — dry-run
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
+def test_finalize_for_qc_dry_run_dual_hap(mock_run, mock_qv_run, mock_ctx, tmp_path):
+    """dry_run for a hap1/hap2 assembly must skip the real pta-mismatch check and
+    real _run calls entirely, write placeholder files for both haplotypes, and
+    exercise qv's own dry-run branch (not the real kmer_completeness.bash call)
+    since no merquryk dir exists yet."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.dry_run = True
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    finalize_for_qc(mock_ctx)
+
+    # neither finalize_qc's real copy commands nor qv's real subprocess ran
+    mock_run.assert_not_called()
+    mock_qv_run.assert_not_called()
+
+    dest_dir = mock_ctx.assembly_curated_dir
+    assert (dest_dir / "sDipInt39.hap1.1.primary.curated.fa").exists()
+    assert (dest_dir / "sDipInt39.hap2.1.primary.curated.fa").exists()
+    # haplotig + chromosome-list placeholders, matching the real path's naming
+    haplotig_suffix = (
+        "all_haplotigs.curated.fa"
+        if mock_ctx.combine_for_curation
+        else "additional_haplotigs.curated.fa"
+    )
+    assert (dest_dir / f"sDipInt39.hap1.1.{haplotig_suffix}").exists()
+    assert (dest_dir / f"sDipInt39.hap2.1.{haplotig_suffix}").exists()
+    assert (dest_dir / "sDipInt39.hap1.1.primary.chromosome.list.csv").exists()
+    assert (dest_dir / "sDipInt39.hap2.1.primary.chromosome.list.csv").exists()
+
+    # qv's dry-run branch ran as part of finalize_qc's dry-run branch
+    qv_file = mock_ctx.tracker.get_output("qv", "qv")
+    assert qv_file is not None and Path(qv_file).exists()
+
+    assert mock_ctx.tracker.get_output("finalize_qc", "curated_dir") == str(dest_dir)
+
+
+@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
+def test_finalize_for_qc_dry_run_single_hap(mock_run, mock_qv_run, mock_ctx_primary, tmp_path):
+    """dry_run for a primary/alternate assembly must write a placeholder for hap1
+    only (mirroring is_single_hap(ctx) gating) and still cascade into qv's
+    dry-run branch."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx_primary.workdir = tmp_path
+    mock_ctx_primary.tol_id = "ilHelSara1"
+    mock_ctx_primary.release_version = 1
+    mock_ctx_primary.dry_run = True
+    mock_ctx_primary.assembly_curated_dir = tmp_path / "curated" / "ilHelSara1.1"
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(
+        mock_ctx_primary.ticket_id, mock_ctx_primary.tol_id, mock_ctx_primary.species, tmp_path
+    )
+    mock_ctx_primary.tracker = RunTracker(tmp_path, registry=reg)
+
+    finalize_for_qc(mock_ctx_primary)
+
+    mock_run.assert_not_called()
+    mock_qv_run.assert_not_called()
+
+    dest_dir = mock_ctx_primary.assembly_curated_dir
+    assert (dest_dir / "ilHelSara1.1.primary.curated.fa").exists()
+    haplotig_suffix = (
+        "all_haplotigs.curated.fa"
+        if mock_ctx_primary.combine_for_curation
+        else "additional_haplotigs.curated.fa"
+    )
+    assert (dest_dir / f"ilHelSara1.1.{haplotig_suffix}").exists()
+    assert (dest_dir / "ilHelSara1.1.primary.chromosome.list.csv").exists()
+    # no hap2 file for a single-hap assembly
+    assert not any(dest_dir.glob("ilHelSara1.*.hap2.*"))
+
+    qv_file = mock_ctx_primary.tracker.get_output("qv", "qv")
+    assert qv_file is not None and Path(qv_file).exists()
+
+    assert mock_ctx_primary.tracker.get_output("finalize_qc", "curated_dir") == str(dest_dir)
+
+
+# ---------------------------------------------------------------------------
+# run_busco_synteny — dry-run
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.optional.busco_synteny._submit_bsub")
+@patch("grit.steps.optional.busco_synteny.find_reheadered_reference")
+@patch("grit.steps.optional.busco_synteny.find_canonical_fa")
+def test_run_busco_synteny_dry_run_short_circuits(
+    mock_find_fa, mock_find_ref, mock_bsub, mock_ctx, tmp_path
+):
+    """dry_run must skip reference/FASTA lookup + bsub submission entirely."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.optional.busco_synteny import run_busco_synteny
+
+    mock_ctx.workdir = tmp_path
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+    mock_ctx.dry_run = True
+
+    run_busco_synteny(mock_ctx, lineage="insecta_odb10")
+
+    mock_bsub.assert_not_called()
+    mock_find_fa.assert_not_called()
+    mock_find_ref.assert_not_called()
+
+    png_path = mock_ctx.tracker.get_output("busco_synteny", "png")
+    assert png_path is not None
+    assert Path(png_path).exists()
+
+
+# ---------------------------------------------------------------------------
+# run_busco_curated — dry-run
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.optional.busco_curated._submit_bsub")
+@patch("grit.steps.optional.busco_curated.find_latest_dir")
+def test_run_busco_curated_dry_run_short_circuits(
+    mock_find_latest_dir, mock_bsub, mock_ctx, tmp_path
+):
+    """dry_run must skip curated-FASTA lookup + bsub submission entirely and
+    write the placeholder output dir as a sibling of the tracked run_dir."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.optional.busco_curated import run_busco_curated
+
+    mock_ctx.workdir = tmp_path
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+    mock_ctx.dry_run = True
+
+    run_busco_curated(mock_ctx, lineage="insecta_odb10")
+
+    mock_bsub.assert_not_called()
+    mock_find_latest_dir.assert_not_called()
+
+    output_dir = tmp_path / f"{mock_ctx.tol_id}_busco_singularity"
+    assert output_dir.is_dir()
+    assert any(output_dir.iterdir())
+
+
+# ---------------------------------------------------------------------------
+# run_post_curation — dry-run end to end
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.steps.post_curation.pretext_to_asm._run")
+def test_run_post_curation_dry_run_tracks_every_sub_step(
+    mock_pta_run, mock_hic_run, mock_ctx, tmp_path
+):
+    """dry_run must flow through pretext_to_asm, haplotig_files, and hic_remapping
+    without any real subprocess, and every tracked sub-step's fake output must
+    be resolvable afterwards (proving the composite needs no branch of its own)."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.post_curation.post_curation import run_post_curation
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.dry_run = True
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+
+    run_post_curation(mock_ctx, run_hap2=True)
+
+    mock_pta_run.assert_not_called()
+    mock_hic_run.assert_not_called()
+
+    hap1_fa = mock_ctx.tracker.get_output("pretext_to_asm", "hap1_fa")
+    assert hap1_fa is not None and Path(hap1_fa).exists()
+
+    hap1_pretext = mock_ctx.tracker.get_output("hic_remapping", "hap1_pretext")
+    hap2_pretext = mock_ctx.tracker.get_output("hic_remapping_hap2", "hap2_pretext")
+    assert hap1_pretext is not None and Path(hap1_pretext).exists()
+    assert hap2_pretext is not None and Path(hap2_pretext).exists()
+
+    # haplotig_files has no tracker output specs — it's a plain local file-existence
+    # check/touch step, unaffected by dry_run — verify its real effect directly.
+    pta_run_dir = Path(hap1_fa).parent
+    assert (
+        pta_run_dir / f"{mock_ctx.tol_id}.hap1.{mock_ctx.release_version}.all_haplotigs.curated.fa"
+    ).exists()
+    assert (
+        pta_run_dir / f"{mock_ctx.tol_id}.hap2.{mock_ctx.release_version}.all_haplotigs.curated.fa"
+    ).exists()
+
+
+# ---------------------------------------------------------------------------
+# haplotig-files CLI — dry-run
+# ---------------------------------------------------------------------------
+
+
+def test_cli_haplotig_files_dry_run_chains_after_pretext_to_asm_dry_run(tmp_path, monkeypatch):
+    """`grit --dry-run haplotig-files` must no longer raise UsageError, and —
+    chained after a real `grit --dry-run pretext-to-asm` run against the same
+    isolated workdir — must create empty haplotig files for both haps of the
+    dual-hap fixture ticket."""
+    from grit.core.click_cli import cli
+
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+
+    fixtures_dir = Path(__file__).parent / "fixtures"
+    config_path = str(fixtures_dir / "test_config.yaml")
+    yaml_path = str(fixtures_dir / "uoEpiScra1_hap1_hap2.yaml")
+    common_args = ["--config", config_path, "--yaml", yaml_path, "--dry-run"]
+
+    runner = CliRunner()
+
+    result_pta = runner.invoke(cli, [*common_args, "pretext-to-asm"])
+    assert result_pta.exit_code == 0, result_pta.output
+
+    result_haplotig = runner.invoke(cli, [*common_args, "haplotig-files"])
+    assert result_haplotig.exit_code == 0, result_haplotig.output
+
+    # --ticket wasn't given, so the ticket_id (and dry-run workdir, which is
+    # keyed by ticket_id, not tol_id) is derived from the --yaml filename stem.
+    workdir = tmp_path / "uoEpiScra1_hap1_hap2"
+    pta_run_dir = Path(next((workdir / "pretext_to_asm").iterdir()))
+    assert list(pta_run_dir.glob("uoEpiScra1.hap1.*.all_haplotigs.curated.fa"))
+    assert list(pta_run_dir.glob("uoEpiScra1.hap2.*.all_haplotigs.curated.fa"))
+
+
+# ---------------------------------------------------------------------------
+# run_post_processing — dry-run must never reach the real registry/subprocess
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.core.registry.RegistryManager.mark_done")
+@patch("grit.steps.post_curation.post_processing.subprocess.run")
+def test_run_post_processing_dry_run_skips_subprocess_and_mark_done(
+    mock_subprocess_run, mock_mark_done, mock_ctx, tmp_path
+):
+    """dry_run must return before the real `subprocess.run(["bash"], ...)` call
+    and before `RegistryManager().mark_done(ctx.ticket_id)` — the real, non-dry-run-
+    isolated default registry — is ever reached."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.post_curation.post_processing import run_post_processing
+
+    mock_ctx.workdir = tmp_path
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+    mock_ctx.dry_run = True
+
+    run_post_processing(mock_ctx)
+
+    mock_subprocess_run.assert_not_called()
+    mock_mark_done.assert_not_called()
+
+    status = registry.find_ticket(mock_ctx.ticket_id)["status"]
+    assert status != "done"
+
+
+@patch("grit.core.registry.RegistryManager.mark_done")
+@patch("grit.steps.post_curation.post_processing.subprocess.run")
+def test_run_post_processing_dry_run_succeeds_without_existing_workdir(
+    mock_subprocess_run, mock_mark_done, mock_ctx, tmp_path
+):
+    """dry_run must not require ctx.workdir to already exist on disk — every
+    other dry-run step creates its own directories on demand via
+    tracker.start(create_dir=True), so post_processing shouldn't be the one
+    exception that needs `grit --dry-run setup` to have run first."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.post_curation.post_processing import run_post_processing
+
+    mock_ctx.workdir = tmp_path / "does_not_exist_yet"
+    assert not mock_ctx.workdir.exists()
+
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(mock_ctx.workdir, registry=registry)
+    mock_ctx.dry_run = True
+
+    run_post_processing(mock_ctx)
+
+    mock_subprocess_run.assert_not_called()
+    mock_mark_done.assert_not_called()

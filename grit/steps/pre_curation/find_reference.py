@@ -142,6 +142,16 @@ def find_closest_reference(
     log.info("find-reference | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Find closest reference")
 
+    if ctx.dry_run:
+        run_dir = ctx.tracker.start(
+            "find_reference", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
+        )
+        placeholder = run_dir / f"{ctx.tol_id}_reheader.fna"
+        placeholder.write_text(">fake\nACGT\n")
+        ctx.tracker.finish("find_reference", run_dir, "success", untracked=ctx.untracked)
+        print_done(f"[dry-run] Reference prepared in {run_dir}")
+        return
+
     run_dir = (
         ctx.tracker.start("find_reference", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
         if ctx.tracker
@@ -164,10 +174,10 @@ def find_closest_reference(
                 raise FileNotFoundError(f"Local reference not found: {local}")
             _prep_local_reference(ctx, local, run_dir)
             if ctx.tracker and run_dir:
-                ctx.tracker.finish("find_reference", run_dir, "success")
+                ctx.tracker.finish("find_reference", run_dir, "success", untracked=ctx.untracked)
         except Exception:
             if ctx.tracker and run_dir:
-                ctx.tracker.finish("find_reference", run_dir, "failed")
+                ctx.tracker.finish("find_reference", run_dir, "failed", untracked=ctx.untracked)
             raise
         print_done(f"Local reference prepared in {run_dir}")
         return
@@ -185,10 +195,10 @@ def find_closest_reference(
         _run(cmd, ctx.print_only)
         _reheader_downloaded_references(ctx, run_dir)
         if ctx.tracker and run_dir:
-            ctx.tracker.finish("find_reference", run_dir, "success")
+            ctx.tracker.finish("find_reference", run_dir, "success", untracked=ctx.untracked)
     except Exception:
         if ctx.tracker and run_dir:
-            ctx.tracker.finish("find_reference", run_dir, "failed")
+            ctx.tracker.finish("find_reference", run_dir, "failed", untracked=ctx.untracked)
         raise
     print_done(f"Reference downloaded to {run_dir}")
 

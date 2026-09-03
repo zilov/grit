@@ -116,6 +116,7 @@ class RunTracker:
         job_id: str | None = None,
         *,
         outputs: dict[str, str] | None = None,
+        untracked: bool = False,
     ) -> None:
         """
         Record step completion (status: 'success' | 'failed').
@@ -127,12 +128,19 @@ class RunTracker:
 
         *outputs* maps semantic keys (e.g. 'hap1_fa', 'hap1_pretext') to absolute
         file path strings for the outputs produced by this step.
+
+        Pass ``untracked=True`` when the run this call finishes was started with
+        ``start(untracked=True)``, so the recorded status stays 'untracked' instead
+        of clobbering it with 'success'/'failed' (which would make the run
+        canonical). *outputs* are still recorded, so a later call to
+        ``finish(..., "success", outputs=...)`` without ``untracked`` (e.g. via
+        `grit retrack`) can promote the run to canonical.
         """
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H_%M_%S")
         record: dict = {
             "step": step,
             "timestamp": ts,
-            "status": status,
+            "status": "untracked" if untracked else status,
             "run_dir": str(run_dir),
         }
         if job_id is not None:
