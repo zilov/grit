@@ -14,6 +14,7 @@ from grit.utils.helpers import (
     build_bsub_opts,
     find_latest_dir,
 )
+from grit.utils.modules import module_cmd
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -66,7 +67,7 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     Command structure:
         bsub -q normal -e e_busco_{mem_gb} -o o_busco_{mem_gb} -n 32 -M {mem_mb} \\
             -R'select[mem>{mem_mb}] rusage[mem={mem_mb}] span[hosts=1]' \\
-            singularity exec -B /lustre {_BUSCO_SIF} busco \\
+            module load grit && singularity exec -B /lustre {_BUSCO_SIF} busco \\
                 -i {input_fa} -o {output_dir} -m genome \\
                 -l {_BUSCO_LINEAGES}/{lineage} -c 32 -f
 
@@ -125,6 +126,7 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     # --- build inner command ---
     busco_lineage = str(Path(_BUSCO_LINEAGES) / lineage)
     inner_cmd = (
+        f"{module_cmd('GRIT')} && "
         f"singularity exec -B /lustre {_BUSCO_SIF} busco "
         f"-i {curated_fa} -o {output_dir} -m genome "
         f"-l {busco_lineage} -c 32 -f"

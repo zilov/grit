@@ -82,3 +82,14 @@ Small fixes and improvements — close in one batch when still relevant.
   with the list of offending scaffolds plus a tip to re-tag them and re-export
   the AGP.
 
+- [ ] **Show reference info in `grit status -t`** — the ticket's reference
+  (as picked up / produced by `find-reference`) isn't surfaced anywhere in
+  `grit status -t RC-XXXX`; the curator has to dig through the run dirs to
+  see which reference was used. Add it to the status output (name/path of the
+  selected reference, and whether one was found at all).
+
+- [x] **`busco-curated`: add `module load grit`** — singularity is available in
+  the `grit` module, so the step should load it like the other module-based
+  steps (`module_cmd(...)` in `grit/utils/modules.py`) instead of relying on
+  singularity already being on PATH.
+
