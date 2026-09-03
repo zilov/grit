@@ -93,7 +93,7 @@ written, because Batches 2-5 need them.
       farm-only section is skipped off-farm so the dry-run scenarios (the actual
       canonical-FASTA regression check) run on a laptop. Verified green, and
       verified to fail when a command fails.
-      Still open: add it to CI (`TEST-11`).
+      Now runs in CI as its own step (`TEST-11`'s smoke half).
 - [ ] `CORR-12` — `_run` captures stderr and discards it; a failing farm tool
       reaches the curator as an exit code plus a traceback with the tool's own
       diagnostic lost. Surface it. This is the single biggest improvement to
@@ -446,7 +446,9 @@ Do these whenever a related file is open.
 - [ ] `TEST-10` — 45.7% duplicate non-trivial test lines; nine copy-pasted
       tracker fixtures under three names.
 - [ ] `TEST-11`/`TEST-12`/`TEST-13` — CI: one unpinned Python against `>=3.10`,
-      no coverage measurement, no dependency audit, smoke test not run.
+      no coverage measurement, no dependency audit. *Smoke test: done — it runs
+      as its own CI step, verified to work on a clean `$HOME` with no `~/.grit`
+      and to fail when a command fails.*
 - [ ] `PORT` (cheap subset) — `module load fastga/1.1-c1` pinned inside a
       bundled shell script, breaking `modules.py`'s stated single-source
       contract; the BUSCO lineage path embeds the mutable `latest` symlink in

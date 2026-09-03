@@ -38,6 +38,11 @@
 
 set -euo pipefail
 
+# rich wraps console output to the terminal width (80 when not a tty), which
+# would split a long path across lines and break the assertions below that read
+# a path out of a step's output. Keep it on one line regardless of $HOME length.
+export COLUMNS=400
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURES="$SCRIPT_DIR/fixtures"
 CONFIG="${1:-$SCRIPT_DIR/fixtures/test_config.yaml}"
@@ -176,7 +181,7 @@ else
     fail "[S1] finalize-qc"
 fi
 echo "$finalize_output"
-curated_dir=$(echo "$finalize_output" | grep -A1 "Curated dir" | tail -1 | tr -d ' ')
+curated_dir=$(echo "$finalize_output" | grep -o '/[^ ]*/assembly_curated/[^ ]*' | tail -1)
 [ -n "$curated_dir" ] && [ -d "$curated_dir" ] \
     && ok "[S1] finalize-qc wrote into a real, discoverable curated dir" \
     || fail "[S1] finalize-qc's curated dir not found on disk: '$curated_dir'"

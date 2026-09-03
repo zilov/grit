@@ -27,3 +27,10 @@ jobs:
 
       - name: Run tests
         run: uv run pytest tests/ -v
+
+      # The canonical-FASTA regression check: real curator pipelines run twice
+      # against the isolated ~/.grit/dry_run/ sandbox, once straight through and
+      # once with steps re-run out of order. Its farm-only section skips itself
+      # when /lustre is absent, so the runner executes the dry-run scenarios.
+      - name: Smoke test (dry-run scenarios)
+        run: uv run bash tests/local_smoke_test.sh
