@@ -6,6 +6,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-04
+
+### Changed
+
+- `examples.md` and `recuration-canonical-priority.md` both moved into `docs/`; `examples.md` gained a table of contents and continuous section numbering, and now documents `--dry-run` — flagged as a grit-development mode rather than a curation one — next to the `--print-only` flag its old "Dry run" label was attached to.
+- `recuration-canonical-priority.md` rewritten for a curator audience: the per-file-type pools are stated as a table, the differing `--hap2` semantics per command are documented, `post-curation`'s chain now correctly lists `haplotig-files`, the escape hatch names `grit retrack` rather than the `--undo` flag that no longer exists, and the implementation archaeology moved into a short closing section for whoever edits the resolvers. Its flowchart no longer dead-ends at recuration — it now shows the loop back to the contaminant and renaming steps, and marks which nodes actually produce a new canonical candidate.
+
+### Added
+
+- `examples.md` gained a curator-facing summary of canonical-file resolution (which steps change it, the freshest-wins rule, and how to read it out of `grit status`), a section on `untrack`/`retrack`/`--untracked` for undoing a step's effect without re-running the pipeline, a worked example of re-curating an already-curated Hi-C map, and eight worked pipelines annotated with which step owns each canonical file at every point. `find-reference`'s override is documented under its real name (`--local`, not `--local-path`) with a note on when to reach for it, and the rename-and-orient example no longer omits the `grit fastga` run it depends on.
+
 ## [0.4.0] - 2026-09-03
 
 ### Added

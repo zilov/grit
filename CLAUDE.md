@@ -182,7 +182,7 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   `_step_output()` re-globs that run dir with the step's `_OUTPUT_SPECS` first, so a run with
   incompletely recorded outputs can't hand canonical back to an older step (canonical must never move
   backwards in time). See
-  `recuration-canonical-priority.md` for the full curator-facing decision path and a flowchart — read
+  `docs/recuration-canonical-priority.md` for the full curator-facing decision path and a flowchart — read
   it before touching any of these three functions or the recurate step. `grit status -t`'s step-history
   table surfaces this per row via a "Canonical" column showing per-type codes (`fa`/`hap`/`chr`), with a
   `(1)`/`(2)` haplotype-index suffix when a ticket has more than one haplotype — e.g. a recurate row can
