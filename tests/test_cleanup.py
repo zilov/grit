@@ -6,6 +6,7 @@ from click.testing import CliRunner
 
 from grit.core.cleanup import plan_cleanup, run_cleanup
 from grit.core.click_cli import cli
+from tests.conftest import plain
 
 
 class _FakeTracker:
@@ -270,4 +271,4 @@ def test_cleanup_cmd_rejects_dry_run(monkeypatch, tmp_path):
     result = runner.invoke(cli, ["--dry-run", "cleanup"])
 
     assert result.exit_code != 0
-    assert "--dry-run is not supported" in result.output
+    assert "--dry-run is not supported" in plain(result.output)

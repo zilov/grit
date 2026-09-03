@@ -5,6 +5,7 @@ from click.testing import CliRunner
 
 from grit.core.base_command import GritCommand
 from grit.core.click_cli import GlobalState
+from tests.conftest import plain
 
 
 def _make_command(name="dummy", **kwargs):
@@ -92,7 +93,7 @@ def test_dry_run_unsupported_command_name_rejected():
     obj = GlobalState()
     result = runner.invoke(cmd, ["-t", "RC-1234", "--dry-run"], obj=obj)
     assert result.exit_code != 0
-    assert "--dry-run is not yet supported for 'dummy'" in result.output
+    assert "--dry-run is not yet supported for 'dummy'" in plain(result.output)
 
 
 def test_dry_run_supported_command_name_allowed():

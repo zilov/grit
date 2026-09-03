@@ -58,13 +58,21 @@ Ticked items carry their evidence inline. Summary of what has actually landed on
 | `256a92b` | `TODO/` excluded from ruff formatting — ruff 0.16 formats Python blocks inside Markdown and would fail CI on a design note | — |
 | `5b93ccc` | registry fails closed on an unreadable file, keeps `.bak` + dated snapshots, writes via a per-writer temp path at 0600 | `CORR-01`, `SEC-03`, `CORR-02` (interim only) |
 
-Two corrections to the assessment itself, both worth carrying forward:
+Three corrections to the assessment itself, all worth carrying forward:
 
 - **`DX-01`'s symptom was wrong.** The smoke test did not die under `set -euo
   pipefail`; `cmd && ok "..."` is exempt from `errexit`, so it ran to the end and
   printed `=== All passed ===` over four failing commands. A check that lies
   green is worse than one that will not start, and the same pattern is worth
   grepping for elsewhere before trusting any shell-based verification here.
+- **`TEST-01`'s "nothing distinguishes a valid command string" has a sibling:
+  nothing distinguished a valid *rendering* either.** Seven tests compared
+  literal substrings against rich-click output, which is painted and boxed
+  whenever rich believes the stream is a terminal — as it does under CI, but not
+  under a local pytest run. They passed on every laptop and failed on the first
+  CI run that ever executed them. Tests and shell checks that read grit's own
+  output must normalise it (`plain()` in `tests/conftest.py`) or pin the
+  rendering (`NO_COLOR`/`COLUMNS`), never both-hope.
 - **Not every defect has a finding ID.** The `blast_contaminants` dry-run branch
   left an empty `alternate/` directory for single-hap tickets — the real path
   never creates one. No audit found it; running the repaired smoke test did, on

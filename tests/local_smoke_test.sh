@@ -38,10 +38,14 @@
 
 set -euo pipefail
 
-# rich wraps console output to the terminal width (80 when not a tty), which
-# would split a long path across lines and break the assertions below that read
-# a path out of a step's output. Keep it on one line regardless of $HOME length.
+# The assertions below read paths and table cells out of grit's own output, so
+# pin how rich renders it. Width: rich wraps to the terminal (80 when not a tty),
+# which would split a long path across lines. Colour: rich paints when it thinks
+# the stream is a terminal — CI sets that — and the escape codes land inside the
+# strings being matched.
 export COLUMNS=400
+export NO_COLOR=1
+unset FORCE_COLOR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURES="$SCRIPT_DIR/fixtures"

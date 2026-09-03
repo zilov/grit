@@ -10,7 +10,7 @@ from click.testing import CliRunner
 
 from grit.core.click_cli import cli
 from grit.core.registry import RegistryManager
-from tests.conftest import TEST_USER_CONFIG
+from tests.conftest import TEST_USER_CONFIG, plain
 
 
 @pytest.fixture(autouse=True)
@@ -226,7 +226,7 @@ def test_dry_run_guard_rejects_and_leaves_real_registry_untouched(
     result = runner.invoke(cli, ["--dry-run", *args])
 
     assert result.exit_code != 0
-    assert "--dry-run is not supported" in result.output
+    assert "--dry-run is not supported" in plain(result.output)
     # Ticket and workdir must survive untouched.
     entry = reg.find_ticket("RC-REAL")
     assert entry is not None
@@ -243,8 +243,6 @@ def test_status_reports_an_unreadable_registry_without_a_traceback(tmp_path, _pa
 
     assert result.exit_code == 1
     assert result.exception is None or isinstance(result.exception, SystemExit)
-    # rich-click renders the message inside a wrapped panel: drop the box drawing
-    # characters and collapse whitespace before matching.
-    rendered = " ".join(result.output.translate({ord(c): " " for c in "│╭╮╯╰─"}).split())
+    rendered = plain(result.output)
     assert "could not be read" in rendered
     assert "Refusing to continue" in rendered

@@ -15,7 +15,7 @@ from grit.core.status import (
     show_ticket_history,
 )
 from grit.utils.output import console
-from tests.conftest import TEST_USER_CONFIG, TEST_YAML_HAP1, TEST_YAML_PRIMARY
+from tests.conftest import TEST_USER_CONFIG, TEST_YAML_HAP1, TEST_YAML_PRIMARY, plain
 
 
 @patch("grit.core.status.print_tip")
@@ -769,7 +769,7 @@ def test_show_global_status_shows_ticket_age_and_done_stats(tmp_path, monkeypatc
 
     show_global_status(reg)
 
-    out = capsys.readouterr().out
+    out = plain(capsys.readouterr().out)
     assert "15" in out
     assert "Done: 1 total" in out
     assert "Last 3 months:" in out
@@ -791,7 +791,7 @@ def test_show_global_status_done_total_counts_cleaned_up_tickets(tmp_path, monke
 
     show_global_status(reg)
 
-    out = capsys.readouterr().out
+    out = plain(capsys.readouterr().out)
     assert "Done: 2 total" in out
 
 
