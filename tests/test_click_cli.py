@@ -232,3 +232,19 @@ def test_dry_run_guard_rejects_and_leaves_real_registry_untouched(
     assert entry is not None
     assert entry.get("status") != "done"
     assert workdir.exists()
+
+
+def test_status_reports_an_unreadable_registry_without_a_traceback(tmp_path, _patch_registry_dir):
+    """A corrupt registry must reach the curator as an error message, not a stack trace."""
+    (_patch_registry_dir / "grit_registry.json").write_text("{ truncated")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["status"])
+
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    # rich-click renders the message inside a wrapped panel: drop the box drawing
+    # characters and collapse whitespace before matching.
+    rendered = " ".join(result.output.translate({ord(c): " " for c in "│╭╮╯╰─"}).split())
+    assert "could not be read" in rendered
+    assert "Refusing to continue" in rendered

@@ -16,6 +16,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `fastga-stats` as its own synchronous tracked step, decoupled from the `fastga` bsub job, skipping re-computation when results already exist.
 - `grit status -t` shows a "Canonical" column marking which run currently owns each output type (`fa`/`hap`/`chr`), a ticket age column, and per-month counts for done tickets; the global status absorbed the old summary.
 - `recuration-canonical-priority.md`: curator-facing decision path and flowchart for canonical resolution.
+- Registry backups: every write keeps the version it replaces as `grit_registry.json.bak`, plus a once-a-day `grit_registry.<date>.json` snapshot (seven kept).
 
 ### Changed
 
@@ -26,6 +27,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- A corrupt or unreadable `~/.grit/grit_registry.json` no longer erases every ticket and all step history: reads now fail closed with a `RegistryError` naming the backups to restore from, instead of reading as an empty registry that the next write installs.
 - An `--untracked` run no longer becomes canonical the moment it finishes: `RunTracker.finish()` keeps writing `status="untracked"` instead of overwriting it with `success`/`failed`.
 - A run whose registry `outputs` were recorded incompletely no longer hands the canonical slot back to an older step — the step's latest run dir is re-globbed with its own `_OUTPUT_SPECS` first, so canonical can never move backwards in time.
 - `pretext-to-asm` records its haplotig FASTA and chromosome list for primary (single-haplotype) assemblies, not just hap-prefixed ones.
@@ -34,6 +36,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `fastga-stats` marks its tracker record failed on a script error or missing output instead of leaving it stuck as "started", and fails with a clear message on a stale 3-column top-targets file.
 - `grit status` no longer inflates run counts: all records of one run collapse into a single history row, superseded "started" rows are dropped, and cleaned-up tickets count towards the done total again.
 - The `--dry-run` sandbox is keyed by ticket ID rather than ToL ID, and single-haplotype tickets no longer leave stray hap2/alternate placeholder files behind.
+
+### Security
+
+- Everything `RegistryManager` writes (the registry, its backup and its snapshots) is created mode 0600 and installed through a temp file named for the writing host and pid, so concurrent writers on different nodes can no longer install each other's partial output through a shared `grit_registry.tmp`.
 
 ## [0.3.5] - 2026-08-19
 

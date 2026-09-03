@@ -125,7 +125,13 @@ then strands one run as `started` (recoverable via `untrack`/`retrack`) instead
 of erasing every ticket and all step history. That is an S-sized change buying
 most of the severity reduction, which is why it does not wait for the ADR.
 
-- [ ] `CORR-01` (root) — `registry.py:299-306`: `_load()` maps any unreadable or
+- [x] `CORR-01` (root) — **done.** Fails closed via `RegistryError`, plus `.bak`
+      and dated snapshots so a corrupt registry is recoverable rather than merely
+      un-erased. *Tests:*
+      `test_unreadable_registry_raises_instead_of_reading_as_empty`,
+      `test_unreadable_registry_is_not_overwritten_by_the_next_write`,
+      `test_save_copies_the_previous_version_to_the_backup`,
+      `test_status_reports_an_unreadable_registry_without_a_traceback`. Was: `registry.py:299-306`: `_load()` maps any unreadable or
       malformed registry to `[]`, and the next save wipes every ticket and all
       step history with only a `log.warning`. Fail closed: distinguish "no file"
       from "cannot read". *Verified directly.*
@@ -146,7 +152,10 @@ most of the severity reduction, which is why it does not wait for the ADR.
       the registry, not by time. Depends on the storage decision above.
 - [ ] `TEST-03` — no test opens two `RegistryManager`s on one path. Add the
       concurrency test; without it this batch cannot be shown to work.
-- [ ] `SEC-03` — `~/.grit/` files written with default permissions; set `0600`.
+- [x] `SEC-03` — **done** for everything `RegistryManager` writes (registry,
+      `.bak`, snapshots) via `_atomic_write`. *Test:*
+      `test_registry_and_backups_are_written_user_only`. `grit init`'s config
+      file is still written at the process umask — not yet covered.
 
 *Batch done when:* a test proves a corrupt registry is not silently emptied, and
 a test proves two concurrent writers do not lose a record.

@@ -76,6 +76,26 @@ grit [--yaml FILE] [--print-only] [--logging-level LEVEL] <COMMAND> -t RC-1234
 
 External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `grit init` to create it pre-filled with your username; the global ticket registry lives alongside it in the same `~/.grit/` dir. In tests / CI use `--yaml` with a local fixture file.
 
+### Registry durability
+
+`RegistryManager` is the only record of step history and is written from every
+login *and* compute node over NFS, so `grit/core/registry.py` is deliberately
+defensive and must stay that way:
+
+- **Reads fail closed.** An existing but unparseable registry raises
+  `RegistryError` (a `ClickException`, so the curator sees a message, not a
+  traceback). Never make `_load()` return `[]` on a read error — an empty read
+  followed by any write erases every ticket and all step history.
+- **Every write keeps the version it replaces**: `grit_registry.json.bak`, plus a
+  once-a-day `grit_registry.<date>.json` snapshot (last `SNAPSHOT_RETENTION`
+  kept). The `RegistryError` message lists them as `cp` commands.
+- **All writes go through `_atomic_write()`**, which installs via a temp file
+  named for the writing host and pid (never a shared `grit_registry.tmp`) and
+  chmods 0600. Add new registry-adjacent files through it too.
+
+Concurrent read-modify-write can still lose a record; serialising that is a
+storage-format decision (`CORR-02`), not something to improvise per call site.
+
 ## Key conventions
 
 - **`--untracked`** — injected into every step by `GritCommand` (same as
