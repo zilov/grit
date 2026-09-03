@@ -81,10 +81,19 @@ written, because Batches 2-5 need them.
 - [ ] `ARCH-07b` — `validate-files` is allowlisted, has a `_cmd`, and is
       commented out of the command tree (`click_cli.py:280`): 151 LOC
       unreachable. Register it or delete it.
-- [ ] `DX-01` — `tests/local_smoke_test.sh` dies at line 66 under `set -euo
-      pipefail` (invokes three commands commented out of the CLI). The
-      regression check CLAUDE.md mandates for canonical-FASTA logic is
-      unrunnable. Fix, then add to CI (`TEST-11`).
+- [x] `DX-01` — **fixed, and the finding's diagnosis was wrong in a way that
+      mattered.** The script does not die at line 66: every step was written as
+      `cmd && ok "..."`, and bash exempts all but the last command of an AND-OR
+      list from `errexit`, so the three unregistered commands (`add-gap-track`,
+      `add-telo-track`, `validate-files`) printed "No such command", `sex-matcher`
+      aborted on a non-insect fixture, and the script carried on to report
+      `=== All passed ===`. It was not unrunnable — it was silently under-
+      reporting, which is worse. Now: all invocations go through a `run()` helper
+      that fails loudly, the four inapplicable commands are gone, and the
+      farm-only section is skipped off-farm so the dry-run scenarios (the actual
+      canonical-FASTA regression check) run on a laptop. Verified green, and
+      verified to fail when a command fails.
+      Still open: add it to CI (`TEST-11`).
 - [ ] `CORR-12` — `_run` captures stderr and discards it; a failing farm tool
       reaches the curator as an exit code plus a traceback with the tool's own
       diagnostic lost. Surface it. This is the single biggest improvement to

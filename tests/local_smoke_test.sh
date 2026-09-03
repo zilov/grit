@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
-# Farm smoke test — runs all grit commands with --print-only + --yaml.
+# grit smoke test — two sections.
 # Usage: bash tests/local_smoke_test.sh [config_path] [dry_run_ticket]
 #
-# Requires real farm paths to exist (this fixture ticket's assembly/draft dir,
-# and — for the pipeline steps below that check for a prior step's output even
-# in --print-only mode (add-gap-track, add-telo-track, fastga,
-# blast-contaminants, hic-remapping, rename-and-orient) — those upstream
-# outputs to already be on disk. Run this on the farm after a real setup/fastga
-# pass, not on a laptop or in CI.
+# 1. A --print-only pass over the commands that need real ToL paths (this
+#    fixture ticket's assembly/draft dir, and for some steps a prior step's
+#    output on disk even under --print-only). It is skipped automatically off
+#    the farm; run it on the farm after a real setup/fastga pass.
+# 2. The --dry-run scenarios, which need nothing but a laptop.
 #
-# For a hermetic, dependency-free version of this check covering the commands
-# that don't require real prior output (setup, find-reference, pretext-to-asm,
-# haplotig-files, qv, validate-files, finalize-qc), see tests/test_smoke.py —
-# that one runs as part of `pytest tests/`.
+# For a hermetic version of section 1 covering the commands that don't require
+# real prior output, see tests/test_smoke.py — that one runs as part of
+# `pytest tests/`.
 #
 # Requires:
 #   - grit installed (pip install -e .)
@@ -50,7 +48,22 @@ PRIMARY_YAML="$FIXTURES/xbLimHian1_primary.yaml"
 GRIT="grit --config $CONFIG --print-only"
 
 ok() { echo "  OK  $1"; }
+skip() { echo "SKIP  $1"; }
 fail() { echo "FAIL  $1"; exit 1; }
+
+# run DESCRIPTION COMMAND...
+#   Always invoke grit through this. `cmd && ok "..."` cannot report a failure:
+#   bash exempts every command of an AND-OR list except the last from errexit,
+#   so a step that errored printed its message and the script carried on green.
+run() {
+    local desc="$1"
+    shift
+    if "$@"; then
+        ok "$desc"
+    else
+        fail "$desc (exit $?)"
+    fi
+}
 
 echo "=== grit local smoke test ==="
 echo "Config:  $CONFIG"
@@ -59,32 +72,36 @@ echo "primary YAML: $PRIMARY_YAML"
 echo ""
 
 # --- Global ---
-grit --help > /dev/null && ok "grit --help"
+if grit --help > /dev/null; then ok "grit --help"; else fail "grit --help"; fi
 
-# --- Pre-curation (hap1/hap2) ---
-$GRIT --yaml "$HAP_YAML" setup --print-only               && ok "setup (hap, --print-only after subcommand)"
-$GRIT --yaml "$HAP_YAML" add-gap-track                    && ok "add-gap-track"
-$GRIT --yaml "$HAP_YAML" add-telo-track                   && ok "add-telo-track"
-$GRIT --yaml "$HAP_YAML" sex-matcher                      && ok "sex-matcher"
-$GRIT --yaml "$HAP_YAML" find-reference                   && ok "find-reference"
+# =============================================================================
+# --- Section 1: --print-only pass over the commands that need real ToL paths -
+# =============================================================================
+# add-gap-track, add-telo-track and validate-files are deliberately absent:
+# they are commented out of the command tree in click_cli.py, so invoking them
+# only ever produced "No such command". sex-matcher is absent because both
+# fixtures are algae/fish — the step aborts by design on any ToL ID outside its
+# insect/nematode prefixes, so it needs a fixture it does not have yet.
+if [ -d /lustre ]; then
+    run "setup (hap, --print-only after subcommand)" $GRIT --yaml "$HAP_YAML" setup --print-only
+    run "find-reference"                             $GRIT --yaml "$HAP_YAML" find-reference
 
-# --- Pre-curation (primary) ---
-$GRIT --yaml "$PRIMARY_YAML" setup                        && ok "setup (primary)"
-$GRIT --yaml "$PRIMARY_YAML" find-reference               && ok "find-reference (primary)"
+    run "setup (primary)"                            $GRIT --yaml "$PRIMARY_YAML" setup
+    run "find-reference (primary)"                   $GRIT --yaml "$PRIMARY_YAML" find-reference
 
-# --- Post-curation ---
-$GRIT --yaml "$HAP_YAML" pretext-to-asm                   && ok "pretext-to-asm"
-$GRIT --yaml "$HAP_YAML" haplotig-files                   && ok "haplotig-files"
-$GRIT --yaml "$HAP_YAML" hic-remapping                    && ok "hic-remapping"
-$GRIT --yaml "$HAP_YAML" qv                               && ok "qv"
-$GRIT --yaml "$HAP_YAML" validate-files                   && ok "validate-files"
-$GRIT --yaml "$HAP_YAML" finalize-qc                      && ok "finalize-qc"
+    run "pretext-to-asm"                             $GRIT --yaml "$HAP_YAML" pretext-to-asm
+    run "haplotig-files"                             $GRIT --yaml "$HAP_YAML" haplotig-files
+    run "hic-remapping"                              $GRIT --yaml "$HAP_YAML" hic-remapping
+    run "qv"                                         $GRIT --yaml "$HAP_YAML" qv
+    run "finalize-qc"                                $GRIT --yaml "$HAP_YAML" finalize-qc
 
-# --- Optional ---
-$GRIT --yaml "$HAP_YAML" fastga                           && ok "fastga"
-$GRIT --yaml "$HAP_YAML" blast-contaminants               && ok "blast-contaminants"
-$GRIT --yaml "$HAP_YAML" rename-and-orient                && ok "rename-and-orient"
-$GRIT --yaml "$HAP_YAML" busco-synteny --lineage stramenopiles_odb10 && ok "busco-synteny"
+    run "fastga"                                     $GRIT --yaml "$HAP_YAML" fastga
+    run "blast-contaminants"                         $GRIT --yaml "$HAP_YAML" blast-contaminants
+    run "rename-and-orient"                          $GRIT --yaml "$HAP_YAML" rename-and-orient
+    run "busco-synteny"                              $GRIT --yaml "$HAP_YAML" busco-synteny --lineage stramenopiles_odb10
+else
+    skip "section 1 — needs real ToL paths, and /lustre is not mounted here"
+fi
 
 # =============================================================================
 # --- Dry-run mode: canonical-FASTA pipeline scenarios ---
@@ -123,37 +140,41 @@ echo ""
 echo "--- Scenario 1: real curation pipeline (straight through) ---"
 T1="dry_run_pipeline_1"
 
-$GRIT_DRY setup -t "$T1" --dry-run                          && ok "[S1] setup"
-$GRIT_DRY pretext-to-asm -t "$T1" --dry-run                 && ok "[S1] pretext-to-asm"
+run "[S1] setup" $GRIT_DRY setup -t "$T1" --dry-run
+run "[S1] pretext-to-asm" $GRIT_DRY pretext-to-asm -t "$T1" --dry-run
 s1=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s1" hap1 "assembly FA" "pretext_to_asm/" "[S1] hap1 canonical = pretext_to_asm after pretext-to-asm"
 assert_canonical "$s1" hap2 "assembly FA" "pretext_to_asm/" "[S1] hap2 canonical = pretext_to_asm after pretext-to-asm"
 
-$GRIT_DRY blast-contaminants -t "$T1" --dry-run             && ok "[S1] blast-contaminants"
+run "[S1] blast-contaminants" $GRIT_DRY blast-contaminants -t "$T1" --dry-run
 s1=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s1" hap1 "assembly FA" "blast_contaminants/" "[S1] hap1 canonical = blast_contaminants"
 assert_canonical "$s1" hap2 "assembly FA" "blast_contaminants/" "[S1] hap2 canonical = blast_contaminants"
 
-$GRIT_DRY hic-remapping -t "$T1" --dry-run                  && ok "[S1] hic-remapping (hap1)"
-$GRIT_DRY hic-remapping -t "$T1" --dry-run --hap2           && ok "[S1] hic-remapping (hap2, exclusive flag)"
+run "[S1] hic-remapping (hap1)" $GRIT_DRY hic-remapping -t "$T1" --dry-run
+run "[S1] hic-remapping (hap2, exclusive flag)" $GRIT_DRY hic-remapping -t "$T1" --dry-run --hap2
 s1=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s1" hap1 "assembly FA" "blast_contaminants/" "[S1] hic-remapping doesn't change canonical_fa (hap1)"
 
-$GRIT_DRY pretext-to-asm-recurate -t "$T1" --dry-run        && ok "[S1] pretext-to-asm-recurate (hap1)"
-$GRIT_DRY pretext-to-asm-recurate -t "$T1" --dry-run --hap2 && ok "[S1] pretext-to-asm-recurate (hap2, exclusive flag)"
+run "[S1] pretext-to-asm-recurate (hap1)" $GRIT_DRY pretext-to-asm-recurate -t "$T1" --dry-run
+run "[S1] pretext-to-asm-recurate (hap2, exclusive flag)" $GRIT_DRY pretext-to-asm-recurate -t "$T1" --dry-run --hap2
 s1=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s1" hap1 "assembly FA" "pretext_to_asm_recurate/" "[S1] hap1 canonical = pretext_to_asm_recurate"
 assert_canonical "$s1" hap2 "assembly FA" "pretext_to_asm_recurate_hap2/" "[S1] hap2 canonical = pretext_to_asm_recurate_hap2"
 
-$GRIT_DRY rename-and-orient -t "$T1" --dry-run --hap2       && ok "[S1] rename-and-orient (hap1+hap2, additive flag)"
+run "[S1] rename-and-orient (hap1+hap2, additive flag)" $GRIT_DRY rename-and-orient -t "$T1" --dry-run --hap2
 s1=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s1" hap1 "assembly FA" "rename_and_orient/" "[S1] hap1 canonical = rename_and_orient (chain forward from recurate)"
 assert_canonical "$s1" hap2 "assembly FA" "rename_and_orient_hap2/" "[S1] hap2 canonical = rename_and_orient_hap2 (chain forward from recurate)"
 
-$GRIT_DRY hic-remapping -t "$T1" --dry-run                  && ok "[S1] 2nd hic-remapping (hap1)"
-$GRIT_DRY hic-remapping -t "$T1" --dry-run --hap2           && ok "[S1] 2nd hic-remapping (hap2)"
+run "[S1] 2nd hic-remapping (hap1)" $GRIT_DRY hic-remapping -t "$T1" --dry-run
+run "[S1] 2nd hic-remapping (hap2)" $GRIT_DRY hic-remapping -t "$T1" --dry-run --hap2
 
-finalize_output=$($GRIT_DRY finalize-qc -t "$T1" --dry-run) && ok "[S1] finalize-qc"
+if finalize_output=$($GRIT_DRY finalize-qc -t "$T1" --dry-run); then
+    ok "[S1] finalize-qc"
+else
+    fail "[S1] finalize-qc"
+fi
 echo "$finalize_output"
 curated_dir=$(echo "$finalize_output" | grep -A1 "Curated dir" | tail -1 | tr -d ' ')
 [ -n "$curated_dir" ] && [ -d "$curated_dir" ] \
@@ -175,18 +196,18 @@ esac
 echo ""
 echo "--- Scenario 2: duplicate re-runs on top of Scenario 1 (collision hunt) ---"
 
-$GRIT_DRY blast-contaminants -t "$T1" --dry-run             && ok "[S2] re-run blast-contaminants (after rename_and_orient was canonical)"
+run "[S2] re-run blast-contaminants (after rename_and_orient was canonical)" $GRIT_DRY blast-contaminants -t "$T1" --dry-run
 s2=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s2" hap1 "assembly FA" "blast_contaminants/" "[S2] hap1 canonical bounces back to blast_contaminants"
 assert_canonical "$s2" hap2 "assembly FA" "blast_contaminants/" "[S2] hap2 canonical bounces back to blast_contaminants"
 
-$GRIT_DRY rename-and-orient -t "$T1" --dry-run --hap2       && ok "[S2] re-run rename-and-orient"
+run "[S2] re-run rename-and-orient" $GRIT_DRY rename-and-orient -t "$T1" --dry-run --hap2
 s2=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s2" hap1 "assembly FA" "rename_and_orient/" "[S2] hap1 canonical bounces back to rename_and_orient"
 assert_canonical "$s2" hap2 "assembly FA" "rename_and_orient_hap2/" "[S2] hap2 canonical bounces back to rename_and_orient_hap2"
 
-$GRIT_DRY pretext-to-asm-recurate -t "$T1" --dry-run        && ok "[S2] re-run pretext-to-asm-recurate (hap1)"
-$GRIT_DRY pretext-to-asm-recurate -t "$T1" --dry-run --hap2 && ok "[S2] re-run pretext-to-asm-recurate (hap2)"
+run "[S2] re-run pretext-to-asm-recurate (hap1)" $GRIT_DRY pretext-to-asm-recurate -t "$T1" --dry-run
+run "[S2] re-run pretext-to-asm-recurate (hap2)" $GRIT_DRY pretext-to-asm-recurate -t "$T1" --dry-run --hap2
 s2=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s2" hap1 "assembly FA" "pretext_to_asm_recurate/" "[S2] hap1 canonical bounces back to pretext_to_asm_recurate"
 assert_canonical "$s2" hap2 "assembly FA" "pretext_to_asm_recurate_hap2/" "[S2] hap2 canonical bounces back to pretext_to_asm_recurate_hap2"
@@ -194,7 +215,7 @@ assert_canonical "$s2" hap2 "assembly FA" "pretext_to_asm_recurate_hap2/" "[S2] 
 # One more full lap: blast-contaminants again should still displace the
 # freshest recurate output, with no accumulated state from prior laps leaking
 # through (e.g. a stale run_dir being picked up instead of the newest one).
-$GRIT_DRY blast-contaminants -t "$T1" --dry-run             && ok "[S2] re-run blast-contaminants a second time"
+run "[S2] re-run blast-contaminants a second time" $GRIT_DRY blast-contaminants -t "$T1" --dry-run
 s2=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s2" hap1 "assembly FA" "blast_contaminants/" "[S2] hap1 canonical bounces to blast_contaminants again"
 assert_canonical "$s2" hap2 "assembly FA" "blast_contaminants/" "[S2] hap2 canonical bounces to blast_contaminants again"
@@ -210,12 +231,12 @@ echo ""
 echo "--- Scenario 3: single-hap ticket never fabricates a second haplotype ---"
 T3="dry_run_pipeline_primary"
 
-$GRIT_DRY_PRIMARY setup -t "$T3" --dry-run                          && ok "[S3] setup (primary)"
-$GRIT_DRY_PRIMARY pretext-to-asm -t "$T3" --dry-run                 && ok "[S3] pretext-to-asm (primary)"
-$GRIT_DRY_PRIMARY blast-contaminants -t "$T3" --dry-run             && ok "[S3] blast-contaminants (primary)"
-$GRIT_DRY_PRIMARY rename-and-orient -t "$T3" --dry-run              && ok "[S3] rename-and-orient (primary)"
-$GRIT_DRY_PRIMARY pretext-to-asm-recurate -t "$T3" --dry-run        && ok "[S3] pretext-to-asm-recurate (primary)"
-$GRIT_DRY_PRIMARY finalize-qc -t "$T3" --dry-run                    && ok "[S3] finalize-qc (primary)"
+run "[S3] setup (primary)" $GRIT_DRY_PRIMARY setup -t "$T3" --dry-run
+run "[S3] pretext-to-asm (primary)" $GRIT_DRY_PRIMARY pretext-to-asm -t "$T3" --dry-run
+run "[S3] blast-contaminants (primary)" $GRIT_DRY_PRIMARY blast-contaminants -t "$T3" --dry-run
+run "[S3] rename-and-orient (primary)" $GRIT_DRY_PRIMARY rename-and-orient -t "$T3" --dry-run
+run "[S3] pretext-to-asm-recurate (primary)" $GRIT_DRY_PRIMARY pretext-to-asm-recurate -t "$T3" --dry-run
+run "[S3] finalize-qc (primary)" $GRIT_DRY_PRIMARY finalize-qc -t "$T3" --dry-run
 
 s3=$($GRIT_DRY_PRIMARY --dry-run status -t "$T3")
 # Only check the "Canonical files" table's Hap column for a fabricated
@@ -246,11 +267,11 @@ echo "--- Scenario 4: untrack/retrack round-trip ---"
 # pretext_to_asm_recurate's re-run) — so untracking it must fall back to the
 # next-freshest tracked output, pretext_to_asm_recurate, NOT all the way back
 # to rename_and_orient (which is older than the recurate re-run).
-$GRIT_DRY --dry-run untrack -t "$T1" --step blast_contaminants && ok "[S4] untrack blast_contaminants (hap1)"
+run "[S4] untrack blast_contaminants (hap1)" $GRIT_DRY --dry-run untrack -t "$T1" --step blast_contaminants
 s4=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s4" hap1 "assembly FA" "pretext_to_asm_recurate/" "[S4] hap1 canonical falls back to pretext_to_asm_recurate after untracking blast_contaminants"
 
-$GRIT_DRY --dry-run retrack -t "$T1" --step blast_contaminants && ok "[S4] retrack blast_contaminants"
+run "[S4] retrack blast_contaminants" $GRIT_DRY --dry-run retrack -t "$T1" --step blast_contaminants
 s4=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s4" hap1 "assembly FA" "blast_contaminants/" "[S4] hap1 canonical returns to blast_contaminants after retrack"
 

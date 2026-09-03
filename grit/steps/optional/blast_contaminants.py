@@ -90,6 +90,11 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
             path = outputs.pop("hap2_fa", None)
             if path:
                 Path(path).unlink(missing_ok=True)
+                # outputs are grouped one directory per haplotype, and the real
+                # single-hap path never creates the second one.
+                hap_dir = Path(path).parent
+                if hap_dir != run_dir and not any(hap_dir.iterdir()):
+                    hap_dir.rmdir()
         ctx.tracker.finish(
             "blast_contaminants", run_dir, "success", outputs=outputs, untracked=ctx.untracked
         )

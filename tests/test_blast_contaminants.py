@@ -221,6 +221,23 @@ def test_dry_run_single_hap_tracks_only_hap1(mock_find_fa, mock_run, mock_ctx_pr
     assert mock_ctx_primary.tracker.get_output("blast_contaminants", "hap2_fa") is None
 
 
+@patch("grit.steps.optional.blast_contaminants._run")
+@patch("grit.steps.optional.blast_contaminants.find_canonical_fa")
+def test_dry_run_single_hap_leaves_no_alternate_hap_dir(
+    mock_find_fa, mock_run, mock_ctx_primary, tmp_path
+):
+    """blast-contaminants groups its outputs into one directory per haplotype, and
+    the real single-hap path never creates the second one — so the dry run must not
+    leave an empty alternate/ behind after deleting its fake file."""
+    _attach_tracker(mock_ctx_primary, tmp_path)
+    mock_ctx_primary.dry_run = True
+
+    run_blast_contaminants(mock_ctx_primary)
+
+    run_dir = Path(mock_ctx_primary.tracker.history("blast_contaminants")[-1]["run_dir"])
+    assert [d.name for d in run_dir.iterdir() if d.is_dir()] == [mock_ctx_primary.hap1_prefix]
+
+
 def test_dry_run_output_resolves_via_find_canonical_fa(mock_ctx, tmp_path):
     """The fake output written in dry-run mode must resolve through the real
     canonical-FASTA resolution pool, not just via tracker bookkeeping."""
