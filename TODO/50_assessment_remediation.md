@@ -46,6 +46,32 @@ Phase 2`. Resist fixing it early.
 
 ---
 
+## Progress
+
+Ticked items carry their evidence inline. Summary of what has actually landed on
+`test_and_fix_steps`, newest first:
+
+| Commit | What | Findings |
+|---|---|---|
+| `1aae166` | smoke test runs in CI; console width and path matching decoupled from `$HOME` length and terminal width | `TEST-11` (smoke half) |
+| `50f2142` | smoke test can fail again (`run()` helper), four inapplicable commands dropped, farm section auto-skips off-farm; fixed the empty `alternate/` dir its first real run exposed | `DX-01` |
+| `256a92b` | `TODO/` excluded from ruff formatting — ruff 0.16 formats Python blocks inside Markdown and would fail CI on a design note | — |
+| `5b93ccc` | registry fails closed on an unreadable file, keeps `.bak` + dated snapshots, writes via a per-writer temp path at 0600 | `CORR-01`, `SEC-03`, `CORR-02` (interim only) |
+
+Two corrections to the assessment itself, both worth carrying forward:
+
+- **`DX-01`'s symptom was wrong.** The smoke test did not die under `set -euo
+  pipefail`; `cmd && ok "..."` is exempt from `errexit`, so it ran to the end and
+  printed `=== All passed ===` over four failing commands. A check that lies
+  green is worse than one that will not start, and the same pattern is worth
+  grepping for elsewhere before trusting any shell-based verification here.
+- **Not every defect has a finding ID.** The `blast_contaminants` dry-run branch
+  left an empty `alternate/` directory for single-hap tickets — the real path
+  never creates one. No audit found it; running the repaired smoke test did, on
+  its first green pass. Expect more of these as Batch 1's tests come online.
+
+---
+
 ## Batch 0 — one blocking question — ANSWERED
 
 - [x] **Is `~/.grit/` on a filesystem visible to compute nodes? YES** — the
