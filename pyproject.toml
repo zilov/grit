@@ -33,6 +33,9 @@ dev = [
 
 [tool.ruff]
 line-length = 100
+# Planning docs are prose; ruff formats Python code blocks inside Markdown, which
+# would make CI fail over an illustrative snippet in a design note.
+extend-exclude = ["TODO/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
