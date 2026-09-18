@@ -516,7 +516,7 @@ def test_run_hic_remapping_includes_email_when_set(mock_find_fa, mock_run, mock_
     run_hic_remapping(mock_ctx)
 
     cmd = mock_run.call_args[0][0]
-    assert "--email curator@sanger.ac.uk" in cmd
+    assert "-N curator@sanger.ac.uk" in cmd
 
 
 @patch("grit.steps.post_curation.hic_remapping._run")
@@ -538,7 +538,7 @@ def test_run_hic_remapping_omits_email_when_unset(mock_find_fa, mock_run, mock_c
     run_hic_remapping(mock_ctx)
 
     cmd = mock_run.call_args[0][0]
-    assert "--email" not in cmd
+    assert "-N " not in cmd
 
 
 @patch("grit.steps.post_curation.hic_remapping._run")
