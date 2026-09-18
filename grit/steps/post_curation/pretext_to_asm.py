@@ -5,7 +5,7 @@ from __future__ import annotations
 import glob
 import logging
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Sequence
 
 import rich_click as click
 
@@ -16,6 +16,7 @@ from grit.utils.helpers import (
     collect_outputs,
     inputs_newer_than_curated_fa,
     is_single_hap,
+    parse_agp_tags,
     write_fake_outputs,
 )
 from grit.utils.modules import module_cmd
@@ -41,6 +42,24 @@ _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("hap1_chr_list", "{tol_id}.*.primary.chromosome.list.csv", ["hap1", "hap2"]),
 ]
 
+
+def _check_primary_tag(ctx: CurationContext, agp_path: Path) -> None:
+    """Fail when a single-hap assembly curated in a combined map has no ``primary`` AGP tag."""
+    if not (is_single_hap(ctx) and ctx.combine_for_curation):
+        return
+    tags = parse_agp_tags(agp_path)
+    if any("primary" in tag for tag_set in tags.values() for tag in tag_set):
+        return
+    raise click.ClickException(
+        f"No 'primary' tag found in {agp_path}.\n"
+        f"This is a {ctx.hap1_prefix} assembly curated in a combined map, so the primary "
+        "scaffolds have to be tagged as 'primary' in PretextView — without the tag "
+        "pretext-to-asm cannot tell the primary assembly apart from what was merged into "
+        "the map, and would write a wrong or empty primary FASTA.\n"
+        "Tag the primary scaffolds in PretextView, re-export the AGP, copy it over and re-run."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public step functions
 # ---------------------------------------------------------------------------
@@ -57,6 +76,7 @@ def _run_pretext_to_asm_core(
     *,
     agp_glob: str | None = None,
     output_transform: Callable[[Path], None] | None = None,
+    agp_validators: Sequence[Callable[[Path], None]] = (),
 ) -> Path:
     """
     Runs pretext-to-asm for one (original_fa, agp) pair under a tracked step.
@@ -64,7 +84,9 @@ def _run_pretext_to_asm_core(
     Looks for *agp_glob* (default ``{tol_id}*.agp*``) in *agp_search_dir*, runs
     pretext-to-asm, optionally calls *output_transform(run_dir)* to let the
     caller write extra files into run_dir before outputs are collected, and
-    records outputs via *output_specs* under *step_name*. Returns the run_dir
+    records outputs via *output_specs* under *step_name*. Each callable in
+    *agp_validators* (plus the always-applied ``primary`` tag check) is handed the
+    resolved AGP before anything is run, and may fail the step. Returns the run_dir
     (which may be a prior run's dir if the step was skipped as already done).
 
     Shared by ``run_pretext_to_asm`` (main assembly), ``run_microchromosome_combine``
@@ -110,7 +132,7 @@ def _run_pretext_to_asm_core(
         log.info("AGP (pattern): %s", agp_path)
         log.info("Output → %s", out_fa)
     else:
-        agp_files = glob.glob(agp_pattern)
+        agp_files = sorted(glob.glob(agp_pattern))
         if not agp_files:
             if ctx.tracker:
                 ctx.tracker.finish(step_name, run_dir, "failed", untracked=ctx.untracked)
@@ -119,8 +141,26 @@ def _run_pretext_to_asm_core(
                 f"  scp ~/curations/work/{ctx.tol_id}/{ctx.tol_id}*.agp* "
                 f"{ctx.farm_host}:{agp_search_dir}/"
             )
+        if len(agp_files) > 1:
+            # Picking one arbitrarily silently curates against the wrong AGP.
+            if ctx.tracker:
+                ctx.tracker.finish(step_name, run_dir, "failed", untracked=ctx.untracked)
+            listed = "\n".join(f"  {f}" for f in agp_files)
+            raise FileNotFoundError(
+                f"{len(agp_files)} AGP files match {agp_pattern} — "
+                f"can't tell which one to curate against:\n{listed}\n"
+                f"Remove the ones you don't want, leaving exactly one."
+            )
         agp_path = agp_files[0]
         log.info("AGP: %s", agp_path)
+        try:
+            _check_primary_tag(ctx, Path(agp_path))
+            for validate in agp_validators:
+                validate(Path(agp_path))
+        except Exception:
+            if ctx.tracker:
+                ctx.tracker.finish(step_name, run_dir, "failed", untracked=ctx.untracked)
+            raise
 
     cmd = (
         f"{module_cmd('PRETEXT_TO_ASM')} && pretext-to-asm"

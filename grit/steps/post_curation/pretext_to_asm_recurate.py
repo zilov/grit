@@ -10,7 +10,7 @@ import rich_click as click
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.steps.post_curation.pretext_to_asm import _run_pretext_to_asm_core
-from grit.utils.helpers import find_canonical_fa, find_canonical_haplotigs
+from grit.utils.helpers import find_canonical_fa, find_canonical_haplotigs, iter_agp_rows
 from grit.utils.output import print_done, print_step_header, print_tip
 
 log = logging.getLogger(__name__)
@@ -102,6 +102,39 @@ def _write_fake_recurate_outputs(
     return outputs
 
 
+def _check_unloc_tags(agp_path: Path) -> None:
+    """Fail when scaffolds named as unlocs in the recurate AGP carry no ``unloc`` tag."""
+    rows = iter_agp_rows(agp_path)
+    # A recurate map is built from the curated FASTA, so a previous round's unloc
+    # name arrives either as the AGP object (PretextView kept the curated names) or
+    # as the component of a re-named object — tagging is per row, so an object
+    # counts as tagged when any of its rows carries the tag.
+    object_tags: dict[str, set[str]] = {}
+    for name, _component, tags in rows:
+        object_tags.setdefault(name, set()).update(tags)
+
+    untagged = {
+        name
+        for name, tags in object_tags.items()
+        if "unloc" in name.lower() and not any("unloc" in tag for tag in tags)
+    }
+    untagged |= {
+        component
+        for _name, component, tags in rows
+        if "unloc" in component.lower() and not any("unloc" in tag for tag in tags)
+    }
+    if not untagged:
+        return
+    listed = "\n".join(f"  {name}" for name in sorted(untagged))
+    raise click.ClickException(
+        f"These scaffolds in {agp_path} are named as unlocs but carry no 'unloc' tag:\n"
+        f"{listed}\n"
+        "Unlocs carried over from the previous curation round keep their names but lose "
+        "their tag, so the recurated assembly would promote them to normal scaffolds.\n"
+        "Re-tag them as unlocs in PretextView, re-export the AGP, copy it over and re-run."
+    )
+
+
 def run_pretext_to_asm_recurate(ctx: CurationContext, hap_prefix: str, step_name: str) -> Path:
     """
     Re-runs pretext-to-asm for one haplotype using the current canonical FASTA
@@ -158,6 +191,7 @@ def run_pretext_to_asm_recurate(ctx: CurationContext, hap_prefix: str, step_name
         _output_specs_for_hap(ctx, hap_prefix),
         agp_glob=f"{ctx.tol_id}*{hap_prefix}*.agp*",
         output_transform=_merge_haplotigs_transform(merged_name, prior_haplotigs),
+        agp_validators=(_check_unloc_tags,),
     )
 
     # A missing FASTA output would silently leave canonical resolution pointing at

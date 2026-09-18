@@ -675,6 +675,31 @@ def find_hap_agp(ctx: "CurationContext", hap_prefix: str) -> Path:
     return Path(sorted(matches)[-1])
 
 
+def iter_agp_rows(agp_path: Path) -> list[tuple[str, str, set[str]]]:
+    """List (object name, component id, lowercased tags from the 10th+ columns) per AGP row."""
+    rows: list[tuple[str, str, set[str]]] = []
+    path = Path(agp_path)
+    if not path.is_file():
+        return rows
+    for line in path.read_text().splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        fields = line.split("\t")
+        if len(fields) < 9:
+            continue
+        tags = {f.strip().lower() for f in fields[9:] if f.strip()}
+        rows.append((fields[0], fields[5], tags))
+    return rows
+
+
+def parse_agp_tags(agp_path: Path) -> dict[str, set[str]]:
+    """Map each AGP object name to the lowercased PretextView tags of all its rows."""
+    tags: dict[str, set[str]] = {}
+    for name, _component, row_tags in iter_agp_rows(agp_path):
+        tags.setdefault(name, set()).update(row_tags)
+    return tags
+
+
 def find_latest_dir(ctx: "CurationContext", step: str) -> Path:
     """
     Return the output directory for *step*, trying locations in priority order:
