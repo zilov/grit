@@ -36,19 +36,18 @@ _SECOND_SHOT_SCRIPT = (
 # happens to sit in the same run dir.
 CURATED_SMALL_AGP_DIR = "curated_small_agp"
 
-# microchr_second_shot_curation.py writes everything into a {tol_id}/
-# subdirectory of the -o dir, and names its per-hap files with the literal
-# "hap1"/"hap2" token plus a variable hap-suffix token (e.g.
-# "{tol_id}.hap1.1.primary.curated.large.fa") — hence the tolerant *hap1*
-# patterns rather than a fixed prefix. The flat pretext_map fallback covers a
-# script version that keeps hic/ next to the {tol_id}/ subdir.
+# setup_paths() in microchr_second_shot_curation.py writes every output flat
+# into the -o dir (only checkpoints/, logs/, microfinder/ and hic/ are nested).
+# The per-hap large FASTAs are named after the *input* curated FASTA's basename
+# (e.g. "{tol_id}.hap1.1.primary.curated.large.fa") and the chr lists after
+# "{tol_id}_{hap_name}", so both carry the literal "hap1"/"hap2" token but no
+# fixed prefix — hence the tolerant *hap1* patterns.
 _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
-    ("hap1_large_fa", "{tol_id}/*hap1*.large.fa", []),
-    ("hap2_large_fa", "{tol_id}/*hap2*.large.fa", []),
-    ("hap1_large_chr", "{tol_id}/*hap1*.large.chr_list.csv", []),
-    ("hap2_large_chr", "{tol_id}/*hap2*.large.chr_list.csv", []),
-    ("merged_small_fa", "{tol_id}/*_curated_small_merged.fa", []),
-    ("pretext_map", "{tol_id}/hic/pretext_maps_processed/*hr.pretext", []),
+    ("hap1_large_fa", "*hap1*.large.fa", []),
+    ("hap2_large_fa", "*hap2*.large.fa", []),
+    ("hap1_large_chr", "*hap1*.large.chr_list.csv", []),
+    ("hap2_large_chr", "*hap2*.large.chr_list.csv", []),
+    ("merged_small_fa", "*_curated_small_merged.fa", []),
     ("pretext_map", "hic/pretext_maps_processed/*hr.pretext", []),
 ]
 
@@ -168,7 +167,7 @@ def run_microchromosome_second_shot(ctx: CurationContext) -> None:
     # --- print scp of micro pretext map to local, and of the curated AGP back ---
     local_dir = f"~/curations/work/{ctx.tol_id}/second_shot_microchromosomes"
     pretext_src = outputs.get("pretext_map") or (
-        f"{run_dir}/{ctx.tol_id}/hic/pretext_maps_processed/*hr.pretext"
+        f"{run_dir}/hic/pretext_maps_processed/*hr.pretext"
     )
     print_tip(
         f"Download the micro pretext map and curate it locally:\n"

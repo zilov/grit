@@ -127,7 +127,7 @@ def run_microchromosome_combine(ctx: CurationContext) -> None:
         if path:
             return path
         if ctx.print_only:
-            return str(second_shot_dir / ctx.tol_id / f"<{key}>")
+            return str(second_shot_dir / f"<{key}>")
         raise FileNotFoundError(
             f"No {description} found in {second_shot_dir}.\n"
             f"Run 'grit microchromosome-second-shot -t {ctx.ticket_id}' first."

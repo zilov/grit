@@ -92,16 +92,18 @@ def test_run_microchromosome_second_shot_raises_when_no_curated_fasta(mock_find_
 
 def _write_real_second_shot_layout(second_shot_dir: Path, tol_id: str = "bColMon1") -> None:
     """Recreate the layout a real microchr_second_shot_curation.py run writes."""
-    out = second_shot_dir / tol_id
+    out = second_shot_dir
     (out / "hic" / "pretext_maps_processed").mkdir(parents=True, exist_ok=True)
     (out / f"{tol_id}.hap1.1.primary.curated.large.fa").write_text(">seq\n")
     (out / f"{tol_id}_hap1.large.chr_list.csv").write_text("")
     (out / f"{tol_id}_curated_small_merged.fa").write_text(">seq\n")
+    (out / f"{tol_id}_curated_small_merged.fa.fai").write_text("")
+    (out / f"{tol_id}_curated_small_merged.fa.agp").write_text("")
     (out / "hic" / "pretext_maps_processed" / f"{tol_id}.hap1.hr.pretext").write_text("")
 
 
 def _write_real_second_shot_hap2(second_shot_dir: Path, tol_id: str = "bColMon1") -> None:
-    out = second_shot_dir / tol_id
+    out = second_shot_dir
     (out / f"{tol_id}.hap2.1.primary.curated.large.fa").write_text(">seq\n")
     (out / f"{tol_id}_hap2.large.chr_list.csv").write_text("")
 
@@ -114,7 +116,7 @@ def _write_micro_pta_outputs(pta_dir: Path, tol_id: str = "bColMon1", hap: str =
 
 
 def test_second_shot_output_specs_match_real_run_layout(tmp_path):
-    """Every spec must match the real {tol_id}/ subdir layout, not the inferred flat one."""
+    """Specs must match the flat -o layout a real microchr_second_shot_curation.py run writes."""
     from grit.steps.pre_curation.microchromosome_second_shot import _OUTPUT_SPECS
     from grit.utils.helpers import collect_outputs
 
@@ -125,7 +127,7 @@ def test_second_shot_output_specs_match_real_run_layout(tmp_path):
     assert outputs["hap1_large_fa"].endswith("bColMon1.hap1.1.primary.curated.large.fa")
     assert outputs["hap1_large_chr"].endswith("bColMon1_hap1.large.chr_list.csv")
     assert outputs["merged_small_fa"].endswith("bColMon1_curated_small_merged.fa")
-    assert "/bColMon1/hic/pretext_maps_processed/" in outputs["pretext_map"]
+    assert outputs["pretext_map"].endswith("bColMon1.hap1.hr.pretext")
 
     _write_real_second_shot_hap2(tmp_path)
     outputs = collect_outputs(_OUTPUT_SPECS, tmp_path, "bColMon1")
@@ -255,10 +257,8 @@ def test_run_microchromosome_combine_hap1_only(mock_pta_run, mock_combine_run, m
     mock_combine_run.assert_called_once()
     combine_cmd = mock_combine_run.call_args[0][0]
     assert "combine_curated_micros.py" in combine_cmd
-    assert str(second_shot_dir / "bColMon1" / "bColMon1.hap1.1.primary.curated.large.fa") in (
-        combine_cmd
-    )
-    assert str(second_shot_dir / "bColMon1" / "bColMon1_hap1.large.chr_list.csv") in combine_cmd
+    assert str(second_shot_dir / "bColMon1.hap1.1.primary.curated.large.fa") in combine_cmd
+    assert str(second_shot_dir / "bColMon1_hap1.large.chr_list.csv") in combine_cmd
 
 
 @patch("grit.steps.post_curation.microchromosome_combine._run")
@@ -286,9 +286,8 @@ def test_run_microchromosome_combine_hap1_and_hap2(
 
     assert mock_combine_run.call_count == 2
     cmds = [call[0][0] for call in mock_combine_run.call_args_list]
-    out = second_shot_dir / "bColMon1"
-    assert any(str(out / "bColMon1.hap1.1.primary.curated.large.fa") in c for c in cmds)
-    assert any(str(out / "bColMon1.hap2.1.primary.curated.large.fa") in c for c in cmds)
+    assert any(str(second_shot_dir / "bColMon1.hap1.1.primary.curated.large.fa") in c for c in cmds)
+    assert any(str(second_shot_dir / "bColMon1.hap2.1.primary.curated.large.fa") in c for c in cmds)
 
 
 def test_combine_output_specs_use_literal_hap_tokens():
@@ -435,9 +434,8 @@ def test_combine_fails_loudly_when_large_fasta_missing(mock_pta_run, mock_ctx, t
     mock_ctx.print_only = False
 
     second_shot_dir = tmp_path / "microchromosome_second_shot" / "untracked"
-    out = second_shot_dir / "bColMon1"
-    out.mkdir(parents=True)
-    (out / "bColMon1_curated_small_merged.fa").write_text(">seq\n")
+    second_shot_dir.mkdir(parents=True)
+    (second_shot_dir / "bColMon1_curated_small_merged.fa").write_text(">seq\n")
     agp = second_shot_dir / CURATED_SMALL_AGP_DIR / "bColMon1_small_curated.agp"
     agp.parent.mkdir(parents=True)
     agp.write_text("")
