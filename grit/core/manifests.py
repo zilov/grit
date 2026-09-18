@@ -50,9 +50,10 @@ STEP_MANIFESTS: dict[str, dict] = {
         "dir": "run_dir",
         "files": ["pretext_maps_processed/{tol_id}*hr.pretext"],
     },
+    # the script writes everything into a {tol_id}/ subdir of the run dir
     "microchromosome_second_shot": {
         "dir": "run_dir",
-        "files": ["*_curated_small_merged.fa"],
+        "files": ["{tol_id}/*_curated_small_merged.fa"],
     },
     "pretext_to_asm_micro": {
         "dir": "run_dir",
