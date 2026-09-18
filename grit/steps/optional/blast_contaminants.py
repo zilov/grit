@@ -16,6 +16,7 @@ from grit.utils.helpers import (
     is_single_hap,
     write_fake_outputs,
 )
+from grit.utils.modules import module_cmd
 from grit.utils.output import (
     print_done,
     print_step_header,
@@ -33,6 +34,8 @@ LINEAGE_SCRIPT = "/software/grit/projects/vgp_curation_scripts/get_lineage_from_
 # Blasts scaffolds (headers matching .*SCAFFOLD_\d+.*) and writes a taxonomy.txt
 # with lineage per blast hit into the given --outdir.
 DECON_SCRIPT = "~mh6/git_checkouts/reblast/bin/decon_fasta"
+# Removes the scaffolds listed in a BED from a FASTA, writing <fasta>_cleaned.
+REMOVE_CONTAMINATION_SCRIPT = "~mh6/remove_contamination_bed"
 
 _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("hap1_fa", "{hap1}/{tol_id}.{hap1}.*.decontaminated.fa", []),
@@ -145,8 +148,13 @@ def _blast_contaminants_for_hap(
     cleaned_species = _clean_species_name(ctx.species)
     log.info("[%s] Species: %s", hap_prefix, cleaned_species)
 
-    lineage_cmd = f"{LINEAGE_SCRIPT} {cleaned_species}"
-    our_lineage = _run(lineage_cmd, ctx.print_only).strip()
+    lineage_cmd = f"{module_cmd('GRIT')} && {LINEAGE_SCRIPT} {cleaned_species}"
+    lineage_out = _run(lineage_cmd, ctx.print_only)
+    # module load can add chatter before the lineage itself; the lineage is the
+    # last non-empty line.
+    our_lineage = next(
+        (line.strip() for line in reversed(lineage_out.splitlines()) if line.strip()), ""
+    )
     log.info("[%s] Species lineage: %s", hap_prefix, our_lineage)
 
     # Parse phylum (typically 4th element: Eukaryota; Metazoa; ...; Phylum; ...)
@@ -169,7 +177,9 @@ def _blast_contaminants_for_hap(
     # 2. Blast scaffolds and write per-hit lineage — decon_fasta finds SCAFFOLD_N
     #    headers itself, so no separate blast.me extraction step is needed.
     blast_out_dir = hap_dir / "blast_out_dir"
-    decon_cmd = f"{DECON_SCRIPT} --fasta {curated_fasta} --outdir {blast_out_dir}"
+    decon_cmd = (
+        f"{module_cmd('GRIT')} && {DECON_SCRIPT} --fasta {curated_fasta} --outdir {blast_out_dir}"
+    )
     _run(decon_cmd, ctx.print_only)
     log.info("[%s] Blast output dir: %s", hap_prefix, blast_out_dir)
 
@@ -194,7 +204,10 @@ def _blast_contaminants_for_hap(
     #    to the (untouched) original as ``<curated_fasta.name>_cleaned``; the
     #    original pretext_to_asm output is never renamed or moved, so it stays
     #    intact regardless of how this step turns out.
-    remove_cmd = f"~mh6/remove_contamination_bed -f {curated_fasta} -c {contaminated_bed}"
+    remove_cmd = (
+        f"{module_cmd('GRIT')} && "
+        f"{REMOVE_CONTAMINATION_SCRIPT} -f {curated_fasta} -c {contaminated_bed}"
+    )
     _run(remove_cmd, ctx.print_only)
 
     cleaned_fasta = curated_fasta.with_name(curated_fasta.name + "_cleaned")
