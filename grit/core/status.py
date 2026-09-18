@@ -303,6 +303,89 @@ def _print_canonical_files(ctx, resolved: dict[str, dict[str, Path | None]]) -> 
     console.print()
 
 
+# Ticket-YAML keys that may carry a curator-declared comparator reference.
+_REFERENCE_TICKET_KEYS = ("reference", "comparator", "reference_path")
+
+
+def _ticket_reference(ctx) -> str:
+    """Reference declared on the ticket YAML itself, or "" when it declares none."""
+    if ctx is None:
+        return ""
+    for key in _REFERENCE_TICKET_KEYS:
+        value = (ctx.yaml_data or {}).get(key)
+        if value:
+            return str(value)
+    return ""
+
+
+def _resolved_reference(entry: dict | None) -> tuple[str, Path | None]:
+    """
+    Return (state, path) for the reference `find-reference` resolved, where state
+    is "not_run", "pending", "none_found", "missing" (recorded but gone from
+    disk) or "found".
+    """
+    if not entry:
+        return "not_run", None
+
+    run_dir = Path(entry["run_dir"]) if entry.get("run_dir") else None
+    on_disk = sorted(run_dir.glob("*_reheader.fna")) if run_dir and run_dir.exists() else []
+    if on_disk:
+        return "found", on_disk[-1]
+
+    recorded = [
+        Path(str(v)) for v in (entry.get("outputs") or {}).values() if str(v).endswith(".fna")
+    ]
+    if recorded:
+        return "missing", recorded[-1]
+    if entry.get("status") in ("started", "running"):
+        return "pending", None
+    return "none_found", None
+
+
+def _print_reference(workdir: Path, ticket_id: str, entry: dict | None, ticket_ref: str) -> None:
+    """Print the compact "Reference" table: the ticket-declared reference and what
+    find-reference resolved."""
+    state, path = _resolved_reference(entry)
+    if state == "not_run" and not ticket_ref:
+        print_tip(
+            f"No reference found for this ticket yet — synteny steps need one:\n"
+            f"[bold cyan]grit find-reference -t {ticket_id}[/bold cyan]"
+        )
+        return
+
+    table = Table(title="Reference", show_header=True, header_style="bold cyan")
+    table.add_column("Source")
+    table.add_column("File")
+    table.add_column("Found", justify="center")
+
+    if ticket_ref:
+        table.add_row("ticket YAML", ticket_ref, "")
+
+    cells = {
+        "not_run": ("[dim]find-reference not run[/dim]", "[red]✗[/red]"),
+        "pending": ("[yellow]find-reference still running[/yellow]", "[red]✗[/red]"),
+        "none_found": ("[dim]no reference found[/dim]", "[red]✗[/red]"),
+    }
+    if state in cells:
+        file_str, found = cells[state]
+    elif state == "missing":
+        file_str = f"[yellow]{shorten_path(path, workdir)} (gone from disk)[/yellow]"
+        found = "[red]✗[/red]"
+    else:
+        file_str = shorten_path(path, workdir)
+        found = "[green]✓[/green]"
+    table.add_row("find-reference", file_str, found)
+
+    console.print(table)
+    console.print()
+
+    if state in ("not_run", "none_found"):
+        print_tip(
+            f"No reference resolved yet — synteny steps need one:\n"
+            f"[bold cyan]grit find-reference -t {ticket_id}[/bold cyan]"
+        )
+
+
 def _auto_step_outputs(
     step: str, run_dir: Path | None, tol_id: str, hap1: str = "hap1", hap2: str = "hap2"
 ) -> dict[str, str]:
@@ -594,6 +677,8 @@ def show_ticket_history(
     console.print(table)
     console.print()
 
+    _print_reference(workdir, ticket_id, step_latest.get("find_reference"), _ticket_reference(ctx))
+
     for step in memlimit_steps:
         print_tip(
             f"{step} hit the memory limit — re-run with a higher limit:\n"
@@ -673,6 +758,18 @@ def show_ticket_history(
             f"Bird genome — if it needs second-shot microchromosome curation:\n"
             f"[bold cyan]grit pretext-to-asm -t {ticket_id}[/bold cyan] then "
             f"[bold cyan]grit microchromosome-second-shot -t {ticket_id}[/bold cyan]"
+        )
+
+    second_shot = step_latest.get("microchromosome_second_shot")
+    if second_shot and second_shot.get("status") == "success" and second_shot.get("run_dir"):
+        from grit.steps.pre_curation.microchromosome_second_shot import CURATED_SMALL_AGP_DIR
+
+        agp_dir = Path(second_shot["run_dir"]) / CURATED_SMALL_AGP_DIR
+        print_tip(
+            "Curated small-merged AGP — scp it into its own dir (nothing else goes there):\n"
+            f"[bold cyan]scp ~/curations/work/{tol_id}/second_shot_microchromosomes/"
+            f"{tol_id}*.agp* {farm_host}:{agp_dir}/[/bold cyan]\n"
+            f"then: [bold cyan]grit microchromosome-combine -t {ticket_id}[/bold cyan]"
         )
 
     if curated_dir and (curated_dir / "merquryk").exists():

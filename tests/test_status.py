@@ -1,5 +1,6 @@
 """Tests for grit/core/status.py."""
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from grit.core.context import CurationContext
@@ -9,8 +10,11 @@ from grit.core.status import (
     _canonical_haps,
     _canonical_mark,
     _print_less_tips,
+    _print_reference,
     _print_scp_tips,
     _resolve_canonical_files,
+    _resolved_reference,
+    _ticket_reference,
     show_global_status,
     show_ticket_history,
 )
@@ -954,3 +958,126 @@ def test_canonical_mark_ignores_canonical_files_from_another_run_dir(tmp_path):
     index = {str(other_chr_list): [("chr_list", "hap1")]}
 
     assert _canonical_mark({}, index, ["hap1"], run_dir) == ""
+
+
+def test_resolved_reference_not_run_when_no_history():
+    assert _resolved_reference(None) == ("not_run", None)
+
+
+def test_resolved_reference_none_found_when_run_dir_empty(tmp_path):
+    run_dir = tmp_path / "find_reference" / "2026-01-01T00_00_00"
+    run_dir.mkdir(parents=True)
+
+    state, path = _resolved_reference({"status": "success", "run_dir": str(run_dir)})
+
+    assert (state, path) == ("none_found", None)
+
+
+def test_resolved_reference_found_picks_reheadered_fasta(tmp_path):
+    run_dir = tmp_path / "find_reference" / "2026-01-01T00_00_00"
+    run_dir.mkdir(parents=True)
+    ref = run_dir / "GCA_123_reheader.fna"
+    ref.write_text(">chr1\nACGT\n")
+
+    state, path = _resolved_reference({"status": "success", "run_dir": str(run_dir)})
+
+    assert (state, path) == ("found", ref)
+
+
+def test_resolved_reference_missing_when_recorded_file_gone(tmp_path):
+    run_dir = tmp_path / "find_reference" / "2026-01-01T00_00_00"
+    gone = run_dir / "GCA_123_reheader.fna"
+
+    state, path = _resolved_reference(
+        {"status": "success", "run_dir": str(run_dir), "outputs": {"ref": str(gone)}}
+    )
+
+    assert (state, path) == ("missing", gone)
+
+
+def test_resolved_reference_pending_while_step_still_running(tmp_path):
+    run_dir = tmp_path / "find_reference" / "2026-01-01T00_00_00"
+    run_dir.mkdir(parents=True)
+
+    assert _resolved_reference({"status": "started", "run_dir": str(run_dir)}) == ("pending", None)
+
+
+def test_ticket_reference_reads_declared_key():
+    ctx = SimpleNamespace(yaml_data={"reference": "/lustre/refs/GCA_999.fna"})
+
+    assert _ticket_reference(ctx) == "/lustre/refs/GCA_999.fna"
+
+
+def test_ticket_reference_empty_without_ctx_or_key():
+    assert _ticket_reference(None) == ""
+    assert _ticket_reference(SimpleNamespace(yaml_data={"species": "Foo bar"})) == ""
+
+
+@patch("grit.core.status.print_tip")
+def test_print_reference_tips_and_prints_nothing_when_never_run(mock_print_tip, tmp_path):
+    with patch("grit.core.status.console") as mock_console:
+        _print_reference(tmp_path, "RC-1234", None, "")
+
+    mock_console.print.assert_not_called()
+    assert "find-reference" in mock_print_tip.call_args[0][0]
+
+
+@patch("grit.core.status.print_tip")
+def test_print_reference_shows_both_ticket_and_resolved_reference(mock_print_tip, tmp_path):
+    run_dir = tmp_path / "find_reference" / "2026-01-01T00_00_00"
+    run_dir.mkdir(parents=True)
+    ref = run_dir / "GCA_123_reheader.fna"
+    ref.write_text(">chr1\nACGT\n")
+    entry = {"status": "success", "run_dir": str(run_dir)}
+
+    with patch("grit.core.status.console") as mock_console:
+        _print_reference(tmp_path, "RC-1234", entry, "/lustre/refs/GCA_999.fna")
+
+    mock_print_tip.assert_not_called()
+    table = mock_console.print.call_args_list[0].args[0]
+    cells = [str(c) for col in table.columns for c in col._cells]
+    assert "/lustre/refs/GCA_999.fna" in cells
+    assert any("GCA_123_reheader.fna" in c for c in cells)
+    assert any("find-reference" == c for c in cells)
+
+
+@patch("grit.core.status.print_tip")
+def test_print_reference_flags_recorded_reference_gone_from_disk(mock_print_tip, tmp_path):
+    gone = tmp_path / "find_reference" / "2026-01-01T00_00_00" / "GCA_123_reheader.fna"
+    entry = {"status": "success", "run_dir": str(gone.parent), "outputs": {"ref": str(gone)}}
+
+    with patch("grit.core.status.console") as mock_console:
+        _print_reference(tmp_path, "RC-1234", entry, "")
+
+    # A recorded-but-vanished reference is reported as such, not re-offered as a tip.
+    mock_print_tip.assert_not_called()
+    table = mock_console.print.call_args_list[0].args[0]
+    cells = [str(c) for col in table.columns for c in col._cells]
+    assert any("gone from disk" in c for c in cells)
+
+
+def test_show_ticket_history_shows_resolved_reference(tmp_path, capsys, monkeypatch):
+    registry_dir = tmp_path / ".grit_reg"
+    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    reg = RegistryManager(registry_dir=registry_dir)
+    reg.add_ticket("RC-1234", "sDipInt39", "species", workdir)
+    tracker = RunTracker(workdir, registry=reg)
+    run_dir = tracker.start("find_reference", "RC-1234", "sDipInt39")
+    (run_dir / "GCA_123_reheader.fna").write_text(">chr1\nACGT\n")
+    tracker.finish("find_reference", run_dir, "success")
+
+    with patch("grit.core.status.console") as mock_console:
+        show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    tables = [
+        call.args[0]
+        for call in mock_console.print.call_args_list
+        if call.args and getattr(call.args[0], "title", None) == "Reference"
+    ]
+    assert len(tables) == 1
+    cells = [str(c) for col in tables[0].columns for c in col._cells]
+    assert any("GCA_123_reheader.fna" in c for c in cells)
+    assert any("✓" in c for c in cells)
