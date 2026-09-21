@@ -1,0 +1,38 @@
+---
+# Fictional ticket used only by `grit tutorial`. Nothing here points at a real
+# specimen or a real lustre path — every step the tutorial runs goes through
+# --dry-run, which redirects all I/O into ~/.grit/dry_run/.
+species: Tutorialia demonstrans
+specimen: xxTutDemo1
+projects:
+  - tol
+combine_for_curation: true
+data_location: Sanger RW
+hap1: /lustre/scratch124/tol/projects/tol/data/demo/Tutorialia_demonstrans/assembly/draft/xxTutDemo1.20260101/xxTutDemo1.20260101.hap1.fa.gz
+hap2: /lustre/scratch124/tol/projects/tol/data/demo/Tutorialia_demonstrans/assembly/draft/xxTutDemo1.20260101/xxTutDemo1.20260101.hap2.fa.gz
+mito: /lustre/scratch124/tol/projects/tol/data/demo/Tutorialia_demonstrans/assembly/draft/xxTutDemo1.20260101/xxTutDemo1-MT.fa.gz
+pacbio_read_dir: /lustre/scratch124/tol/projects/tol/data/demo/Tutorialia_demonstrans/genomic_data/xxTutDemo1/pacbio
+hic_read_dir: /lustre/scratch124/tol/projects/tol/data/demo/Tutorialia_demonstrans/genomic_data/xxTutDemo1/hic-arima2
+pacbio_read_type: hifi
+hic_kit: Arima2
+hic: /lustre/scratch124/tol/projects/tol/data/demo/Tutorialia_demonstrans/assembly/draft/xxTutDemo1.20260101/xxTutDemo1.20260101.hap1.hic
+pretext: /lustre/scratch124/tol/projects/tol/data/demo/Tutorialia_demonstrans/assembly/draft/xxTutDemo1.20260101/xxTutDemo1.20260101.hap1.pretext
+hic_map_img: /lustre/scratch124/tol/projects/tol/data/demo/Tutorialia_demonstrans/assembly/draft/xxTutDemo1.20260101/xxTutDemo1.20260101.hap1.pretext.png
+kmer_spectra_img: /lustre/scratch124/tol/projects/tol/data/demo/Tutorialia_demonstrans/assembly/draft/xxTutDemo1.20260101/xxTutDemo1.20260101.hap1.ccs.spectra-cn.ln.png
+busco_lineage: vertebrata_odb10
+ploidy: diploid
+priority: Normal
+pipeline:
+  - hifiasm (version 0.19.8-r603)
+  - yahs (version 1.2a.2)
+notes:
+  - fictional assembly, for the `grit tutorial` walkthrough only
+stats: |
+  merqury QV (CCS): 61.2
+  merqury KMER completeness (CCS): 99.10
+  BUSCO: C:95.0%[S:92.0%,D:3.0%],F:1.0%,M:4.0%,n:100
+  SCAFFOLD	sum = 512000000, n = 310, mean = 1651612.9, largest = 41200000, smallest = 1000
+  SCAFFOLD	N50 = 22400000, L50 = 10
+  CONTIG	sum = 511880000, n = 890, mean = 575146.1, largest = 9100000, smallest = 1000
+  CONTIG	N50 = 1410000, L50 = 112
+  GAP	sum = 120000, n = 600, mean = 200, largest = 200, smallest = 200

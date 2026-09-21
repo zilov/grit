@@ -286,8 +286,10 @@ cli.add_command(super_to_scaffold_cmd)
 
 
 from grit.core.cleanup import cleanup_cmd  # noqa: E402
+from grit.core.tutorial import tutorial_cmd  # noqa: E402
 
 cli.add_command(cleanup_cmd)
+cli.add_command(tutorial_cmd)
 
 
 def _resolve_tracker(ctx, ticket):

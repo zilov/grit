@@ -74,6 +74,21 @@ grit [--yaml FILE] [--print-only] [--logging-level LEVEL] <COMMAND> -t RC-1234
 
 `GlobalState` carries shared flags; `build_context()` constructs `CurationContext` from it. `GritCommand` (in `base_command.py`) is a shared Click base class that auto-injects `--ticket / -t`.
 
+### Onboarding: `grit tutorial`
+
+`grit tutorial` (`grit/core/tutorial.py`) is the guided walkthrough new curators
+start with: a list of `Lesson` records (what the step is for, the command as
+they'd type it, what to look for in `grit status` afterwards), each run for real
+against `--dry-run` and the bundled fictional ticket
+`grit/config/tutorial_demo.yaml`. It never touches Jira, LSF or lustre.
+
+It drives grit's own CLI in-process (`cli.main(..., standalone_mode=False)`)
+rather than re-implementing any command — so adding or renaming a step means
+adding or renaming a `Lesson`, never duplicating a command string. Steps with no
+dry-run branch (e.g. `add-*-track`) can't appear in it. `--auto` runs every
+lesson without prompting; Scenario 5 of `tests/local_smoke_test.sh` uses that to
+catch a lesson whose command or expected canonical outcome has drifted.
+
 External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `grit init` to create it pre-filled with your username; the global ticket registry lives alongside it in the same `~/.grit/` dir. In tests / CI use `--yaml` with a local fixture file.
 
 ### Registry durability

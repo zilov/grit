@@ -292,6 +292,29 @@ assert_canonical "$s4" hap1 "assembly FA" "blast_contaminants/" "[S4] hap1 canon
 # chained on top of each other. The $DRY_RUN_TICKET CLI argument is still
 # accepted for backward compatibility but is no longer used by this script.
 
+# ---------------------------------------------------------------------------
+# Scenario 5: `grit tutorial --auto` end to end.
+#   The tutorial drives grit's own CLI in-process with its bundled demo YAML,
+#   so a step whose dry-run branch breaks (or a lesson naming a command that
+#   no longer exists) shows up here rather than in front of a new curator.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Scenario 5: grit tutorial --auto ---"
+T5="dry_run_tutorial"
+
+if tutorial_output=$(grit --config "$CONFIG" tutorial --auto -t "$T5" 2>&1); then
+    ok "[S5] tutorial --auto ran every lesson"
+else
+    fail "[S5] tutorial --auto failed:
+$tutorial_output"
+fi
+# The tutorial prints a status table after most lessons, so assert against the
+# LAST "Canonical files" table only — grepping the whole transcript would match
+# an intermediate table and pass even if the final state were wrong.
+tutorial_final=$(echo "$tutorial_output" | awk '/Canonical files/{buf=""} {buf=buf"\n"$0} END{print buf}')
+assert_canonical "$tutorial_final" hap1 "assembly FA" "rename_and_orient/" "[S5] tutorial ends with hap1 canonical = rename_and_orient"
+assert_canonical "$tutorial_final" hap2 "assembly FA" "rename_and_orient_hap2/" "[S5] tutorial ends with hap2 canonical = rename_and_orient_hap2"
+
 rm -rf ~/.grit/dry_run
 ok "dry-run sandbox cleaned up"
 
