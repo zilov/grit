@@ -206,6 +206,56 @@ helper, a convention this file documents becoming outdated), update this
 CLAUDE.md as part of that same task, not later — it has drifted out of date
 before from changes that weren't reflected back here.
 
+## Where this runs: laptop vs farm
+
+grit is developed in two places and the difference decides what can actually be
+verified.
+
+**Laptop (macOS, `~/github/grit`)** — no LSF, no lustre, no Jira. Only
+`pytest`, `ruff`, `--print-only` and `--dry-run` work here. Any claim that a
+real step "works" cannot be made from the laptop: `--print-only` proves the
+command string is well formed, `--dry-run` proves the sequencing/tracking logic
+holds, neither proves the tool runs.
+
+**Farm (`ssh farm22-agentic1`)** — the real environment: LSF, the `grit`
+module, lustre curation trees, Jira via `GritJiraIssue`. Key-based SSH, no
+password, reachable from the Sanger network/VPN only. The clone lives at
+`~/github/grit` on the node's NFS home (same origin and branch as the laptop —
+they diverge silently if both are committed to, so treat the farm clone as
+primary and push/pull rather than editing both).
+
+Preferred setup: VS Code Remote-SSH into the node and run Claude Code in its
+terminal (`claude`, installed at `~/.local/bin/claude`). Then editor, agent,
+repo, LSF and data are all on one side — no ssh round trip per command, and
+lustre paths are directly readable. Driving the node over `ssh` from the laptop
+works too, but every command pays the round trip and farm files can only be
+read through `ssh cat`.
+
+### Farm gotchas
+
+These are not obvious and each one reads as a missing feature rather than a
+misconfiguration:
+
+- **LSF and `module` exist only in a login shell.** `ssh node 'bsub ...'`
+  returns "command not found" and looks like LSF is absent; it lives in
+  `/software/lsf-farm22/`. Always `ssh node 'bash -lc "..."'`.
+- **`/tmp` is node-local.** A bsub job writing to `/tmp` leaves its output on
+  the compute node, invisible from the login node. Anything crossing the job
+  boundary belongs on lustre or in `$AGENT_SCRATCH` (`~/.agent_scratch`).
+- **`/lustre/.../projects` is read-only at the top level**, but the per-species
+  `working/` dirs inside are group-writable (`tolengine`, setgid). A `-w` test
+  on the parent is misleading.
+- **The node is shared** with other curators. Real compute goes through `bsub`,
+  never into the login shell.
+- **Everything runs as the curator's own account**, not a service account —
+  same quota, same groups, same audit trail.
+
+`~/.agentrc` on the node holds agent-session env (`PAGER=cat`, `GIT_PAGER=cat`,
+`AGENT_SCRATCH`, `NXF_HOME`); `~/.bashrc` sources it only when `CLAUDECODE=1`,
+so interactive shells keep normal paging. Agent tooling (`rg`, `fd`, `gh`,
+`yq`, `bat`, node 20 + npm) is installed under `~/.local`, user-local and
+invisible to other users on the node.
+
 ## Dev
 
 ```bash
