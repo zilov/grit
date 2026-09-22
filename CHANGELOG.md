@@ -8,11 +8,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- `pretext-to-asm` validates the resolved AGP before submitting anything, turning two curator mistakes that used to produce a wrong assembly into an error: a single-hap assembly curated in a combined window with no `primary` tag, and unlocs carried into a recurate round that kept their names but lost their tag.
 - The canonical Pretext map is resolved like the other canonical files (`find_canonical_map`), shown per haplotype in `grit status -t`'s canonical-files table and marked `map` in its Canonical column. Only `*normal.pretext` counts — the `hr.pretext` beside it is the curation input and stays on the farm — and a single-haplotype assembly has no hap2 map rather than being handed hap1's.
+- `grit status -t` shows which reference `find-reference` resolved, covering every state (not run / running / none found / found / recorded but gone from disk), plus an scp tip for the curated small-merged AGP.
 
 ### Changed
 
 - `finalize-qc` ships the canonical Pretext map instead of the alphabetically-last `hic_remapping` run dir's, and `grit status`'s map download tip follows the same resolution. A ticket accumulates one hic-remapping run per recuration round, so the old filesystem pick could publish an older — or an explicitly untracked — round's map to NFS.
+- The curated small-merged AGP from `microchromosome-second-shot` gets its own `curated_small_agp/` dir, so `microchromosome-combine` can no longer pick up a pretext-to-asm-generated AGP sitting in the same run dir; the pick is sorted and fails loudly on more than one match.
+
+### Fixed
+
+- `hic-remapping` notifies curators with nextflow's `-N`: `curationpretext` accepts `--email` but never sends anything, so no mail ever arrived.
+- `blast-contaminants` loads the grit module before its ruby scripts, which need its gems — without it `remove_contamination_bed` died with `cannot load such file -- bio`. The lineage is also parsed from the last non-empty stdout line, so module chatter can't corrupt it.
+- `microchromosome-second-shot`'s output specs match the flat layout the script really writes, so `collect_outputs()` stops matching nothing and `microchromosome-combine` stops dying on run dirs that hold all of their inputs. A missing input now fails with what to run instead of handing a non-existent path to the external script.
 
 ## [0.4.1] - 2026-09-04
 
