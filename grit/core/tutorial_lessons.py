@@ -1,5 +1,6 @@
 """Lesson and scenario text for `grit tutorial` — data only, no engine logic."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -19,6 +20,8 @@ class Lesson:
     args: list[str] = field(default_factory=list)
     flag_hints: dict[str, str] = field(default_factory=dict)
     check: str = ""
+    shows: str = ""
+    manual_action: Callable[[str], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -31,6 +34,7 @@ class Scenario:
     yaml_path: Path
     ticket: str
     lessons: list[Lesson]
+    difficulty: str = ""
 
 
 _STATUS_LESSON = Lesson(

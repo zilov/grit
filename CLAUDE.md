@@ -106,8 +106,38 @@ without consulting `dry_run`.
 unprompted, `--scenario <key>` picks one chain and `--all` runs them all;
 Scenario 5 of `tests/local_smoke_test.sh` drives each scenario separately and
 asserts its final canonical table, so a `check` line that stopped being true
-fails there. Design rationale: `TODO/done/53_tutorial_walkthrough.md` and
-`TODO/done/54_tutorial_interactive.md`.
+fails there. Design rationale: `TODO/done/53_tutorial_walkthrough.md`,
+`TODO/done/54_tutorial_interactive.md` and `TODO/55_tutorial_curriculum.md`
+(Part A: engine and usability).
+
+Before running a matched lesson's command for real under `--dry-run`,
+`_show_farm_preview()` first runs the identical command in-process with
+`--print-only` swapped in (`_print_only_base()`), captures only what it prints
+via `console.capture()`, and shows it under a "What this runs on the farm:"
+heading — the one thing a learner otherwise never sees. This is wrapped in a
+broad `except Exception` and logging is muted for its duration
+(`_muted_logging()`): a step's validation logic (e.g. resolving the canonical
+FASTA) can run, and legitimately fail loudly via `log.exception()`, before any
+command-printing `_run()` call is reached, since `--print-only` forces
+`ctx.dry_run = False` and the step then resolves real (non-sandbox) farm
+paths that don't exist here. On failure or an empty capture it falls back to
+the lesson's own `shows` string, or skips the heading silently if that is also
+empty. Every existing `Lesson` has `shows=""` — populating real per-step
+fallback text is curriculum work, not engine work.
+
+A `Lesson` with `manual_action` set (a `Callable[[str], None]` taking the
+ticket ID) has no command to type — used for a real-world action like
+copying an AGP in. `_run_lesson()` dispatches these to `_run_manual_lesson()`,
+which explains the action, waits for a bare Enter via the shared `_ask()`
+idiom, then calls `manual_action(ticket)` to write whatever placeholder file
+the next lesson's command needs into that ticket's dry-run sandbox workdir
+(`dry_run_root()` in `grit/core/registry.py`) before moving on — there is no
+typed-command matching/hint machinery for these. `_run_scenario_auto()` runs
+the action unprompted, matching how it runs a normal lesson's command.
+
+`Scenario.difficulty` is shown in `_choose_scenario()`'s menu next to the
+title when non-empty; the three existing scenarios leave it unset until the
+curriculum rewrite sets real values.
 
 External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `grit init` to create it pre-filled with your username; the global ticket registry lives alongside it in the same `~/.grit/` dir. In tests / CI use `--yaml` with a local fixture file.
 

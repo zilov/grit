@@ -1,9 +1,16 @@
 """Interactive `grit tutorial` — a guided --dry-run walkthrough of a curation."""
 
+import logging
 import shlex
 import shutil
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+
+try:
+    import readline  # noqa: F401  — gives input() arrow-key movement and history
+except ImportError:
+    pass
 
 import rich_click as click
 from rich.panel import Panel
@@ -143,6 +150,55 @@ def _run_grit(argv: list[str]) -> bool:
     return True
 
 
+def _print_only_base(base: list[str]) -> list[str]:
+    """Return *base* with --dry-run swapped for --print-only, same --config/--yaml."""
+    return [tok for tok in base if tok != "--dry-run"] + ["--print-only"]
+
+
+@contextmanager
+def _muted_logging():
+    """Raise the root logger's level to silence a step's `log.exception()` noise.
+
+    Used only around the speculative --print-only preview pass, where a step's
+    validation logic can legitimately raise against real (non-sandbox) paths
+    before printing anything — that failure is expected to fail silently.
+    """
+    root = logging.getLogger()
+    previous = root.level
+    root.setLevel(logging.CRITICAL + 1)
+    try:
+        yield
+    finally:
+        root.setLevel(previous)
+
+
+def _show_farm_preview(lesson: Lesson, base: list[str], command_tokens: list[str]) -> None:
+    """Print what the lesson's command actually runs, via a --print-only pass.
+
+    Falls back to lesson.shows when the preview raises or captures nothing;
+    prints no heading at all when both are empty. Some steps' validation logic
+    (e.g. resolving the canonical FASTA) runs before any command-printing
+    `_run()` call and can raise or log a traceback against real (non-sandbox)
+    paths that don't exist here — logging is muted for the duration so that
+    speculative failure stays invisible rather than looking like a real error.
+    """
+    text = ""
+    try:
+        with console.capture() as cap, _muted_logging():
+            _run_grit([*_print_only_base(base), *command_tokens])
+        text = cap.get().strip()
+    except Exception:
+        text = ""
+
+    if not text:
+        text = lesson.shows.strip()
+    if not text:
+        return
+
+    console.print("\n[bold]What this runs on the farm:[/bold]")
+    console.print(text)
+
+
 def _reset_sandbox(ticket: str) -> None:
     """Delete *ticket*'s dry-run workdir and registry entry, so a scenario starts clean."""
     from grit.core.registry import RegistryManager, dry_run_root
@@ -167,6 +223,35 @@ def _explain(lesson: Lesson, n: int, total: int) -> None:
         "[dim]Type the command. Other grit commands work too and won't skip ahead. "
         "?=hint  ??=answer  r=re-read  s=skip  q=quit[/dim]"
     )
+
+
+def _explain_manual(lesson: Lesson, n: int, total: int) -> None:
+    console.print(Panel(f"  {n}/{total}  {lesson.title}  ", style="bold magenta"))
+    console.print(lesson.why)
+    console.print(f"\n[bold]Your turn:[/bold] {lesson.task}")
+    console.print("[dim]There is no grit command here. r=re-read  s=skip  q=quit[/dim]")
+
+
+def _run_manual_lesson(lesson: Lesson, scenario: Scenario, n: int, total: int) -> str:
+    """Drive a manual (no grit command) lesson; returns 'next' or 'quit'."""
+    _explain_manual(lesson, n, total)
+    while True:
+        raw = _ask()
+        low = raw.lower()
+        if low == "q":
+            return "quit"
+        if low == "s":
+            console.print("[dim]skipped[/dim]")
+            return "next"
+        if low == "r":
+            _explain_manual(lesson, n, total)
+            continue
+        if low in {"?", "??"}:
+            console.print("[dim]Nothing to type — press Enter once you've done it.[/dim]")
+            continue
+        if not raw:
+            lesson.manual_action(scenario.ticket)
+            return "next"
 
 
 def _check_phase(lesson: Lesson, base: list[str], ticket: str) -> str:
@@ -238,6 +323,9 @@ def _safe_tokens(raw: str) -> list[str] | None:
 
 def _run_lesson(lesson: Lesson, scenario: Scenario, base: list[str], n: int, total: int) -> str:
     """Drive one lesson to completion; returns 'next' or 'quit'."""
+    if lesson.manual_action is not None:
+        return _run_manual_lesson(lesson, scenario, n, total)
+
     _explain(lesson, n, total)
     known = _known_commands()
     last: Parsed | None = None
@@ -297,6 +385,7 @@ def _run_lesson(lesson: Lesson, scenario: Scenario, base: list[str], n: int, tot
             )
             continue
 
+        _show_farm_preview(lesson, base, tokens)
         if not _run_grit([*base, *tokens]):
             console.print(
                 "[bold red]That step failed.[/bold red] Quit with q and re-run the "
@@ -313,9 +402,17 @@ def _run_scenario_auto(scenario: Scenario, base: list[str]) -> None:
         header = f"  {n}/{len(scenario.lessons)}  {lesson.title}  "
         console.print(Panel(header, style="bold magenta"))
         console.print(lesson.why)
+
+        if lesson.manual_action is not None:
+            console.print(f"\n[bold]Your turn:[/bold] {lesson.task}")
+            lesson.manual_action(scenario.ticket)
+            continue
+
         line = expected_line(lesson, scenario.ticket)
         console.print(f"\n  [bold green]$[/bold green] [bold]{line}[/bold]\n")
-        _run_grit([*base, lesson.command, "-t", scenario.ticket, *lesson.args])
+        command_tokens = [lesson.command, "-t", scenario.ticket, *lesson.args]
+        _show_farm_preview(lesson, base, command_tokens)
+        _run_grit([*base, *command_tokens])
         if lesson.check:
             console.print(f"\n[dim]$ grit status -t {scenario.ticket}[/dim]")
             _run_grit([*base, "status", "-t", scenario.ticket])
@@ -381,7 +478,10 @@ def _choose_scenario() -> Scenario | None:
         )
     )
     for i, scenario in enumerate(SCENARIOS, start=1):
-        console.print(f"  [bold]{i}[/bold]  {scenario.title}\n     [dim]{scenario.blurb}[/dim]")
+        difficulty = f"  [dim]({scenario.difficulty})[/dim]" if scenario.difficulty else ""
+        console.print(
+            f"  [bold]{i}[/bold]  {scenario.title}{difficulty}\n     [dim]{scenario.blurb}[/dim]"
+        )
     console.print("  [bold]q[/bold]  quit\n")
 
     while True:

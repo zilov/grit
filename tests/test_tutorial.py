@@ -1,15 +1,19 @@
 """Unit tests for the tutorial's command matcher and hint generator (pure string logic)."""
 
+import logging
+
 import pytest
 
 from grit.core.tutorial import (
+    _muted_logging,
+    _print_only_base,
     _safe_to_run,
     expected_line,
     hint_for,
     matches,
     parse_command,
 )
-from grit.core.tutorial_lessons import SCENARIOS, Lesson, find_scenario
+from grit.core.tutorial_lessons import SCENARIOS, Lesson, Scenario, find_scenario
 
 TICKET = "TUTORIAL-1"
 KNOWN = {"setup", "status", "pretext-to-asm", "blast-contaminants", "hic-remapping", "untrack"}
@@ -187,3 +191,71 @@ class TestSafeToRun:
 
     def test_the_lesson_s_own_step_with_wrong_flags_is_not_run(self):
         assert not self._run(["grit", "hic-remapping", "-t", TICKET], HAP2)
+
+
+class TestLessonAndScenarioFields:
+    """New Part A fields default sensibly and don't disturb existing lessons."""
+
+    def test_lesson_shows_defaults_empty(self):
+        assert PLAIN.shows == ""
+
+    def test_lesson_manual_action_defaults_none(self):
+        assert PLAIN.manual_action is None
+
+    def test_manual_lesson_can_carry_an_action(self):
+        seen = []
+        manual = Lesson(
+            title="t",
+            why="w",
+            task="copy the AGP in",
+            command="",
+            manual_action=lambda ticket: seen.append(ticket),
+        )
+        manual.manual_action(TICKET)
+        assert seen == [TICKET]
+
+    def test_scenario_difficulty_defaults_empty(self):
+        scenario = Scenario(
+            key="k", title="t", blurb="b", yaml_path=PLAIN, ticket=TICKET, lessons=[]
+        )
+        assert scenario.difficulty == ""
+
+    def test_existing_scenarios_leave_difficulty_unset(self):
+        for scenario in SCENARIOS:
+            assert scenario.difficulty == ""
+
+    def test_existing_lessons_leave_shows_and_manual_action_unset(self):
+        for scenario in SCENARIOS:
+            for lesson in scenario.lessons:
+                assert lesson.shows == ""
+                assert lesson.manual_action is None
+
+
+class TestPrintOnlyBase:
+    def test_swaps_dry_run_for_print_only(self):
+        base = ["--config", "/x.yaml", "--yaml", "/y.yaml", "--dry-run"]
+        expected = ["--config", "/x.yaml", "--yaml", "/y.yaml", "--print-only"]
+        assert _print_only_base(base) == expected
+
+    def test_leaves_config_and_yaml_untouched(self):
+        base = ["--config", "/x.yaml", "--yaml", "/y.yaml", "--dry-run"]
+        result = _print_only_base(base)
+        assert "--config" in result and "/x.yaml" in result
+        assert "--yaml" in result and "/y.yaml" in result
+
+
+class TestMutedLogging:
+    def test_silences_the_root_logger_only_inside_the_block(self):
+        root = logging.getLogger()
+        before = root.level
+        with _muted_logging():
+            assert root.level > logging.CRITICAL
+        assert root.level == before
+
+    def test_restores_the_level_even_if_the_block_raises(self):
+        root = logging.getLogger()
+        before = root.level
+        with pytest.raises(ValueError):
+            with _muted_logging():
+                raise ValueError("boom")
+        assert root.level == before
