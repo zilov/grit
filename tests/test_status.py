@@ -1,5 +1,6 @@
 """Tests for grit/core/status.py."""
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -36,50 +37,6 @@ def test_print_scp_tips_prints_for_successful_step_with_outputs(mock_print_tip):
     mock_print_tip.assert_called_once()
     tip = mock_print_tip.call_args[0][0]
     assert "scp farm22:/lustre/foo/Rf_vs_Qu.png" in tip
-
-
-@patch("grit.core.status.print_tip")
-def test_print_scp_tips_hic_remapping_only_offers_normal_pretext(mock_print_tip):
-    step_latest = {
-        "hic_remapping": {
-            "status": "success",
-            "outputs": {
-                "hap1_pretext": "/lustre/foo/aEleAbb1.hap1_hr.pretext",
-                "hap1_normal_pretext": "/lustre/foo/aEleAbb1.hap1_normal.pretext",
-            },
-        },
-    }
-
-    _print_scp_tips(step_latest, "farm22", "aEleAbb1")
-
-    mock_print_tip.assert_called_once()
-    tip = mock_print_tip.call_args[0][0]
-    assert "hr.pretext" not in tip
-    assert (
-        "scp farm22:/lustre/foo/aEleAbb1.hap1_normal.pretext "
-        "~/curations/work/aEleAbb1/aEleAbb1.hap1_remapped.pretext" in tip
-    )
-
-
-@patch("grit.core.status.print_tip")
-def test_print_scp_tips_hic_remapping_both_haps_prints_two_tips(mock_print_tip):
-    step_latest = {
-        "hic_remapping": {
-            "status": "success",
-            "outputs": {"hap1_normal_pretext": "/lustre/foo/aEleAbb1.hap1_normal.pretext"},
-        },
-        "hic_remapping_hap2": {
-            "status": "success",
-            "outputs": {"hap2_normal_pretext": "/lustre/foo/aEleAbb1.hap2_normal.pretext"},
-        },
-    }
-
-    _print_scp_tips(step_latest, "farm22", "aEleAbb1")
-
-    assert mock_print_tip.call_count == 2
-    tips = [c.args[0] for c in mock_print_tip.call_args_list]
-    assert any("aEleAbb1.hap1_remapped.pretext" in t for t in tips)
-    assert any("aEleAbb1.hap2_remapped.pretext" in t for t in tips)
 
 
 @patch("grit.core.status.print_tip")
@@ -393,14 +350,7 @@ def test_show_ticket_history_resolves_done_job_without_waiting_for_gone(
     age out of `bjobs` history (which can take hours) — and the scp tip should show
     up in that same `grit status` call, not just the next one."""
     tol_id = "aEleAbb1"
-    registry_dir = tmp_path / ".grit_reg"
-    monkeypatch.setattr("grit.core.registry._DEFAULT_DIR", registry_dir)
-
-    workdir = tmp_path / "workdir"
-    workdir.mkdir()
-    reg = RegistryManager(registry_dir=registry_dir)
-    reg.add_ticket("RC-1234", tol_id, "species", workdir)
-    tracker = RunTracker(workdir, registry=reg)
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
 
     run_dir = tracker.start("hic_remapping", "RC-1234", tol_id, suffix="primary")
     tracker.record_job("hic_remapping", run_dir, "685359")
@@ -439,7 +389,7 @@ def test_resolve_canonical_files_missing_returns_none_per_type(mock_ctx):
 
     assert set(resolved.keys()) == {"hap1", "hap2"}
     for by_type in resolved.values():
-        assert by_type == {"fa": None, "haplotigs": None, "chr_list": None}
+        assert by_type == {"fa": None, "haplotigs": None, "chr_list": None, "map": None}
 
 
 def test_resolve_canonical_files_finds_curated_fa(tmp_path, mock_ctx):
@@ -1081,3 +1031,112 @@ def test_show_ticket_history_shows_resolved_reference(tmp_path, capsys, monkeypa
     cells = [str(c) for col in tables[0].columns for c in col._cells]
     assert any("GCA_123_reheader.fna" in c for c in cells)
     assert any("✓" in c for c in cells)
+
+
+# ---------------------------------------------------------------------------
+# Canonical Pretext map (TODO 56)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_canonical_files_finds_canonical_map(tmp_path, mock_ctx):
+    mock_ctx.tracker = None
+    mock_ctx.workdir = tmp_path
+    processed = tmp_path / "hic_remapping" / "2025-06-02T14_00_00" / "pretext_maps_processed"
+    processed.mkdir(parents=True)
+    normal = processed / f"{mock_ctx.tol_id}.hap1_normal.pretext"
+    normal.write_bytes(b"map")
+    (processed / f"{mock_ctx.tol_id}.hap1_hr.pretext").write_bytes(b"map")
+
+    resolved = _resolve_canonical_files(mock_ctx, ["hap1"])
+
+    assert resolved["hap1"]["map"] == normal
+
+
+@patch("grit.core.status.print_tip")
+def test_print_scp_tips_offers_the_canonical_map(mock_print_tip):
+    """The map tip follows canonical resolution, not the latest run's outputs."""
+    _print_scp_tips(
+        {},
+        "farm22",
+        "aEleAbb1",
+        canonical_maps={"hap1": Path("/lustre/foo/aEleAbb1.hap1_normal.pretext")},
+    )
+
+    mock_print_tip.assert_called_once()
+    tip = mock_print_tip.call_args[0][0]
+    assert "hr.pretext" not in tip
+    assert (
+        "scp farm22:/lustre/foo/aEleAbb1.hap1_normal.pretext "
+        "~/curations/work/aEleAbb1/aEleAbb1.hap1_remapped.pretext" in tip
+    )
+
+
+@patch("grit.core.status.print_tip")
+def test_print_scp_tips_does_not_offer_a_map_from_step_outputs(mock_print_tip):
+    """A hic_remapping run that is not canonical must not produce its own tip."""
+    step_latest = {
+        "hic_remapping": {
+            "status": "success",
+            "outputs": {"hap1_normal_pretext": "/lustre/foo/aEleAbb1.hap1_normal.pretext"},
+        },
+    }
+
+    _print_scp_tips(step_latest, "farm22", "aEleAbb1", canonical_maps={})
+
+    mock_print_tip.assert_not_called()
+
+
+@patch("grit.core.status.print_tip")
+def test_print_scp_tips_offers_one_map_per_haplotype(mock_print_tip):
+    _print_scp_tips(
+        {},
+        "farm22",
+        "aEleAbb1",
+        canonical_maps={
+            "hap1": Path("/lustre/foo/aEleAbb1.hap1_normal.pretext"),
+            "hap2": Path("/lustre/foo/aEleAbb1.hap2_normal.pretext"),
+        },
+    )
+
+    tips = "\n".join(call[0][0] for call in mock_print_tip.call_args_list)
+    assert mock_print_tip.call_count == 2
+    assert "aEleAbb1.hap1_remapped.pretext" in tips
+    assert "aEleAbb1.hap2_remapped.pretext" in tips
+    assert "hap1 pretext map" in tips
+    assert "hap2 pretext map" in tips
+
+
+def test_canonical_mark_credits_a_map_nested_in_the_run_dir():
+    """The map lives in run_dir/pretext_maps_processed/, not directly in run_dir —
+    the row must still be marked when the run's outputs never recorded it."""
+    run_dir = Path("/w/hic_remapping/2026-01-01T00_00_00")
+    canonical_index = {
+        str(run_dir / "pretext_maps_processed" / "aEleAbb1.hap1_normal.pretext"): [("map", "hap1")]
+    }
+
+    mark = _canonical_mark({}, canonical_index, ["hap1", "hap2"], run_dir)
+
+    assert "map(1)" in mark
+
+
+def test_show_ticket_history_marks_the_row_holding_the_canonical_map(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(console, "width", 200)
+    tol_id = "sDipInt39"
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    hic_dir = tracker.start("hic_remapping", "RC-1234", tol_id)
+    processed = hic_dir / "pretext_maps_processed"
+    processed.mkdir(parents=True, exist_ok=True)
+    normal = processed / f"{tol_id}.hap1_normal.pretext"
+    normal.write_bytes(b"map")
+    tracker.finish(
+        "hic_remapping", hic_dir, "success", outputs={"hap1_normal_pretext": str(normal)}
+    )
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    out = capsys.readouterr().out
+    hic_line = next(
+        line for line in out.splitlines() if "hic_remapping" in line and "success" in line
+    )
+    assert "map(1)" in hic_line

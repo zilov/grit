@@ -169,20 +169,22 @@ def _canonical_haps(ctx) -> list[str]:
 
 def _resolve_canonical_files(ctx, haps: list[str]) -> dict[str, dict[str, Path | None]]:
     """
-    Resolve the canonical fa/haplotigs/chr_list path per haplotype, keyed by
-    hap then by "fa"/"haplotigs"/"chr_list". A value is None when the
+    Resolve the canonical fa/haplotigs/chr_list/map path per haplotype, keyed by
+    hap then by "fa"/"haplotigs"/"chr_list"/"map". A value is None when the
     corresponding finder raised FileNotFoundError (nothing resolved yet).
     """
     from grit.utils.helpers import (
         find_canonical_chr_list,
         find_canonical_fa,
         find_canonical_haplotigs,
+        find_canonical_map,
     )
 
     finders = {
         "fa": find_canonical_fa,
         "haplotigs": find_canonical_haplotigs,
         "chr_list": find_canonical_chr_list,
+        "map": find_canonical_map,
     }
 
     resolved: dict[str, dict[str, Path | None]] = {}
@@ -200,6 +202,7 @@ _CANONICAL_TYPE_LABELS = {
     "fa": "assembly FA",
     "haplotigs": "haplotigs FA",
     "chr_list": "chr list",
+    "map": "pretext map",
 }
 
 # Short codes for the step-history table's "Canonical" column — kept distinct
@@ -208,6 +211,7 @@ _CANONICAL_TYPE_MARKS = {
     "fa": "fa",
     "haplotigs": "hap",
     "chr_list": "chr",
+    "map": "map",
 }
 
 
@@ -248,7 +252,7 @@ def _canonical_mark(
     if run_dir is not None:
         recorded = {str(v) for v in outputs.values()}
         for path_str, types in canonical_index.items():
-            if path_str not in recorded and Path(path_str).parent == run_dir:
+            if path_str not in recorded and run_dir in Path(path_str).parents:
                 matches.extend(types)
     if not matches:
         return ""
@@ -263,7 +267,7 @@ def _canonical_mark(
             haps_by_type[type_key].append(hap)
 
     parts = []
-    for type_key in ("fa", "haplotigs", "chr_list"):
+    for type_key in ("fa", "haplotigs", "chr_list", "map"):
         matched_haps = haps_by_type.get(type_key)
         if not matched_haps:
             continue
@@ -412,26 +416,24 @@ def _auto_step_outputs(
 # bjobs-polling fallback in show_ticket_history for steps that don't use one)
 # are worth offering to scp to the curator's local machine.
 #
-# `key_filter` restricts which output keys are offered — hic_remapping's
-# specs include both the hr.pretext (curation input, stays on the farm) and
-# normal.pretext (the one to download and view), so only the latter should
-# be offered here.
+# The remapped pretext map is not listed here: a ticket can hold many
+# hic_remapping runs, so the map worth downloading is the canonical one rather
+# than the latest run's output. It is offered from `canonical_maps` below.
 _SCP_TIP_STEPS = [
     ("fastga", "FastGA results", None),
     ("fastga_stats", "fastga-stats results", None),
     ("busco_synteny", "busco-synteny plot", None),
     ("fastga_synteny", "fastga-synteny plot", None),
-    ("hic_remapping", "remapped pretext map", ["hap1_normal_pretext"]),
-    ("hic_remapping_hap2", "remapped hap2 pretext map", ["hap2_normal_pretext"]),
 ]
 
-# Steps whose downloaded file should be renamed on copy rather than keeping
-# its remote basename (e.g. "<tol_id>.hap1_normal.pretext" -> "<tol_id>.hap1_remapped.pretext").
-_SCP_TIP_RENAME_STEPS = {"hic_remapping", "hic_remapping_hap2"}
 
-
-def _print_scp_tips(step_latest: dict[str, dict], farm_host: str, tol_id: str) -> None:
-    """Print an scp-download tip for each successful step in `_SCP_TIP_STEPS`."""
+def _print_scp_tips(
+    step_latest: dict[str, dict],
+    farm_host: str,
+    tol_id: str,
+    canonical_maps: dict[str, Path] | None = None,
+) -> None:
+    """Print an scp-download tip per successful `_SCP_TIP_STEPS` step and per canonical map."""
     from grit.utils.helpers import MULTI_OUTPUT_SEP, build_scp_tip
 
     for step, label, key_filter in _SCP_TIP_STEPS:
@@ -444,12 +446,17 @@ def _print_scp_tips(step_latest: dict[str, dict], farm_host: str, tol_id: str) -
         # A "multi" spec (e.g. fastga's "idx": one file per genome) joins its
         # matches into a single string — split back out into individual files.
         files = sorted(f for value in outputs.values() for f in value.split(MULTI_OUTPUT_SEP))
-        dest_names = None
-        if step in _SCP_TIP_RENAME_STEPS:
-            dest_names = [
-                Path(f).name.replace("_normal.pretext", "_remapped.pretext") for f in files
-            ]
-        tip = build_scp_tip(farm_host, tol_id, files, label, dest_names=dest_names)
+        tip = build_scp_tip(farm_host, tol_id, files, label)
+        if tip:
+            print_tip(tip)
+
+    # The downloaded map is renamed on copy so it cannot be confused with the
+    # pre-curation map already sitting in the curator's local dir.
+    for hap, path in (canonical_maps or {}).items():
+        dest_name = Path(path).name.replace("_normal.pretext", "_remapped.pretext")
+        tip = build_scp_tip(
+            farm_host, tol_id, [str(path)], f"{hap} pretext map", dest_names=[dest_name]
+        )
         if tip:
             print_tip(tip)
 
@@ -523,6 +530,7 @@ def show_ticket_history(
 
     canonical_index: dict[str, list[tuple[str, str]]] = {}
     canonical_haps: list[str] = []
+    canonical_maps: dict[str, Path] = {}
     if ctx:
         from grit.steps.pre_curation.setup import print_curation_summary
 
@@ -532,6 +540,9 @@ def show_ticket_history(
         resolved_canonical = _resolve_canonical_files(ctx, canonical_haps)
         _print_canonical_files(ctx, resolved_canonical)
         canonical_index = _canonical_type_index(resolved_canonical)
+        canonical_maps = {
+            hap: by_type["map"] for hap, by_type in resolved_canonical.items() if by_type.get("map")
+        }
 
     tracker = RunTracker(workdir, registry=registry)
     history = tracker.history()
@@ -701,7 +712,7 @@ def show_ticket_history(
 
     farm_host = user_config.get("farm_host", "<farm_host>")
 
-    _print_scp_tips(step_latest, farm_host, tol_id)
+    _print_scp_tips(step_latest, farm_host, tol_id, canonical_maps=canonical_maps)
     _print_less_tips(step_latest)
 
     print_tip(

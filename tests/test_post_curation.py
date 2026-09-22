@@ -1691,3 +1691,80 @@ def test_run_post_processing_dry_run_succeeds_without_existing_workdir(
 
     mock_subprocess_run.assert_not_called()
     mock_mark_done.assert_not_called()
+
+
+@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_ships_the_canonical_map_not_the_newest_run_dir(
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_qv_run,
+    mock_ctx,
+    tmp_path,
+):
+    """A ticket can hold many hic_remapping runs. The map that ships is the
+    canonical one, so an untracked newer run must not be picked up."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
+    mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    tracker = RunTracker(tmp_path, registry=reg)
+    mock_ctx.tracker = tracker
+
+    def _map(stamp):
+        processed = tmp_path / "hic_remapping" / stamp / "pretext_maps_processed"
+        processed.mkdir(parents=True)
+        path = processed / f"{mock_ctx.tol_id}.hap1_normal.pretext"
+        path.write_bytes(b"map")
+        return path
+
+    kept = _map("2026-01-01T00_00_00")
+    tracker.finish(
+        "hic_remapping",
+        kept.parent.parent,
+        "success",
+        outputs={"hap1_normal_pretext": str(kept)},
+    )
+    rejected = _map("2026-01-02T00_00_00")
+    tracker.finish(
+        "hic_remapping",
+        rejected.parent.parent,
+        "success",
+        outputs={"hap1_normal_pretext": str(rejected)},
+        untracked=True,
+    )
+
+    mock_find_fa.return_value = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
+    mock_find_csv.return_value = tmp_path / "sDipInt39.1.hap1.chromosome.list.csv"
+    mock_find_haplotigs.side_effect = FileNotFoundError("no haplotigs")
+    # only the yaml-vs-pretext-to-asm type check needs a real answer; every
+    # other glob in the step is irrelevant here.
+    calls = {"n": 0}
+
+    def _glob(pattern):
+        calls["n"] += 1
+        return [f"{mock_ctx.tol_id}.hap1.1.curated.fa"] if calls["n"] == 1 else []
+
+    mock_glob.side_effect = _glob
+    mock_run.return_value = ""
+
+    finalize_for_qc(mock_ctx)
+
+    map_copies = [str(c) for c in mock_run.call_args_list if "curated.pretext" in str(c)]
+    assert map_copies, "no pretext map was copied"
+    assert any(str(kept) in c for c in map_copies)
+    assert not any(str(rejected) in c for c in map_copies)

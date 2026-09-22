@@ -4,7 +4,12 @@ import pytest
 
 from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
-from grit.utils.helpers import find_canonical_chr_list, find_canonical_fa, find_curated_fa
+from grit.utils.helpers import (
+    find_canonical_chr_list,
+    find_canonical_fa,
+    find_canonical_map,
+    find_curated_fa,
+)
 
 
 def _make_tracker(tmp_path, ctx):
@@ -504,3 +509,121 @@ def test_chr_list_of_latest_run_beats_earlier_run_of_the_same_step(mock_ctx, tmp
     os.utime(new_chr_list, (2000, 2000))
 
     assert find_canonical_chr_list(mock_ctx, "hap1") == new_chr_list
+
+
+# ---------------------------------------------------------------------------
+# find_canonical_map — the canonical remapped Pretext map per haplotype
+# ---------------------------------------------------------------------------
+
+
+def _write_map(run_dir, tol_id, hap_token):
+    """Write a hic-remapping run's normal.pretext (shipped) and hr.pretext (farm-only)."""
+    processed = run_dir / "pretext_maps_processed"
+    normal = _write(processed / f"{tol_id}.{hap_token}_normal.pretext")
+    _write(processed / f"{tol_id}.{hap_token}_hr.pretext")
+    return normal
+
+
+def test_canonical_map_is_the_latest_hic_remapping_run(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    old_dir = tmp_path / "hic_remapping" / "2026-01-01T00_00_00"
+    old_map = _write_map(old_dir, mock_ctx.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping", old_dir, "success", outputs={"hap1_normal_pretext": str(old_map)}
+    )
+
+    new_dir = tmp_path / "hic_remapping" / "2026-01-02T00_00_00"
+    new_map = _write_map(new_dir, mock_ctx.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping", new_dir, "success", outputs={"hap1_normal_pretext": str(new_map)}
+    )
+
+    assert find_canonical_map(mock_ctx, "hap1") == new_map
+
+
+def test_canonical_map_ignores_the_hr_map(mock_ctx, tmp_path):
+    """hr.pretext is the curation input and stays on the farm; only normal.pretext ships."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    run_dir = tmp_path / "hic_remapping" / "2026-01-01T00_00_00"
+    normal = _write_map(run_dir, mock_ctx.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping",
+        run_dir,
+        "success",
+        outputs={
+            "hap1_pretext": str(
+                run_dir / "pretext_maps_processed" / f"{mock_ctx.tol_id}.hap1_hr.pretext"
+            ),
+            "hap1_normal_pretext": str(normal),
+        },
+    )
+
+    assert find_canonical_map(mock_ctx, "hap1") == normal
+
+
+def test_canonical_map_skips_an_untracked_run(mock_ctx, tmp_path):
+    """The newest run dir on disk loses to the older one when it was untracked."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    kept_dir = tmp_path / "hic_remapping" / "2026-01-01T00_00_00"
+    kept_map = _write_map(kept_dir, mock_ctx.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping", kept_dir, "success", outputs={"hap1_normal_pretext": str(kept_map)}
+    )
+
+    rejected_dir = tmp_path / "hic_remapping" / "2026-01-02T00_00_00"
+    rejected_map = _write_map(rejected_dir, mock_ctx.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping",
+        rejected_dir,
+        "success",
+        outputs={"hap1_normal_pretext": str(rejected_map)},
+        untracked=True,
+    )
+
+    assert find_canonical_map(mock_ctx, "hap1") == kept_map
+
+
+def test_canonical_map_falls_back_to_the_filesystem(mock_ctx, tmp_path):
+    _make_tracker(tmp_path, mock_ctx)
+    run_dir = tmp_path / "hic_remapping" / "2026-01-01T00_00_00"
+    fs_map = _write_map(run_dir, mock_ctx.tol_id, "hap1")
+
+    assert find_canonical_map(mock_ctx, "hap1") == fs_map
+
+
+def test_canonical_map_hap2_comes_from_hic_remapping_hap2(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    hap1_dir = tmp_path / "hic_remapping" / "2026-01-01T00_00_00"
+    hap1_map = _write_map(hap1_dir, mock_ctx.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping", hap1_dir, "success", outputs={"hap1_normal_pretext": str(hap1_map)}
+    )
+
+    hap2_dir = tmp_path / "hic_remapping_hap2" / "2026-01-02T00_00_00"
+    hap2_map = _write_map(hap2_dir, mock_ctx.tol_id, "hap2")
+    tracker.finish(
+        "hic_remapping_hap2", hap2_dir, "success", outputs={"hap2_normal_pretext": str(hap2_map)}
+    )
+
+    assert find_canonical_map(mock_ctx, "hap1") == hap1_map
+    assert find_canonical_map(mock_ctx, "hap2") == hap2_map
+
+
+def test_canonical_map_has_no_hap2_for_a_single_hap_ticket(mock_ctx_primary, tmp_path):
+    """A primary/alternate ticket has no genuine hap2 — never hand back hap1's map."""
+    tracker = _make_tracker(tmp_path, mock_ctx_primary)
+    run_dir = tmp_path / "hic_remapping" / "2026-01-01T00_00_00"
+    hap1_map = _write_map(run_dir, mock_ctx_primary.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping", run_dir, "success", outputs={"hap1_normal_pretext": str(hap1_map)}
+    )
+
+    assert find_canonical_map(mock_ctx_primary, "primary") == hap1_map
+    with pytest.raises(FileNotFoundError):
+        find_canonical_map(mock_ctx_primary, "alternate")
+
+
+def test_canonical_map_raises_when_no_map_exists(mock_ctx, tmp_path):
+    _make_tracker(tmp_path, mock_ctx)
+    with pytest.raises(FileNotFoundError):
+        find_canonical_map(mock_ctx, "hap1")

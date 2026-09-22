@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- The canonical Pretext map is resolved like the other canonical files (`find_canonical_map`), shown per haplotype in `grit status -t`'s canonical-files table and marked `map` in its Canonical column. Only `*normal.pretext` counts — the `hr.pretext` beside it is the curation input and stays on the farm — and a single-haplotype assembly has no hap2 map rather than being handed hap1's.
+
+### Changed
+
+- `finalize-qc` ships the canonical Pretext map instead of the alphabetically-last `hic_remapping` run dir's, and `grit status`'s map download tip follows the same resolution. A ticket accumulates one hic-remapping run per recuration round, so the old filesystem pick could publish an older — or an explicitly untracked — round's map to NFS.
+
 ## [0.4.1] - 2026-09-04
 
 ### Changed

@@ -636,6 +636,45 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     return Path(sorted(matches)[-1])
 
 
+def find_canonical_map(ctx: "CurationContext", hap_prefix: str) -> Path:
+    """
+    Find the canonical remapped Pretext map for *hap_prefix*.
+
+    Resolution order:
+      1. This haplotype's hic-remapping tracker output (``hic_remapping`` for
+         hap1, ``hic_remapping_hap2`` for hap2), which skips untracked runs and
+         re-globs the run dir when the outputs were recorded incompletely.
+      2. Filesystem glob across that step's run dirs, newest mtime winning.
+
+    Only ``*normal.pretext`` is considered: the ``hr.pretext`` map is the
+    curation input and stays on the farm. A single-hap assembly has no hap2
+    map, so asking for one raises rather than handing back hap1's.
+
+    Raises FileNotFoundError if nothing is found.
+    """
+    is_hap2 = hap_prefix == ctx.hap2_prefix
+    if is_hap2 and is_single_hap(ctx):
+        raise FileNotFoundError(
+            f"{ctx.tol_id} is a single-haplotype assembly — no {hap_prefix!r} Pretext map."
+        )
+    step = "hic_remapping_hap2" if is_hap2 else "hic_remapping"
+    key = "hap2_normal_pretext" if is_hap2 else "hap1_normal_pretext"
+
+    if ctx.tracker:
+        canonical = _latest_tracked_output(ctx, [step], [key], hap_prefix)
+        if canonical:
+            return canonical
+
+    pattern = ctx.workdir / step / "*" / "pretext_maps_processed" / f"{ctx.tol_id}*normal.pretext"
+    matches = glob.glob(str(pattern))
+    if not matches:
+        raise FileNotFoundError(
+            f"No remapped Pretext map for {hap_prefix!r} found under "
+            f"{ctx.workdir / step}. Run hic-remapping first."
+        )
+    return Path(max(matches, key=lambda f: Path(f).stat().st_mtime))
+
+
 def find_hap_agp(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
     Find the curated AGP for *hap_prefix* in the latest ``pretext_to_asm`` run dir.

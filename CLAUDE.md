@@ -173,7 +173,7 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   it (that belongs in the commit message, not the code)
 - **`console.print()`** for structured step output (headers, tips, done messages) via `grit/utils/output.py`
 - **Assembly type detection** — `_detect_assembly_type(yaml_data)` maps YAML keys to `(assembly_type, hap1_prefix, hap2_prefix)`: `hap1/hap2`, `primary/alternate`
-- **Canonical FASTA priority** — `find_canonical_fa`/`find_canonical_chr_list`/`find_canonical_haplotigs`
+- **Canonical FASTA priority** — `find_canonical_fa`/`find_canonical_chr_list`/`find_canonical_haplotigs`/`find_canonical_map`
   (`grit/utils/helpers.py`) resolve "the current canonical assembly" per haplotype from a single flat,
   mtime-ordered pool of tracker steps (`pretext_to_asm`, `microchromosome_combine`,
   `blast_contaminants`, `rename_and_orient[_hap2]`, `pretext_to_asm_recurate[_hap2]`) — the freshest
@@ -183,13 +183,21 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   incompletely recorded outputs can't hand canonical back to an older step (canonical must never move
   backwards in time). See
   `docs/recuration-canonical-priority.md` for the full curator-facing decision path and a flowchart — read
-  it before touching any of these three functions or the recurate step. `grit status -t`'s step-history
-  table surfaces this per row via a "Canonical" column showing per-type codes (`fa`/`hap`/`chr`), with a
+  it before touching any of these four functions or the recurate step. `grit status -t`'s step-history
+  table surfaces this per row via a "Canonical" column showing per-type codes (`fa`/`hap`/`chr`/`map`), with a
   `(1)`/`(2)` haplotype-index suffix when a ticket has more than one haplotype — e.g. a recurate row can
   read `hap(1),chr(1)` while a later rename-and-orient row reads `fa(1)`, making clear they're each
   canonical for a *different* output, not in conflict. `_canonical_mark()` marks a row for a canonical
   file found in that row's run dir even when the run's recorded `outputs` never captured it, so the
-  column can't disagree with the canonical-files table above it
+  column can't disagree with the canonical-files table above it (that re-glob matches a canonical file
+  anywhere under the run dir, since `hic_remapping` writes its map into a `pretext_maps_processed/`
+  subdir rather than the run dir itself). `find_canonical_map` is the odd one out in that pool: its
+  pool is a single step per haplotype (`hic_remapping` / `hic_remapping_hap2`) and it resolves each
+  haplotype only from that haplotype's own step and output key (`hap{1,2}_normal_pretext`) — no alias
+  or no-prefix fallback, because handing hap1's file back for hap2 here means publishing the wrong
+  haplotype's Hi-C map to NFS. Only `*normal.pretext` is canonical; the `hr.pretext` beside it is the
+  curation input and stays on the farm, and `setup`'s staged draft map never counts. Its consumers are
+  `finalize_qc`'s NFS copy and `grit status`'s download tip
 - **`GritJiraIssue`** is a shared server library injected via `sys.path` (path in user config), not a pip dependency
 
 ## Planning / design docs
