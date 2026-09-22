@@ -76,18 +76,38 @@ grit [--yaml FILE] [--print-only] [--logging-level LEVEL] <COMMAND> -t RC-1234
 
 ### Onboarding: `grit tutorial`
 
-`grit tutorial` (`grit/core/tutorial.py`) is the guided walkthrough new curators
-start with: a list of `Lesson` records (what the step is for, the command as
-they'd type it, what to look for in `grit status` afterwards), each run for real
-against `--dry-run` and the bundled fictional ticket
-`grit/config/tutorial_demo.yaml`. It never touches Jira, LSF or lustre.
+`grit tutorial` is the guided walkthrough new curators start with. The engine is
+`grit/core/tutorial.py`; the lesson and scenario prose lives in
+`grit/core/tutorial_lessons.py`, with bundled fictional tickets
+`grit/config/tutorial_demo.yaml` (hap1/hap2) and `tutorial_demo_primary.yaml`
+(primary/alternate). It never touches Jira, LSF, lustre or the real registry —
+every command runs through grit's own CLI in-process
+(`cli.main(..., standalone_mode=False)`) with `--config`/`--yaml`/`--dry-run`
+injected, so a step is never re-implemented and a renamed command breaks the
+tutorial loudly instead of teaching a stale interface.
 
-It drives grit's own CLI in-process (`cli.main(..., standalone_mode=False)`)
-rather than re-implementing any command — so adding or renaming a step means
-adding or renaming a `Lesson`, never duplicating a command string. Steps with no
-dry-run branch (e.g. `add-*-track`) can't appear in it. `--auto` runs every
-lesson without prompting; Scenario 5 of `tests/local_smoke_test.sh` uses that to
-catch a lesson whose command or expected canonical outcome has drifted.
+The learner **types** each command; the lesson advances only on a match.
+`parse_command()` normalises both sides to `(subcommand, ticket, flags)` — short
+aliases expanded, `--dry-run` ignored, `--step` keeping its value — and
+`hint_for()` names the actual fault. Both are pure string logic and are
+unit-tested in `tests/test_tutorial.py`, which also asserts that every lesson
+names a registered command and explains every flag it demands.
+
+`_safe_to_run()` is the safety rule and the non-obvious part: a command that
+isn't the answer is executed only if it's `--help` or `grit status` for this
+scenario's ticket. Another *step* is refused because running it would
+invalidate the next lesson's "run status and find X" claim, and a missing
+`--ticket` is refused because the tutorial's own `--yaml` would otherwise make
+`GritCommand` derive a ticket from the YAML filename instead of failing.
+`grit init` is refused explicitly — it's the one command that writes real state
+without consulting `dry_run`.
+
+`--auto` runs each lesson's expected command (plus its status check)
+unprompted, `--scenario <key>` picks one chain and `--all` runs them all;
+Scenario 5 of `tests/local_smoke_test.sh` drives each scenario separately and
+asserts its final canonical table, so a `check` line that stopped being true
+fails there. Design rationale: `TODO/done/53_tutorial_walkthrough.md` and
+`TODO/done/54_tutorial_interactive.md`.
 
 External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `grit init` to create it pre-filled with your username; the global ticket registry lives alongside it in the same `~/.grit/` dir. In tests / CI use `--yaml` with a local fixture file.
 

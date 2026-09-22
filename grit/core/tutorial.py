@@ -1,170 +1,126 @@
 """Interactive `grit tutorial` — a guided --dry-run walkthrough of a curation."""
 
+import shlex
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import rich_click as click
 from rich.panel import Panel
 
+from grit.core.tutorial_lessons import SCENARIOS, Lesson, Scenario, find_scenario
 from grit.utils.output import console
 
-DEMO_YAML = Path(__file__).resolve().parent.parent / "config" / "tutorial_demo.yaml"
-DEFAULT_TICKET = "TUTORIAL-1"
+# Short options the learner may type, and the long name they normalise to.
+_ALIASES = {"-t": "--ticket", "-s": "--step", "-u": "--untracked"}
+# Options that consume a following value and whose value is part of the answer.
+_VALUE_OPTS = {"--ticket", "--step", "--bsub-ram", "--lineage"}
+# Plumbing the tutorial supplies itself — consumed and ignored when matching.
+_IGNORED_VALUE_OPTS = {"--config", "--yaml", "--logging-level"}
 
 
 @dataclass(frozen=True)
-class Lesson:
-    """One step of the walkthrough: what to explain, what to run, what to look at."""
+class Parsed:
+    """A grit command line reduced to the parts that decide whether it is the right one."""
 
-    title: str
-    why: str
-    command: str
-    args: list[str] = field(default_factory=list)
-    watch: str = ""
-    status_after: bool = False
+    subcommand: str | None
+    ticket: str | None
+    flags: frozenset[str]
 
 
-LESSONS: list[Lesson] = [
-    Lesson(
-        title="setup — claim the ticket and build the workdir",
-        why=(
-            "Reads the ticket's YAML, works out where the curation workdir belongs "
-            "(the draft assembly path with assembly/draft swapped for working/), and "
-            "stages the draft assembly and the Pretext map into it. Every later step "
-            "resolves its inputs from what setup put there, so this always runs first."
-        ),
-        command="setup",
-        watch="The workdir path it prints — that is where everything below will land.",
-        status_after=True,
-    ),
-    Lesson(
-        title="pretext-to-asm — turn the curated Pretext map back into an assembly",
-        why=(
-            "This is the step you run after the manual curation in PretextView. It "
-            "converts the edited .pretext into an AGP and rebuilds a FASTA per "
-            "haplotype. It is the first step that produces a new *canonical* assembly."
-        ),
-        command="pretext-to-asm",
-        watch=(
-            "In the Canonical files table, both haplotypes now point into "
-            "pretext_to_asm/ instead of the draft."
-        ),
-        status_after=True,
-    ),
-    Lesson(
-        title="blast-contaminants — screen the curated assembly",
-        why=(
-            "Blasts the curated assembly against the contaminant databases and writes "
-            "a cleaned FASTA. Note what this does to canonical: grit never hardcodes a "
-            "step order — the freshest successful tracked output wins, so canonical "
-            "moves to blast_contaminants simply because it ran last."
-        ),
-        command="blast-contaminants",
-        watch="Canonical FA moved again — now blast_contaminants/.",
-        status_after=True,
-    ),
-    Lesson(
-        title="hic-remapping (hap1) — remap the HiC reads onto the curated assembly",
-        why=(
-            "Builds a fresh Pretext map from the curated assembly so you can look at it "
-            "again for a second curation round. It produces a map, not an assembly, so "
-            "it must NOT take canonical away from blast-contaminants."
-        ),
-        command="hic-remapping",
-        watch="",
-    ),
-    Lesson(
-        title="hic-remapping (hap2) — the same, for the second haplotype",
-        why=(
-            "--hap2 here is exclusive: it runs the second haplotype *instead of* the "
-            "first, so a diploid ticket needs both invocations. Other steps use --hap2 "
-            "additively (see rename-and-orient below) — the help text of each step says "
-            "which it is."
-        ),
-        command="hic-remapping",
-        args=["--hap2"],
-        watch="Canonical FA is still blast_contaminants — remapping never claims it.",
-        status_after=True,
-    ),
-    Lesson(
-        title="pretext-to-asm-recurate — the second curation round",
-        why=(
-            "Same idea as pretext-to-asm, but it consumes the map hic-remapping made and "
-            "applies the edits on top of the already-curated assembly. Run it once per "
-            "haplotype; the tutorial does hap1 here and hap2 next."
-        ),
-        command="pretext-to-asm-recurate",
-        watch="",
-    ),
-    Lesson(
-        title="pretext-to-asm-recurate (hap2)",
-        why="The second haplotype's recuration — again an exclusive --hap2.",
-        command="pretext-to-asm-recurate",
-        args=["--hap2"],
-        watch=(
-            "Each haplotype is tracked separately: hap1 canonical is "
-            "pretext_to_asm_recurate/, hap2 is pretext_to_asm_recurate_hap2/."
-        ),
-        status_after=True,
-    ),
-    Lesson(
-        title="rename-and-orient — name and orient the chromosomes",
-        why=(
-            "Compares the assembly to a reference and renames/flips scaffolds so the "
-            "chromosome numbering matches. Here --hap2 is additive: this one invocation "
-            "does both haplotypes."
-        ),
-        command="rename-and-orient",
-        args=["--hap2"],
-        watch="Canonical chains forward from recurate to rename_and_orient/.",
-        status_after=True,
-    ),
-    Lesson(
-        title="untrack — undo a step you should not have run",
-        why=(
-            "Suppose rename-and-orient used the wrong reference. `grit untrack` marks its "
-            "latest run non-canonical without deleting anything, and canonical falls back "
-            "to the next-freshest tracked output."
-        ),
-        command="untrack",
-        args=["-s", "rename_and_orient"],
-        watch=(
-            "hap1 canonical fell back to pretext_to_asm_recurate/, while hap2 is "
-            "untouched — rename_and_orient_hap2 is a separate step with its own history."
-        ),
-        status_after=True,
-    ),
-    Lesson(
-        title="retrack — put it back",
-        why=(
-            "The mirror image: it promotes the untracked run back to canonical using the "
-            "outputs already recorded for it. Nothing is re-run."
-        ),
-        command="retrack",
-        args=["-s", "rename_and_orient"],
-        watch="hap1 canonical is rename_and_orient/ again.",
-        status_after=True,
-    ),
-    Lesson(
-        title="finalize-qc — assemble the release",
-        why=(
-            "Copies the canonical assembly, AGP and chromosome list into the ticket's "
-            "assembly_curated/ release directory and gathers the QC numbers. Whatever was "
-            "canonical at this moment is what ships — which is why the Canonical column "
-            "above is worth reading before you run it."
-        ),
-        command="finalize-qc",
-        watch="The assembly_curated/ path it prints is the release directory.",
-        status_after=True,
-    ),
-]
+def parse_command(tokens: list[str]) -> Parsed:
+    """Normalise *tokens* into the (subcommand, ticket, flags) triple used for matching."""
+    toks = list(tokens)
+    if toks and toks[0] == "grit":
+        toks = toks[1:]
+
+    subcommand: str | None = None
+    ticket: str | None = None
+    flags: set[str] = set()
+
+    i = 0
+    while i < len(toks):
+        tok = toks[i]
+        if tok.startswith("-"):
+            name, eq, inline = tok.partition("=")
+            name = _ALIASES.get(name, name)
+            if name in _VALUE_OPTS or name in _IGNORED_VALUE_OPTS:
+                if eq:
+                    value = inline
+                else:
+                    value = toks[i + 1] if i + 1 < len(toks) else ""
+                    i += 1
+                if name in _IGNORED_VALUE_OPTS:
+                    pass
+                elif name == "--ticket":
+                    ticket = value
+                else:
+                    flags.add(f"{name}={value}")
+            elif name != "--dry-run":
+                # --dry-run is supplied by the tutorial, so typing it is neither
+                # required nor wrong.
+                flags.add(name)
+        elif subcommand is None:
+            subcommand = tok
+        i += 1
+
+    return Parsed(subcommand, ticket, frozenset(flags))
 
 
-def _display(lesson: Lesson, ticket: str) -> str:
-    """Return the command line as a curator would type it, without the tutorial's plumbing."""
-    parts = ["grit", lesson.command, "-t", ticket, *lesson.args, "--dry-run"]
-    return " ".join(parts)
+def expected_command(lesson: Lesson, ticket: str) -> Parsed:
+    """Return the Parsed form of the command *lesson* is asking for."""
+    return parse_command([lesson.command, "-t", ticket, *lesson.args])
+
+
+def expected_line(lesson: Lesson, ticket: str) -> str:
+    """Return the answer as a command line, for `??`."""
+    return " ".join(["grit", lesson.command, "-t", ticket, *lesson.args])
+
+
+def _flag_name(flag: str) -> str:
+    """Return a flag's bare name, dropping any =value part."""
+    return flag.split("=", 1)[0]
+
+
+def hint_for(got: Parsed, lesson: Lesson, ticket: str, known: set[str]) -> str:
+    """Return one sentence naming what is actually wrong with *got*."""
+    want = expected_command(lesson, ticket)
+
+    if got.subcommand is None:
+        return "That has no command in it — start with `grit`, then the step name."
+    if got.subcommand not in known:
+        return f"grit has no command called {got.subcommand!r}. `grit --help` lists them all."
+    if got.subcommand != want.subcommand:
+        return f"{got.subcommand!r} is a real step, but this lesson is about {want.subcommand!r}."
+    if got.ticket is None:
+        return f"Every grit step needs to know which ticket it is working on: add -t {ticket}."
+    if got.ticket != ticket:
+        return f"The sandbox ticket for this scenario is {ticket}, not {got.ticket!r}."
+
+    for flag in sorted(want.flags - got.flags):
+        name = _flag_name(flag)
+        if name in lesson.flag_hints:
+            return lesson.flag_hints[name]
+        return f"Something is missing: this step also needs {flag}."
+
+    for flag in sorted(got.flags - want.flags):
+        return (
+            f"{_flag_name(flag)} is not needed here — see `grit {want.subcommand} --help` "
+            "for what this step takes."
+        )
+
+    return "Close. Compare what you typed with `??`."
+
+
+def matches(got: Parsed, lesson: Lesson, ticket: str) -> bool:
+    """True when *got* is the command the lesson asked for."""
+    return got == expected_command(lesson, ticket)
+
+
+def _known_commands() -> set[str]:
+    from grit.core.click_cli import cli
+
+    return {name for name in cli.commands if not name.startswith("_")}
 
 
 def _run_grit(argv: list[str]) -> bool:
@@ -178,14 +134,14 @@ def _run_grit(argv: list[str]) -> bool:
         return False
     except SystemExit as exc:
         return exc.code in (0, None)
-    except Exception as exc:  # a step blowing up should not kill the lesson plan
+    except Exception as exc:  # a step blowing up should not end the lesson
         console.print(f"[bold red]Error:[/bold red] {exc}")
         return False
     return True
 
 
 def _reset_sandbox(ticket: str) -> None:
-    """Delete *ticket*'s dry-run workdir and registry entry, so the walkthrough starts clean."""
+    """Delete *ticket*'s dry-run workdir and registry entry, so a scenario starts clean."""
     from grit.core.registry import RegistryManager, dry_run_root
 
     workdir = dry_run_root() / ticket
@@ -196,83 +152,276 @@ def _reset_sandbox(ticket: str) -> None:
         reg.delete_ticket(ticket)
 
 
-def run_tutorial(config_path: Path, ticket: str, auto: bool = False) -> int:
-    """Walk through a full dry-run curation, one explained step at a time."""
-    if not Path(config_path).exists():
+def _ask(prompt: str = "") -> str:
+    return click.prompt(prompt, default="", show_default=False, prompt_suffix="> ").strip()
+
+
+def _explain(lesson: Lesson, n: int, total: int) -> None:
+    console.print(Panel(f"  {n}/{total}  {lesson.title}  ", style="bold magenta"))
+    console.print(lesson.why)
+    console.print(f"\n[bold]Your turn:[/bold] {lesson.task}")
+    console.print(
+        "[dim]Type the command. Other grit commands work too and won't skip ahead. "
+        "?=hint  ??=answer  r=re-read  s=skip  q=quit[/dim]"
+    )
+
+
+def _check_phase(lesson: Lesson, base: list[str], ticket: str) -> str:
+    """Nudge the learner to look at status; returns 'next' or 'quit'."""
+    console.print(
+        f"\n[bold yellow]Check it:[/bold yellow] run [bold]grit status -t {ticket}[/bold] "
+        f"and find — {lesson.check}"
+    )
+    while True:
+        raw = _ask()
+        if raw.lower() == "q":
+            return "quit"
+        if not raw:
+            return "next"
+        if raw.lower() in {"s", "?", "??", "r"}:
+            return "next"
+        tokens = _safe_tokens(raw)
+        if tokens is None:
+            continue
+        got = parse_command(tokens)
+        if _safe_to_run(got, lesson, ticket, tokens):
+            _run_grit([*base, *tokens])
+        else:
+            console.print(
+                f"[yellow]Not run — {hint_for(got, lesson, ticket, _known_commands())}[/yellow]"
+            )
+        console.print("[dim]Enter to move on.[/dim]")
+
+
+def _is_help(tokens: list[str]) -> bool:
+    return "--help" in tokens or "-h" in tokens
+
+
+def _safe_to_run(got: Parsed, lesson: Lesson, ticket: str, tokens: list[str]) -> bool:
+    """True when a command that isn't the lesson's answer should still be executed.
+
+    Only the read-only ones: `--help`, and `grit status` for this scenario's own
+    ticket. Running another *step* would be allowed by the sandbox but would
+    quietly invalidate the "run status and find X" line the next lesson makes —
+    and a missing --ticket is worse still, since the tutorial's own --yaml makes
+    grit derive one from the filename instead of failing.
+    """
+    if _is_help(tokens):
+        return True
+    return got.subcommand == "status" and got.ticket == ticket
+
+
+def _safe_tokens(raw: str) -> list[str] | None:
+    """Split *raw* into grit arguments, or None (with a message) when it is not runnable."""
+    try:
+        tokens = shlex.split(raw)
+    except ValueError:
+        console.print("[yellow]Unbalanced quotes — try again.[/yellow]")
+        return None
+    if not tokens:
+        return None
+    if tokens[0] != "grit":
+        console.print("[yellow]Commands start with `grit`. Type ? for a hint, q to quit.[/yellow]")
+        return None
+    rest = tokens[1:]
+    if rest and rest[0] == "init":
+        console.print(
+            "[yellow]`grit init` writes your real config, so the tutorial won't run it. "
+            "Everything else is sandboxed.[/yellow]"
+        )
+        return None
+    return rest
+
+
+def _run_lesson(lesson: Lesson, scenario: Scenario, base: list[str], n: int, total: int) -> str:
+    """Drive one lesson to completion; returns 'next' or 'quit'."""
+    _explain(lesson, n, total)
+    known = _known_commands()
+    last: Parsed | None = None
+
+    while True:
+        raw = _ask()
+        low = raw.lower()
+
+        if low == "q":
+            return "quit"
+        if low == "s":
+            console.print("[dim]skipped[/dim]")
+            return "next"
+        if low == "r":
+            _explain(lesson, n, total)
+            continue
+        if low == "??":
+            console.print(f"  [bold green]{expected_line(lesson, scenario.ticket)}[/bold green]")
+            continue
+        if low == "?":
+            if last is None:
+                console.print(
+                    f"[bold yellow]Hint:[/bold yellow] the step you want is "
+                    f"[bold]{lesson.command}[/bold]. Don't forget -t."
+                )
+            else:
+                console.print(
+                    f"[bold yellow]Hint:[/bold yellow] "
+                    f"{hint_for(last, lesson, scenario.ticket, known)}"
+                )
+            continue
+        if not raw:
+            continue
+
+        tokens = _safe_tokens(raw)
+        if tokens is None:
+            continue
+
+        if _is_help(tokens):
+            # Reading a step's --help is never a wrong answer, so it gets no hint.
+            _run_grit([*base, *tokens])
+            continue
+
+        got = parse_command(tokens)
+        if not matches(got, lesson, scenario.ticket):
+            last = got
+            if _safe_to_run(got, lesson, scenario.ticket, tokens):
+                _run_grit([*base, *tokens])
+            console.print(
+                f"\n[bold yellow]Still on this lesson:[/bold yellow] "
+                f"{hint_for(got, lesson, scenario.ticket, known)}"
+            )
+            continue
+
+        if not _run_grit([*base, *tokens]):
+            console.print(
+                "[bold red]That step failed.[/bold red] Quit with q and re-run the "
+                "scenario to start clean."
+            )
+        if lesson.check:
+            return _check_phase(lesson, base, scenario.ticket)
+        return "next"
+
+
+def _run_scenario_auto(scenario: Scenario, base: list[str]) -> None:
+    """Run every lesson's expected command unprompted (used by --auto and the smoke test)."""
+    for n, lesson in enumerate(scenario.lessons, start=1):
+        header = f"  {n}/{len(scenario.lessons)}  {lesson.title}  "
+        console.print(Panel(header, style="bold magenta"))
+        console.print(lesson.why)
+        line = expected_line(lesson, scenario.ticket)
+        console.print(f"\n  [bold green]$[/bold green] [bold]{line}[/bold]\n")
+        _run_grit([*base, lesson.command, "-t", scenario.ticket, *lesson.args])
+        if lesson.check:
+            console.print(f"\n[dim]$ grit status -t {scenario.ticket}[/dim]")
+            _run_grit([*base, "status", "-t", scenario.ticket])
+            console.print(f"\n[bold yellow]Check it:[/bold yellow] {lesson.check}")
+
+
+def run_scenario(scenario: Scenario, config_path: Path, auto: bool) -> None:
+    """Reset the scenario's sandbox and walk its lessons."""
+    _reset_sandbox(scenario.ticket)
+    base = [
+        "--config",
+        str(config_path),
+        "--yaml",
+        str(scenario.yaml_path),
+        "--dry-run",
+    ]
+
+    console.print(
+        Panel(
+            f"[bold]{scenario.title}[/bold]\n\n{scenario.blurb}\n\n"
+            f"Sandbox ticket: [bold]{scenario.ticket}[/bold] — every command runs for "
+            "real but under --dry-run, so nothing reaches Jira, LSF, lustre or your real "
+            f"registry. Outputs are placeholders under ~/.grit/dry_run/{scenario.ticket}/.",
+            style="bold cyan",
+        )
+    )
+
+    if auto:
+        _run_scenario_auto(scenario, base)
+        return
+
+    total = len(scenario.lessons)
+    for n, lesson in enumerate(scenario.lessons, start=1):
+        if _run_lesson(lesson, scenario, base, n, total) == "quit":
+            console.print("\nStopped. Re-run `grit tutorial` any time — it starts clean.")
+            return
+
+    console.print(
+        Panel(
+            "Scenario finished.\n\n"
+            "  • Canonical is not a fixed step order — the freshest successful tracked "
+            "output wins, per haplotype. `grit status -t <ticket>` is the only honest "
+            "answer to 'which file is current?'.\n"
+            "  • `grit untrack` / `grit retrack` back a step out without deleting anything.\n\n"
+            f"The sandbox is at ~/.grit/dry_run/{scenario.ticket}/ — poke around, then "
+            "`rm -rf ~/.grit/dry_run` to clear it.\n\n"
+            "`grit tutorial` again for another scenario; `grit --help` for everything else.",
+            style="bold cyan",
+        )
+    )
+
+
+def _choose_scenario() -> Scenario | None:
+    """Show the scenario menu; None when the learner quits."""
+    console.print(
+        Panel(
+            "[bold]grit tutorial[/bold] — learn the CLI by driving it.\n\n"
+            "Each scenario is a real curation run against a fictional ticket with "
+            "[bold]--dry-run[/bold]: no HPC job, no lustre path, no Jira, and a throwaway "
+            "registry. You type the commands; the tutorial explains each one first and "
+            "tells you what to look for afterwards.",
+            style="bold cyan",
+        )
+    )
+    for i, scenario in enumerate(SCENARIOS, start=1):
+        console.print(f"  [bold]{i}[/bold]  {scenario.title}\n     [dim]{scenario.blurb}[/dim]")
+    console.print("  [bold]q[/bold]  quit\n")
+
+    while True:
+        raw = _ask("Pick a scenario")
+        if raw.lower() == "q":
+            return None
+        if raw.isdigit() and 1 <= int(raw) <= len(SCENARIOS):
+            return SCENARIOS[int(raw) - 1]
+        console.print(f"[yellow]Enter 1-{len(SCENARIOS)}, or q.[/yellow]")
+
+
+@click.command("tutorial")
+@click.option(
+    "--scenario",
+    "scenario_key",
+    default=None,
+    help=f"Run one scenario directly: {', '.join(s.key for s in SCENARIOS)}.",
+)
+@click.option("--auto", is_flag=True, help="Run every lesson's command without prompting.")
+@click.option("--all", "run_all", is_flag=True, help="With --auto, run every scenario.")
+@click.pass_context
+def tutorial_cmd(ctx, scenario_key, auto, run_all):
+    """Guided --dry-run walkthrough of a curation, for learning the CLI."""
+    config_path = Path(ctx.obj.config_path)
+    if not config_path.exists():
         console.print(
             f"[bold red]No grit config at {config_path}.[/bold red]\n"
             "Run [bold]grit init[/bold] first — it writes one pre-filled with your username."
         )
-        return 1
+        raise SystemExit(1)
 
-    console.print(
-        Panel(
-            "[bold]grit tutorial[/bold] — a guided walkthrough of a whole curation.\n\n"
-            "Every command below is a real grit command, run for real, but with "
-            "[bold]--dry-run[/bold]: no HPC job is submitted and no lustre path is "
-            f"touched. Outputs are placeholder files under [bold]~/.grit/dry_run/{ticket}/[/bold], "
-            "and the step history goes into a throwaway registry next to it — your real "
-            "tickets are never involved.\n\n"
-            f"The ticket is fictional ({ticket}, specimen xxTutDemo1, a diploid "
-            "hap1/hap2 assembly).\n\n"
-            "[dim]At each step: Enter to run it, s to skip, q to quit.[/dim]",
-            style="bold cyan",
-        )
-    )
+    if run_all:
+        for scenario in SCENARIOS:
+            run_scenario(scenario, config_path, auto=True)
+        return
 
-    _reset_sandbox(ticket)
-    base = ["--config", str(config_path), "--yaml", str(DEMO_YAML), "--dry-run"]
-
-    for n, lesson in enumerate(LESSONS, start=1):
-        console.print(Panel(f"  {n}/{len(LESSONS)}  {lesson.title}  ", style="bold magenta"))
-        console.print(lesson.why)
-        console.print(f"\n  [bold green]$[/bold green] [bold]{_display(lesson, ticket)}[/bold]\n")
-
-        if not auto:
-            choice = click.prompt("", default="", show_default=False, prompt_suffix="> ").strip()
-            if choice.lower() == "q":
-                console.print("\nStopped. Re-run `grit tutorial` any time — it starts clean.")
-                return 0
-            if choice.lower() == "s":
-                console.print("[dim]skipped[/dim]")
-                continue
-
-        if not _run_grit([*base, lesson.command, "-t", ticket, *lesson.args]):
-            console.print(
-                "[bold red]That step failed.[/bold red] The walkthrough continues, but later "
-                "steps may not make sense — quit with q and re-run `grit tutorial` to reset."
+    if scenario_key:
+        scenario = find_scenario(scenario_key)
+        if scenario is None:
+            raise click.UsageError(
+                f"Unknown scenario {scenario_key!r} — "
+                f"choose from: {', '.join(s.key for s in SCENARIOS)}"
             )
+    elif auto:
+        scenario = SCENARIOS[0]
+    else:
+        scenario = _choose_scenario()
+        if scenario is None:
+            return
 
-        if lesson.status_after:
-            console.print("\n[dim]$ grit --dry-run status -t " + ticket + "[/dim]")
-            _run_grit([*base, "status", "-t", ticket])
-
-        if lesson.watch:
-            console.print(f"\n[bold yellow]Look at:[/bold yellow] {lesson.watch}")
-
-    console.print(
-        Panel(
-            "That is the whole chain.\n\n"
-            "Two things worth remembering:\n"
-            "  • Canonical is not a fixed step order — the freshest successful tracked "
-            "output wins, per haplotype. `grit status -t <ticket>` always tells you "
-            "which file is current.\n"
-            "  • `grit untrack` / `grit retrack` are how you back out of a step without "
-            "deleting anything.\n\n"
-            f"The sandbox is at ~/.grit/dry_run/{ticket}/ — poke around in it, then "
-            "`rm -rf ~/.grit/dry_run` (or just re-run this tutorial) to clear it.\n\n"
-            "Next: `grit --help` for the full command list, and `grit <command> --help` "
-            "for a step's flags.",
-            style="bold cyan",
-        )
-    )
-    return 0
-
-
-@click.command("tutorial")
-@click.option("--ticket", "-t", default=DEFAULT_TICKET, help="Sandbox ticket ID to use.")
-@click.option("--auto", is_flag=True, help="Run every step without prompting.")
-@click.pass_context
-def tutorial_cmd(ctx, ticket, auto):
-    """Guided --dry-run walkthrough of a full curation, for learning the CLI."""
-    raise SystemExit(run_tutorial(Path(ctx.obj.config_path), ticket, auto=auto))
+    run_scenario(scenario, config_path, auto=auto)

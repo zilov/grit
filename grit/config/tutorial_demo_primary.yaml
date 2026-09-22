@@ -1,0 +1,39 @@
+---
+# Fictional single-hap (primary/alternate) ticket for `grit tutorial`'s
+# single-hap scenario. Nothing here points at a real specimen or a real lustre
+# path — every step runs under --dry-run, inside ~/.grit/dry_run/.
+species: Solotaxa monoploidea
+specimen: xxTutSolo1
+projects:
+  - tol
+data_location: Sanger RW
+primary: /lustre/scratch124/tol/projects/tol/data/demo/Solotaxa_monoploidea/assembly/draft/xxTutSolo1.20260101/xxTutSolo1.20260101.fa.gz
+agp: /lustre/scratch124/tol/projects/tol/data/demo/Solotaxa_monoploidea/assembly/draft/xxTutSolo1.20260101/scaffolds_FINAL.agp
+primary_contigs: /lustre/scratch124/tol/projects/tol/data/demo/Solotaxa_monoploidea/assembly/draft/xxTutSolo1.20260101/xxTutSolo1.20260101.primary_contigs.fa.gz
+haplotigs: /lustre/scratch124/tol/projects/tol/data/demo/Solotaxa_monoploidea/assembly/draft/xxTutSolo1.20260101/xxTutSolo1.20260101.haplotigs.fa.gz
+mito: /lustre/scratch124/tol/projects/tol/data/demo/Solotaxa_monoploidea/assembly/draft/xxTutSolo1.20260101/xxTutSolo1-MT.fa.gz
+pacbio_read_dir: /lustre/scratch124/tol/projects/tol/data/demo/Solotaxa_monoploidea/genomic_data/xxTutSolo1/pacbio
+hic_read_dir: /lustre/scratch124/tol/projects/tol/data/demo/Solotaxa_monoploidea/genomic_data/xxTutSolo1/hic-arima2
+pacbio_read_type: hifi
+hic_kit: Arima2
+hic: /lustre/scratch124/tol/projects/tol/data/demo/Solotaxa_monoploidea/assembly/draft/xxTutSolo1.20260101/scaffolds_FINAL.hic
+pretext: /lustre/scratch124/tol/projects/tol/data/demo/Solotaxa_monoploidea/assembly/draft/xxTutSolo1.20260101/scaffolds_FINAL.pretext
+hic_map_img: /lustre/scratch124/tol/projects/tol/data/demo/Solotaxa_monoploidea/assembly/draft/xxTutSolo1.20260101/scaffolds_FINAL_FullMap.png
+kmer_spectra_img: /lustre/scratch124/tol/projects/tol/data/demo/Solotaxa_monoploidea/assembly/draft/xxTutSolo1.20260101/scaffolds_FINAL.css.spectra-cn.ln.png
+busco_lineage: mollusca_odb10
+ploidy: haploid
+priority: Normal
+pipeline:
+  - hifiasm (version 0.19.8-r603)
+  - yahs (version 1.2a.2)
+notes:
+  - fictional assembly, for the `grit tutorial` walkthrough only
+stats: |
+  merqury QV (CCS): 59.8
+  merqury KMER completeness (CCS): 98.40
+  BUSCO: C:94.0%[S:93.0%,D:1.0%],F:2.0%,M:4.0%,n:100
+  SCAFFOLD	sum = 780000000, n = 420, mean = 1857142.9, largest = 58000000, smallest = 1000
+  SCAFFOLD	N50 = 31000000, L50 = 9
+  CONTIG	sum = 779800000, n = 1310, mean = 595267.2, largest = 7400000, smallest = 1000
+  CONTIG	N50 = 980000, L50 = 210
+  GAP	sum = 200000, n = 1000, mean = 200, largest = 200, smallest = 200

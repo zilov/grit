@@ -293,27 +293,53 @@ assert_canonical "$s4" hap1 "assembly FA" "blast_contaminants/" "[S4] hap1 canon
 # accepted for backward compatibility but is no longer used by this script.
 
 # ---------------------------------------------------------------------------
-# Scenario 5: `grit tutorial --auto` end to end.
-#   The tutorial drives grit's own CLI in-process with its bundled demo YAML,
-#   so a step whose dry-run branch breaks (or a lesson naming a command that
-#   no longer exists) shows up here rather than in front of a new curator.
+# Scenario 5: `grit tutorial --auto` end to end, per scenario.
+#   The tutorial drives grit's own CLI in-process with its bundled demo YAMLs,
+#   so a step whose dry-run branch breaks, a lesson naming a command that no
+#   longer exists, or a "run status and find X" claim that stopped being true
+#   shows up here rather than in front of a new curator. Each scenario is run
+#   on its own so the assertion sees only that scenario's final canonical table.
 # ---------------------------------------------------------------------------
 echo ""
 echo "--- Scenario 5: grit tutorial --auto ---"
-T5="dry_run_tutorial"
 
-if tutorial_output=$(grit --config "$CONFIG" tutorial --auto -t "$T5" 2>&1); then
-    ok "[S5] tutorial --auto ran every lesson"
-else
-    fail "[S5] tutorial --auto failed:
+# final_canonical_table OUTPUT — the last "Canonical files" table in a transcript.
+final_canonical_table() {
+    echo "$1" | awk '/Canonical files/{buf=""} {buf=buf"\n"$0} END{print buf}'
+}
+
+run_tutorial_scenario() {
+    local key="$1"
+    if ! tutorial_output=$(grit --config "$CONFIG" tutorial --auto --scenario "$key" 2>&1); then
+        fail "[S5] tutorial scenario '$key' failed:
 $tutorial_output"
+        return 1
+    fi
+    ok "[S5] tutorial scenario '$key' ran every lesson"
+}
+
+run_tutorial_scenario standard
+std=$(final_canonical_table "$tutorial_output")
+assert_canonical "$std" hap1 "assembly FA" "rename_and_orient/" "[S5] standard ends with hap1 canonical = rename_and_orient"
+assert_canonical "$std" hap2 "assembly FA" "rename_and_orient_hap2/" "[S5] standard ends with hap2 canonical = rename_and_orient_hap2"
+
+run_tutorial_scenario single-hap
+solo=$(final_canonical_table "$tutorial_output")
+assert_canonical "$solo" primary "assembly FA" "pretext_to_asm_recurate/" "[S5] single-hap ends with primary canonical = pretext_to_asm_recurate"
+echo "$solo" | grep -q "│ alternate " \
+    && fail "[S5] the single-hap scenario fabricated an 'alternate' canonical row" \
+    || ok "[S5] single-hap scenario shows no 'alternate' row"
+
+run_tutorial_scenario oops
+oops=$(final_canonical_table "$tutorial_output")
+assert_canonical "$oops" hap1 "assembly FA" "blast_contaminants/" "[S5] oops ends with canonical bounced back to blast_contaminants"
+
+# --all is what CI would reach for; assert only that it completes.
+if grit --config "$CONFIG" tutorial --auto --all >/dev/null 2>&1; then
+    ok "[S5] tutorial --auto --all completed"
+else
+    fail "[S5] tutorial --auto --all failed"
 fi
-# The tutorial prints a status table after most lessons, so assert against the
-# LAST "Canonical files" table only — grepping the whole transcript would match
-# an intermediate table and pass even if the final state were wrong.
-tutorial_final=$(echo "$tutorial_output" | awk '/Canonical files/{buf=""} {buf=buf"\n"$0} END{print buf}')
-assert_canonical "$tutorial_final" hap1 "assembly FA" "rename_and_orient/" "[S5] tutorial ends with hap1 canonical = rename_and_orient"
-assert_canonical "$tutorial_final" hap2 "assembly FA" "rename_and_orient_hap2/" "[S5] tutorial ends with hap2 canonical = rename_and_orient_hap2"
 
 rm -rf ~/.grit/dry_run
 ok "dry-run sandbox cleaned up"
