@@ -1,6 +1,5 @@
 """Run BUSCO on curated genome."""
 
-import glob
 import logging
 from pathlib import Path
 
@@ -12,7 +11,7 @@ from grit.utils.helpers import (
     _state_update_epilogue,
     _submit_bsub,
     build_bsub_opts,
-    find_latest_dir,
+    find_canonical_fa,
     write_fake_outputs,
 )
 from grit.utils.modules import module_cmd
@@ -63,7 +62,7 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     Runs BUSCO analysis on the curated genome assembly.
 
     Steps:
-        1. Find the curated FASTA file (merged or hap1 curated.fa).
+        1. Resolve hap1's canonical curated FASTA.
         2. Determine file size and select appropriate memory allocation.
         3. Submit BUSCO job via bsub using singularity.
 
@@ -95,16 +94,10 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
         return
 
     # --- find curated FASTA ---
-    # haplotig-files writes *.curated.fa into the pretext_to_asm run dir, not workdir root
     if ctx.print_only:
         curated_fa = ctx.workdir / f"{ctx.tol_id}_merged_curated.{ctx.hap1_prefix}.fa"
     else:
-        base_dir = find_latest_dir(ctx, "pretext_to_asm")
-        curated_pattern = str(base_dir / f"{ctx.tol_id}*.curated.fa")
-        curated_matches = glob.glob(curated_pattern)
-        if not curated_matches:
-            raise FileNotFoundError(f"No curated FASTA found: {curated_pattern}")
-        curated_fa = Path(sorted(curated_matches)[-1])
+        curated_fa = find_canonical_fa(ctx, ctx.hap1_prefix)
     log.info("Curated FASTA: %s", curated_fa)
 
     # --- determine file size and memory ---

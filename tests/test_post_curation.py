@@ -1526,9 +1526,9 @@ def test_run_busco_synteny_dry_run_short_circuits(
 
 
 @patch("grit.steps.optional.busco_curated._submit_bsub")
-@patch("grit.steps.optional.busco_curated.find_latest_dir")
+@patch("grit.steps.optional.busco_curated.find_canonical_fa")
 def test_run_busco_curated_dry_run_short_circuits(
-    mock_find_latest_dir, mock_bsub, mock_ctx, tmp_path
+    mock_find_canonical_fa, mock_bsub, mock_ctx, tmp_path
 ):
     """dry_run must skip curated-FASTA lookup + bsub submission entirely and
     write its placeholder outputs into the tracked run_dir, flat, the way the
@@ -1546,7 +1546,7 @@ def test_run_busco_curated_dry_run_short_circuits(
     run_busco_curated(mock_ctx, lineage="insecta_odb10")
 
     mock_bsub.assert_not_called()
-    mock_find_latest_dir.assert_not_called()
+    mock_find_canonical_fa.assert_not_called()
 
     run_dir = mock_ctx.tracker.latest_run_dir("busco_curated")
     assert run_dir.is_dir()
@@ -1850,3 +1850,39 @@ def test_busco_curated_output_specs_are_registered(tmp_path):
 
     assert str(summary) in outputs.values()
     assert str(full_table) in outputs.values()
+
+
+@patch("grit.steps.optional.busco_curated._submit_bsub")
+def test_busco_curated_analyses_the_canonical_hap1_fasta(mock_bsub, mock_ctx, tmp_path):
+    """The old glob took sorted(matches)[-1] from the pretext_to_asm dir, which
+    on a dual-hap ticket is hap2 — and could be a haplotig FASTA on a single-hap
+    one. BUSCO must run on hap1's canonical assembly."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+    from grit.steps.optional.busco_curated import run_busco_curated
+
+    mock_ctx.workdir = tmp_path
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+
+    pta_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
+    pta_dir.mkdir(parents=True)
+    hap1_fa = pta_dir / f"{mock_ctx.tol_id}.hap1.1.primary.curated.fa"
+    hap2_fa = pta_dir / f"{mock_ctx.tol_id}.hap2.1.primary.curated.fa"
+    haplotigs = pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa"
+    for f in (hap1_fa, hap2_fa, haplotigs):
+        f.write_text(">seq\nACGT\n")
+    mock_ctx.tracker.finish(
+        "pretext_to_asm",
+        pta_dir,
+        "success",
+        outputs={"hap1_fa": str(hap1_fa), "hap2_fa": str(hap2_fa)},
+    )
+    mock_bsub.return_value = "12345"
+
+    run_busco_curated(mock_ctx, "insecta_odb10")
+
+    inner_cmd = mock_bsub.call_args[0][0]
+    tokens = inner_cmd.split()
+    assert tokens[tokens.index("-i") + 1] == str(hap1_fa)

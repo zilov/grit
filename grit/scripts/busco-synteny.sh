@@ -82,12 +82,6 @@ run_busco_if_needed() {
     singularity exec -B /lustre $IMAGE busco -i "$fasta" -o "$outdir" -m genome \
         -l /lustre/scratch122/tol/resources/busco/latest/lineages/$buscoLineage -c 32
     mv "${outdir}/run_${buscoLineage}/full_table.tsv" "$flat_table"
-    # TODO: verify this short-summary filename against a real BUSCO v5 run —
-    # BUSCO v5 is documented to write
-    # short_summary.specific.<lineage>.<outdir>.txt directly inside <outdir>,
-    # but this hasn't been confirmed against actual cluster output for this
-    # image/version. If the mv below fails silently in practice, check the
-    # actual filename BUSCO produced under "${outdir}/" and fix this line.
     mv "${outdir}/short_summary.specific.${buscoLineage}.${outdir}.txt" "$flat_summary"
     if [ -z "$filesKeep" ]; then
         rm -rf "$outdir"

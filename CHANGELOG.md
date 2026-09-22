@@ -23,6 +23,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - `hic-remapping` notifies curators with nextflow's `-N`: `curationpretext` accepts `--email` but never sends anything, so no mail ever arrived.
 - `blast-contaminants` loads the grit module before its ruby scripts, which need its gems — without it `remove_contamination_bed` died with `cannot load such file -- bio`. The lineage is also parsed from the last non-empty stdout line, so module chatter can't corrupt it.
+- `busco-curated` analyses hap1's canonical FASTA. It used to take the alphabetically last `*.curated.fa` in the pretext-to-asm run dir, which on a dual-hap ticket is hap2's, ignored `blast-contaminants`/`rename-and-orient` output entirely, and on a single-hap ticket could pick a haplotig FASTA.
+- `busco-curated` writes its results into the step's own run dir instead of losing them. Its `-o` was given an absolute path, but BUSCO's `-o` is a name — the directory belongs in `--out_path` — so BUSCO stripped the leading slash and recreated the whole tree relative to its cwd, which, with no `cd` into the run dir, was whatever directory the curator submitted from. The step also had no output specs, so the `bsub -Ep` epilogue recorded `success` with no outputs at all and nothing showed the loss.
 - `microchromosome-second-shot`'s output specs match the flat layout the script really writes, so `collect_outputs()` stops matching nothing and `microchromosome-combine` stops dying on run dirs that hold all of their inputs. A missing input now fails with what to run instead of handing a non-existent path to the external script.
 
 ## [0.4.1] - 2026-09-04
