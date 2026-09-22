@@ -13,6 +13,7 @@ from grit.utils.helpers import (
     _submit_bsub,
     build_bsub_opts,
     find_latest_dir,
+    write_fake_outputs,
 )
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
@@ -29,19 +30,27 @@ log = logging.getLogger(__name__)
 _BUSCO_SIF = "/nfs/treeoflife-01/teams/grit/users/mh6/singularity/busco.sif"
 _BUSCO_LINEAGES = "/lustre/scratch122/tol/resources/busco/latest/lineages"
 
+# BUSCO always creates a folder of its own named after -o and refuses to write
+# into an existing one (-f makes it rm -rf that folder instead, which on the run
+# dir would delete the LSF logs and its own cwd). So it writes into a staging
+# subdir that is flattened into the run dir as soon as it finishes.
+_BUSCO_STAGE_DIR = "busco_out"
+_OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
+    ("summary", "short_summary.specific.*.txt", []),
+    ("full_table", "run_*/full_table.tsv", []),
+]
+
 
 # ---------------------------------------------------------------------------
 # Dry-run
 # ---------------------------------------------------------------------------
 
 
-def _dry_run_busco_curated(ctx: CurationContext) -> Path:
-    """Write a placeholder BUSCO output dir/file directly under ctx.workdir."""
-    output_dir = ctx.workdir / f"{ctx.tol_id}_busco_singularity"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    placeholder = output_dir / "placeholder.txt"
-    placeholder.write_text("fake\n")
-    return output_dir
+def _dry_run_busco_curated(ctx: CurationContext, run_dir: Path) -> dict[str, str]:
+    """Write one placeholder per _OUTPUT_SPECS into *run_dir*, returning {key: path}."""
+    return write_fake_outputs(
+        "busco_curated", run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -64,12 +73,9 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
         - < 3GB: 150GB
         - >= 3GB: 220GB
 
-    Command structure:
-        bsub -q normal -e e_busco_{mem_gb} -o o_busco_{mem_gb} -n 32 -M {mem_mb} \\
-            -R'select[mem>{mem_mb}] rusage[mem={mem_mb}] span[hosts=1]' \\
-            module load grit && singularity exec -B /lustre {_BUSCO_SIF} busco \\
-                -i {input_fa} -o {output_dir} -m genome \\
-                -l {_BUSCO_LINEAGES}/{lineage} -c 32 -f
+    BUSCO runs from the step's run dir and writes into a staging subdir that is
+    flattened into it on success, so the outputs sit directly in
+    ``{workdir}/busco_curated/{timestamp}/`` beside the LSF logs.
 
     Prints:
         Step header, input FASTA, file size, memory allocation, bsub command.
@@ -81,9 +87,11 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
         run_dir = ctx.tracker.start(
             "busco_curated", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
         )
-        output_dir = _dry_run_busco_curated(ctx)
-        ctx.tracker.finish("busco_curated", run_dir, "success", untracked=ctx.untracked)
-        print_done(f"[dry-run] BUSCO on curated genome → {output_dir}")
+        outputs = _dry_run_busco_curated(ctx, run_dir)
+        ctx.tracker.finish(
+            "busco_curated", run_dir, "success", outputs=outputs, untracked=ctx.untracked
+        )
+        print_done(f"[dry-run] BUSCO on curated genome → {run_dir}")
         return
 
     # --- find curated FASTA ---
@@ -120,24 +128,27 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
     log.info("File size: %.2f GB", file_size_gb)
     log.info("Memory allocation: %d GB", mem_gb)
 
-    # --- build output dir ---
-    output_dir = ctx.workdir / f"{ctx.tol_id}_busco_singularity"
-
     # --- build inner command ---
-    busco_lineage = str(Path(_BUSCO_LINEAGES) / lineage)
-    inner_cmd = (
-        f"{module_cmd('GRIT')} && "
-        f"singularity exec -B /lustre {_BUSCO_SIF} busco "
-        f"-i {curated_fa} -o {output_dir} -m genome "
-        f"-l {busco_lineage} -c 32 -f"
-    )
-
-    # --- build bsub options ---
+    # BUSCO's -o is a *name*, not a path: given a path it strips the leading
+    # slash and recreates the whole tree under the cwd. The directory goes in
+    # --out_path, and the cd keeps busco_downloads/ out of wherever grit ran.
     run_dir = (
         ctx.tracker.start("busco_curated", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
         if ctx.tracker
-        else None
+        else ctx.workdir / "busco_curated" / "untracked"
     )
+    stage_dir = run_dir / _BUSCO_STAGE_DIR
+    busco_lineage = str(Path(_BUSCO_LINEAGES) / lineage)
+    inner_cmd = (
+        f"cd {run_dir} && "
+        f"{module_cmd('GRIT')} && "
+        f"singularity exec -B /lustre {_BUSCO_SIF} busco "
+        f"-i {curated_fa} -o {_BUSCO_STAGE_DIR} --out_path {run_dir} -m genome "
+        f"-l {busco_lineage} -c 32 && "
+        f"mv {stage_dir}/* {run_dir}/ && rmdir {stage_dir}"
+    )
+
+    # --- build bsub options ---
     bsub_opts = build_bsub_opts(
         memory_mb=mem_mb,
         cores=32,

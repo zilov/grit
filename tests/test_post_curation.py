@@ -1531,7 +1531,8 @@ def test_run_busco_curated_dry_run_short_circuits(
     mock_find_latest_dir, mock_bsub, mock_ctx, tmp_path
 ):
     """dry_run must skip curated-FASTA lookup + bsub submission entirely and
-    write the placeholder output dir as a sibling of the tracked run_dir."""
+    write its placeholder outputs into the tracked run_dir, flat, the way the
+    real run leaves them."""
     from grit.core.registry import RegistryManager
     from grit.core.run_tracker import RunTracker
     from grit.steps.optional.busco_curated import run_busco_curated
@@ -1547,9 +1548,12 @@ def test_run_busco_curated_dry_run_short_circuits(
     mock_bsub.assert_not_called()
     mock_find_latest_dir.assert_not_called()
 
-    output_dir = tmp_path / f"{mock_ctx.tol_id}_busco_singularity"
-    assert output_dir.is_dir()
-    assert any(output_dir.iterdir())
+    run_dir = mock_ctx.tracker.latest_run_dir("busco_curated")
+    assert run_dir.is_dir()
+    assert list(run_dir.glob("short_summary.specific.*.txt"))
+    assert list(run_dir.glob("run_*/full_table.tsv"))
+    outputs = mock_ctx.tracker.history("busco_curated")[-1]["outputs"]
+    assert set(outputs) == {"summary", "full_table"}
 
 
 # ---------------------------------------------------------------------------
@@ -1768,3 +1772,81 @@ def test_finalize_for_qc_ships_the_canonical_map_not_the_newest_run_dir(
     assert map_copies, "no pretext map was copied"
     assert any(str(kept) in c for c in map_copies)
     assert not any(str(rejected) in c for c in map_copies)
+
+
+# ---------------------------------------------------------------------------
+# run_busco_curated — output location and tracked outputs
+# ---------------------------------------------------------------------------
+
+
+def _busco_ctx(mock_ctx, tmp_path):
+    """print-only ctx with a tracker, so the step takes its real run_dir path."""
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.print_only = True
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tracker = RunTracker(tmp_path, print_only=True)
+    return mock_ctx
+
+
+@patch("grit.steps.optional.busco_curated._submit_bsub")
+def test_busco_curated_runs_from_its_own_run_dir(mock_bsub, mock_ctx, tmp_path):
+    """Without a cd the job inherits the submitting shell's cwd, so BUSCO's
+    busco_downloads/ and its output land wherever grit happened to be run."""
+    from grit.steps.optional.busco_curated import run_busco_curated
+
+    ctx = _busco_ctx(mock_ctx, tmp_path)
+    mock_bsub.return_value = "12345"
+
+    run_busco_curated(ctx, "insecta_odb10")
+
+    inner_cmd = mock_bsub.call_args[0][0]
+    assert inner_cmd.startswith(f"cd {tmp_path / 'busco_curated'}/")
+
+
+@patch("grit.steps.optional.busco_curated._submit_bsub")
+def test_busco_curated_passes_a_name_to_o_and_the_dir_to_out_path(mock_bsub, mock_ctx, tmp_path):
+    """BUSCO's -o is a name, not a path: given an absolute path it strips the
+    leading slash and recreates the whole tree under the cwd."""
+    from grit.steps.optional.busco_curated import run_busco_curated
+
+    ctx = _busco_ctx(mock_ctx, tmp_path)
+    mock_bsub.return_value = "12345"
+
+    run_busco_curated(ctx, "insecta_odb10")
+
+    inner_cmd = mock_bsub.call_args[0][0]
+    tokens = inner_cmd.split()
+    out_name = tokens[tokens.index("-o") + 1]
+    out_path = tokens[tokens.index("--out_path") + 1]
+    cd_target = tokens[tokens.index("cd") + 1]
+
+    assert "/" not in out_name
+    assert out_path == cd_target
+    # BUSCO refuses to write into the non-empty run dir and -f would rm -rf it
+    # (LSF logs and its own cwd included), so it stages into a subdir that is
+    # flattened into the run dir on success.
+    assert f"mv {cd_target}/{out_name}/* {cd_target}/" in inner_cmd
+    assert f"rmdir {cd_target}/{out_name}" in inner_cmd
+    assert " -f" not in inner_cmd
+
+
+def test_busco_curated_output_specs_are_registered(tmp_path):
+    """Without specs the bsub -Ep epilogue re-globs nothing and the run is
+    recorded as success with no outputs at all."""
+    from grit.utils.helpers import _get_step_specs, collect_outputs
+
+    specs = _get_step_specs("busco_curated")
+    assert specs, "busco_curated has no _OUTPUT_SPECS wired into _get_step_specs"
+
+    tol_id = "ilRecLeuc5"
+    (tmp_path / "run_lepidoptera_odb10").mkdir()
+    summary = tmp_path / "short_summary.specific.lepidoptera_odb10.busco_out.txt"
+    summary.write_text("C:97.0%\n")
+    full_table = tmp_path / "run_lepidoptera_odb10" / "full_table.tsv"
+    full_table.write_text("# Busco id\n")
+
+    outputs = collect_outputs(specs, tmp_path, tol_id, hap1="hap1", hap2="hap2")
+
+    assert str(summary) in outputs.values()
+    assert str(full_table) in outputs.values()
