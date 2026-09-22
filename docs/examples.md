@@ -4,6 +4,7 @@
 
 - [1. Installation](#1-installation)
 - [2. Standard workflow](#2-standard-workflow)
+  - [AGP tags are checked before anything is submitted](#agp-tags-are-checked-before-anything-is-submitted)
 - [3. Optional steps](#3-optional-steps)
 - [4. `grit status`](#4-grit-status)
 - [5. Useful flags](#5-useful-flags)
@@ -83,6 +84,20 @@ grit finalize-qc -t RC-1234
 grit pp -t RC-1234
 ```
 
+### AGP tags are checked before anything is submitted
+
+`pretext-to-asm` reads the PretextView tags out of the AGP and refuses to run
+on one that would silently produce a wrong assembly, rather than producing it:
+
+- **a single-hap assembly curated in a combined map with no `primary` tag.**
+  Without it `pretext-to-asm` cannot tell the primary scaffolds apart from
+  whatever was merged into the map, and would write a wrong or empty primary
+  FASTA. Tag the primary scaffolds in PretextView, re-export the AGP, copy it
+  over and re-run.
+
+The recurate step adds one more check of its own — see
+[§8](#8-re-curating-an-already-curated-map).
+
 ## 3. Optional steps
 
 Run these as needed, typically after `setup` or after `pretext-to-asm`.
@@ -148,15 +163,18 @@ For a single ticket this prints, in order:
 
 - **Curation summary** — species, assembly type, workdir, and other metadata
   pulled from the ticket.
-- **Canonical files** table — assembly FASTA / haplotigs FASTA / chr list for
-  each haplotype, with a ✓/✗ for whether each one was found. Canonical FASTA used
-  as input for (almost) all steps.
+- **Canonical files** table — assembly FASTA / haplotigs FASTA / chr list /
+  remapped Pretext map for each haplotype, with a ✓/✗ for whether each one was
+  found. Canonical FASTA used as input for (almost) all steps.
+- **Reference** table — which reference `find-reference` resolved for this
+  ticket, covering every state: not run yet, still running, nothing found,
+  found, or recorded but since gone from disk.
 - **Step history** table — every step run for the ticket, with run count,
   last-run timestamp, live status, job ID, and an `agp_copied` row showing whether the
   curated `.agp` has landed in the workdir yet.
 - **scp / less tips** — ready-to-paste commands for pulling result files
-  (FastGA plots, BUSCO synteny plots, remapped pretext maps) down to your
-  local machine, or `less`-ing a summary file directly on the farm, for any
+  (FastGA plots, BUSCO synteny plots, the canonical remapped Pretext map) down
+  to your local machine, or `less`-ing a summary file directly on the farm, for any
   step that completed successfully.
 - **AGP copy command** — the exact `scp` command to copy your locally-saved
   `.agp` from PretextView up to the workdir.
@@ -224,14 +242,20 @@ Two details worth knowing:
 
 - It is decided **per haplotype**. Recurating hap1 does not touch hap2's
   canonical file.
-- The chromosome list and haplotigs follow the same rule over smaller sets —
-  `blast-contaminants` doesn't affect the chromosome list, and only
-  `pretext-to-asm`/`pretext-to-asm-recurate` affect haplotigs. So a recurate run
-  can legitimately own the haplotigs while a later `rename-and-orient` owns the
-  FASTA. That is not a conflict.
+- The chromosome list, haplotigs and Pretext map follow the same rule over
+  smaller sets — `blast-contaminants` doesn't affect the chromosome list, only
+  `pretext-to-asm`/`pretext-to-asm-recurate` affect haplotigs, and only
+  `hic-remapping` affects the map. So a recurate run can legitimately own the
+  haplotigs while a later `rename-and-orient` owns the FASTA. That is not a
+  conflict.
 
-Steps like `hic-remapping`, `qv` and `finalize-qc` read the canonical files but
-never become canonical themselves.
+`hic-remapping` is the one step outside that list that produces a canonical
+file of its own: the remapped Pretext map (`*normal.pretext`) for the haplotype
+it ran on. It competes for nothing else — it reads the canonical FASTA and
+never replaces it. A ticket accumulates one remapping run per round, and the
+freshest is the map that `grit status` offers for download and that
+`finalize-qc` ships. `qv` and `finalize-qc` read canonical files and produce
+none.
 
 ### Seeing it
 
@@ -242,12 +266,12 @@ grit status -t RC-1234
 Two places in that output answer the question:
 
 - the **Canonical files** table — the actual path per haplotype for assembly
-  FASTA, haplotigs and chromosome list, with a ✓/✗ for whether it's still on
-  disk;
+  FASTA, haplotigs, chromosome list and Pretext map, with a ✓/✗ for whether
+  it's still on disk;
 - the **Canonical** column in the step-history table — marks which step each
   file currently comes from: `fa` (assembly FASTA), `hap` (haplotigs), `chr`
-  (chromosome list), with a `(1)`/`(2)` haplotype index when the ticket has more
-  than one. A row reading `hap(1),chr(1)` and a later row reading `fa(1)` means
+  (chromosome list), `map` (Pretext map), with a `(1)`/`(2)` haplotype index
+  when the ticket has more than one. A row reading `hap(1),chr(1)` and a later row reading `fa(1)` means
   they own different files, not that they disagree.
 
 If one of these steps ran and you are not happy with the result, **you do not
@@ -358,6 +382,13 @@ grit hic-remapping -t RC-1234 [--hap2]
 grit post-curation-recurate -t RC-1234 [--hap2]
 ```
 
+A recurate map is built from the curated FASTA, so scaffolds curated as unlocs
+in the previous round arrive with their names intact but their tags gone. Left
+that way they would be promoted back to normal scaffolds in the new assembly,
+so `pretext-to-asm-recurate` checks for it and refuses to run, listing the
+scaffolds to re-tag. It looks at both the scaffold name and the component, so
+it catches this whether the map was rebuilt from the curated FASTA or re-mapped.
+
 The recurate step reads whatever is canonical at that moment as its input, and
 its own output becomes canonical. Repeat from step 1 for another round, or
 carry on with `blast-contaminants` / `rename-and-orient` — each of those, run
@@ -370,7 +401,10 @@ grit finalize-qc -t RC-1234
 ## 9. Worked pipelines, with canonical shown at each step
 
 Each block shows what `grit status -t` would report as canonical after each
-command. `fa` = assembly FASTA, `chr` = chromosome list, `hap` = haplotigs.
+command. `fa` = assembly FASTA, `chr` = chromosome list, `hap` = haplotigs. The
+Pretext map (`map`) is left out of these traces: it only ever comes from the
+latest `hic-remapping` run for that haplotype, so it never depends on the rest
+of the chain.
 Steps not listed in the pool (see [§6](#6-which-file-is-canonical)) read the
 canonical files but never
 become canonical themselves.

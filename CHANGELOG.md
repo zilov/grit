@@ -15,6 +15,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 
 - `finalize-qc` ships the canonical Pretext map instead of the alphabetically-last `hic_remapping` run dir's, and `grit status`'s map download tip follows the same resolution. A ticket accumulates one hic-remapping run per recuration round, so the old filesystem pick could publish an older — or an explicitly untracked — round's map to NFS.
+- `README.md` lists every command grouped by stage rather than a third of them, stops labelling `--print-only` as the dry run (`--dry-run` is a separate mode, documented beside it), and its project tree shows `config/`, `scripts/` and `docs/`.
+- `examples.md` documents the canonical Pretext map and the Reference table in `grit status -t`, corrects the claim that `hic-remapping` never produces a canonical file, and describes the AGP tag checks a curator can now be stopped by.
 - The curated small-merged AGP from `microchromosome-second-shot` gets its own `curated_small_agp/` dir, so `microchromosome-combine` can no longer pick up a pretext-to-asm-generated AGP sitting in the same run dir; the pick is sorted and fails loudly on more than one match.
 
 ### Fixed
