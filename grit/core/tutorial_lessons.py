@@ -264,6 +264,7 @@ _OOPS = Scenario(
             task="Set the ticket up.",
             command="setup",
         ),
+        _STATUS_LESSON,
         Lesson(
             title="pretext-to-asm",
             why="Some curated assembly to work from.",

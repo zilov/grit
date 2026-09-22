@@ -91,7 +91,10 @@ def hint_for(got: Parsed, lesson: Lesson, ticket: str, known: set[str]) -> str:
     if got.subcommand not in known:
         return f"grit has no command called {got.subcommand!r}. `grit --help` lists them all."
     if got.subcommand != want.subcommand:
-        return f"{got.subcommand!r} is a real step, but this lesson is about {want.subcommand!r}."
+        return (
+            f"{got.subcommand!r} is another grit command, but this lesson is "
+            f"about {want.subcommand!r}."
+        )
     if got.ticket is None:
         return f"Every grit step needs to know which ticket it is working on: add -t {ticket}."
     if got.ticket != ticket:
@@ -280,9 +283,14 @@ def _run_lesson(lesson: Lesson, scenario: Scenario, base: list[str], n: int, tot
 
         got = parse_command(tokens)
         if not matches(got, lesson, scenario.ticket):
-            last = got
             if _safe_to_run(got, lesson, scenario.ticket, tokens):
+                # Looking things up is encouraged, so it gets a reminder, not a hint.
                 _run_grit([*base, *tokens])
+                console.print(
+                    "[dim]Still on this lesson — type the command it asks for (? for a hint).[/dim]"
+                )
+                continue
+            last = got
             console.print(
                 f"\n[bold yellow]Still on this lesson:[/bold yellow] "
                 f"{hint_for(got, lesson, scenario.ticket, known)}"
