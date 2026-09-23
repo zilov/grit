@@ -15,6 +15,7 @@ from grit.utils.helpers import (
     find_canonical_chr_list,
     find_canonical_fa,
     find_canonical_haplotigs,
+    find_canonical_map,
     find_latest_dir,
     is_single_hap,
     pta_curated_fa_exists,
@@ -105,18 +106,20 @@ def _copy_map(
         _run(f"cp {override} {nfs_dest / dest_name}", ctx.print_only)
         return
 
-    hic_dir = find_latest_dir(ctx, step_name)
-    pattern = str(hic_dir / "pretext_maps_processed" / f"{tol_id}*normal.pretext")
-    matches = glob.glob(pattern)
-    if matches:
-        _run(f"cp {matches[0]} {nfs_dest / dest_name}", ctx.print_only)
-    elif ctx.print_only:
-        _run(f"cp {pattern} {nfs_dest / dest_name}", ctx.print_only)
-    else:
-        log.warning(
-            "Remapped pretext map not found at %s. Copy manually after HiC remapping completes.",
-            pattern,
-        )
+    try:
+        src = find_canonical_map(ctx, hap_prefix)
+    except FileNotFoundError as exc:
+        if ctx.print_only:
+            pattern = (
+                find_latest_dir(ctx, step_name)
+                / "pretext_maps_processed"
+                / f"{tol_id}*normal.pretext"
+            )
+            _run(f"cp {pattern} {nfs_dest / dest_name}", ctx.print_only)
+            return
+        log.warning("%s Copy manually after HiC remapping completes.", exc)
+        return
+    _run(f"cp {src} {nfs_dest / dest_name}", ctx.print_only)
 
 
 # ---------------------------------------------------------------------------

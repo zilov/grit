@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import glob
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -105,32 +106,47 @@ def _state_update_epilogue(workdir: Path, step: str, run_dir: Path, untracked: b
     )
 
 
+_JOB_NOT_FOUND_RE = re.compile(r"Job <(\d+)> is not found")
+
+
+def lsf_cluster() -> str | None:
+    """Return the name of the LSF cluster this host queries, or None if not on LSF."""
+    envdir = os.environ.get("LSF_ENVDIR")
+    if not envdir:
+        return None
+    match = re.search(r"lsf-([^/]+)", envdir)
+    return match.group(1) if match else envdir
+
+
 def _check_bjobs(job_ids: list[str]) -> dict[str, str]:
     """
     Query LSF for the status of the given job IDs.
 
-    Returns a dict of {job_id: status_string} where status_string is one of:
-    'PEND', 'RUN', 'DONE', 'EXIT', 'ZOMBI', 'UNKWN', or 'gone' (not found).
+    Returns a dict of {job_id: status_string} where status_string is an LSF
+    state ('PEND', 'RUN', 'DONE', 'EXIT', 'ZOMBI', 'UNKWN'), 'gone' when LSF
+    explicitly answered that it has no record of the job, or 'unknown' when LSF
+    could not be asked at all. 'gone' and 'unknown' must stay distinct: only the
+    first is evidence about the job.
     """
     if not job_ids:
         return {}
-    result: dict[str, str] = {jid: "gone" for jid in job_ids}
+    result: dict[str, str] = dict.fromkeys(job_ids, "unknown")
     try:
-        ids_arg = " ".join(job_ids)
         output = subprocess.run(
-            f"bjobs -noheader {ids_arg}",
-            shell=True,
+            ["bjobs", "-noheader", *job_ids],
             capture_output=True,
             text=True,
         )
-        for line in output.stdout.splitlines():
-            parts = line.split()
-            if len(parts) >= 3:
-                jid, _user, status = parts[0], parts[1], parts[2]
-                if jid in result:
-                    result[jid] = status
-    except Exception:
+    except OSError:
         log.debug("bjobs query failed — LSF may not be available")
+        return result
+    for line in output.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[0] in result:
+            result[parts[0]] = parts[2]
+    for job_id in _JOB_NOT_FOUND_RE.findall(output.stderr):
+        if job_id in result:
+            result[job_id] = "gone"
     return result
 
 
@@ -636,6 +652,45 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     return Path(sorted(matches)[-1])
 
 
+def find_canonical_map(ctx: "CurationContext", hap_prefix: str) -> Path:
+    """
+    Find the canonical remapped Pretext map for *hap_prefix*.
+
+    Resolution order:
+      1. This haplotype's hic-remapping tracker output (``hic_remapping`` for
+         hap1, ``hic_remapping_hap2`` for hap2), which skips untracked runs and
+         re-globs the run dir when the outputs were recorded incompletely.
+      2. Filesystem glob across that step's run dirs, newest mtime winning.
+
+    Only ``*normal.pretext`` is considered: the ``hr.pretext`` map is the
+    curation input and stays on the farm. A single-hap assembly has no hap2
+    map, so asking for one raises rather than handing back hap1's.
+
+    Raises FileNotFoundError if nothing is found.
+    """
+    is_hap2 = hap_prefix == ctx.hap2_prefix
+    if is_hap2 and is_single_hap(ctx):
+        raise FileNotFoundError(
+            f"{ctx.tol_id} is a single-haplotype assembly — no {hap_prefix!r} Pretext map."
+        )
+    step = "hic_remapping_hap2" if is_hap2 else "hic_remapping"
+    key = "hap2_normal_pretext" if is_hap2 else "hap1_normal_pretext"
+
+    if ctx.tracker:
+        canonical = _latest_tracked_output(ctx, [step], [key], hap_prefix)
+        if canonical:
+            return canonical
+
+    pattern = ctx.workdir / step / "*" / "pretext_maps_processed" / f"{ctx.tol_id}*normal.pretext"
+    matches = glob.glob(str(pattern))
+    if not matches:
+        raise FileNotFoundError(
+            f"No remapped Pretext map for {hap_prefix!r} found under "
+            f"{ctx.workdir / step}. Run hic-remapping first."
+        )
+    return Path(max(matches, key=lambda f: Path(f).stat().st_mtime))
+
+
 def find_hap_agp(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
     Find the curated AGP for *hap_prefix* in the latest ``pretext_to_asm`` run dir.
@@ -673,6 +728,31 @@ def find_hap_agp(ctx: "CurationContext", hap_prefix: str) -> Path:
             f"No curated AGP for {hap_prefix!r} found in {pta_dir}. Run pretext-to-asm first."
         )
     return Path(sorted(matches)[-1])
+
+
+def iter_agp_rows(agp_path: Path) -> list[tuple[str, str, set[str]]]:
+    """List (object name, component id, lowercased tags from the 10th+ columns) per AGP row."""
+    rows: list[tuple[str, str, set[str]]] = []
+    path = Path(agp_path)
+    if not path.is_file():
+        return rows
+    for line in path.read_text().splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        fields = line.split("\t")
+        if len(fields) < 9:
+            continue
+        tags = {f.strip().lower() for f in fields[9:] if f.strip()}
+        rows.append((fields[0], fields[5], tags))
+    return rows
+
+
+def parse_agp_tags(agp_path: Path) -> dict[str, set[str]]:
+    """Map each AGP object name to the lowercased PretextView tags of all its rows."""
+    tags: dict[str, set[str]] = {}
+    for name, _component, row_tags in iter_agp_rows(agp_path):
+        tags.setdefault(name, set()).update(row_tags)
+    return tags
 
 
 def find_latest_dir(ctx: "CurationContext", step: str) -> Path:
@@ -882,6 +962,7 @@ def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
         "hic_remapping_hap2": ("grit.steps.post_curation.hic_remapping", "_OUTPUT_SPECS_HAP2"),
         "fastga": ("grit.steps.optional.fastga", "_OUTPUT_SPECS"),
         "fastga_stats": ("grit.steps.optional.fastga", "_OUTPUT_SPECS_STATS"),
+        "busco_curated": ("grit.steps.optional.busco_curated", "_OUTPUT_SPECS"),
         "busco_synteny": ("grit.steps.optional.busco_synteny", "_OUTPUT_SPECS"),
         "fastga_synteny": ("grit.steps.optional.fastga_synteny", "_OUTPUT_SPECS"),
         "microchromosome_second_shot": (

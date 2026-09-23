@@ -60,7 +60,7 @@ Small fixes and improvements — close in one batch when still relevant.
   canonical file sitting in the row's own run dir, so the step-history
   "Canonical" column agrees with the canonical-files table.
 
-- [ ] **Validate the AGP has a `primary` tag for `primary` + `combine_for_curation`
+- [x] **Validate the AGP has a `primary` tag for `primary` + `combine_for_curation`
   tickets** — a single-hap (`primary`) assembly curated in a combined window
   needs the primary sequences tagged as such in the AGP; without the tag
   pretext-to-asm can't tell the primary assembly apart from what was merged
@@ -71,7 +71,7 @@ Small fixes and improvements — close in one batch when still relevant.
   file, fail before submitting anything, with a message telling the curator to
   tag the primary scaffolds in PretextView and re-export the AGP.
 
-- [ ] **`pretext-to-asm-recurate`: fail when pre-existing unlocs lost their
+- [x] **`pretext-to-asm-recurate`: fail when pre-existing unlocs lost their
   `unloc` tag** — on a second curation round the scaffolds carried over from
   the first round already have "unloc" in their names, but the tag itself has
   to be re-applied in PretextView; curators forget, and the recurated assembly
@@ -80,13 +80,74 @@ Small fixes and improvements — close in one batch when still relevant.
   reminder into a check: in the recurate step, scan the input AGP for SUPER
   entries whose name contains `unloc` but which carry no `unloc` tag, and fail
   with the list of offending scaffolds plus a tip to re-tag them and re-export
-  the AGP.
+  the AGP. Implemented against the real PretextViewAI AGPs in
+  `~/curations/work/*/*.agp_1`: the carried-over unloc name lives in the
+  *component* column (6), not the object name (1, always `Scaffold_N`), and the
+  `Unloc` tag is per row in columns 10+ — so the check scans components, not
+  object names.
 
-- [ ] **Show reference info in `grit status -t`** — the ticket's reference
+- [x] **Show reference info in `grit status -t`** — the ticket's reference
   (as picked up / produced by `find-reference`) isn't surfaced anywhere in
   `grit status -t RC-XXXX`; the curator has to dig through the run dirs to
   see which reference was used. Add it to the status output (name/path of the
   selected reference, and whether one was found at all).
+
+- [x] **`microchromosome-combine` can pick up the wrong AGP** — `pretext-to-asm`
+  writes an AGP next to every curated FASTA it produces, so a run dir can end up
+  holding several `{tol_id}*.agp*` files. The curator then copies the curated
+  *small merged* AGP into the same `microchromosome-second-shot` run dir, and
+  `_run_pretext_to_asm_core` (called with `agp_search_dir=second_shot_dir` and no
+  `agp_glob`) globs `{tol_id}*.agp*` and takes `agp_files[0]` — an unsorted,
+  arbitrary match that can be a pretext-to-asm-generated AGP instead of the
+  curated one, so the combine step silently runs on the wrong AGP. Fix: give the
+  curated small merged AGP its own directory (e.g.
+  `{second_shot_dir}/curated_small_agp/`) — create it in
+  `microchromosome-second-shot`, point the `scp` tip printed by that step and by
+  `grit status` at it, and have `microchromosome-combine` pass that dir (plus a
+  narrow `agp_glob`) to `_run_pretext_to_asm_core`. While there, make the AGP
+  pick deterministic (sort, and fail loudly on more than one match) rather than
+  `agp_files[0]`.
+
+- [x] **`microchromosome-second-shot` output globs don't match what the script
+  actually writes** — `_OUTPUT_SPECS` in
+  `grit/steps/pre_curation/microchromosome_second_shot.py` was inferred from
+  `microchr_second_shot_curation.py`'s docs and never checked against a real run
+  (see the `# Confirm these globs` comment). A real run (RC bGraRel1,
+  `microchromosome_second_shot/2026-08-13T13_06_35/`) writes everything into a
+  `{tol_id}/` **subdirectory** of the run dir, with different names:
+
+  | tracked key | current glob | real file |
+  |---|---|---|
+  | `hap1_large_fa` | `*.hap1.large.fa` | `bGraRel1/bGraRel1.hap1.1.primary.curated.large.fa` |
+  | `hap1_large_chr` | `*.hap1.large.chr_list.csv` | `bGraRel1/bGraRel1_hap1.large.chr_list.csv` (underscore, not dot) |
+  | `merged_small_fa` | `*_curated_small_merged.fa` | `bGraRel1/bGraRel1_curated_small_merged.fa` |
+
+  `collect_outputs()` globs non-recursively, so every spec misses and the step
+  finishes "success" with no recorded outputs. `microchromosome-combine` then
+  falls back to its hand-built `second_shot_dir / f"{tol_id}.hap1.large.fa"`
+  paths and `combine_curated_micros.py` dies with
+  `FileNotFoundError: .../2026-08-13T13_06_35/bGraRel1.hap1.large.fa`.
+  Fix: point the second-shot `_OUTPUT_SPECS` at `{tol_id}/…` with the real
+  patterns (`{tol_id}/*.{hap1}.*.curated.large.fa`,
+  `{tol_id}/*_{hap1}.large.chr_list.csv`,
+  `{tol_id}/*_curated_small_merged.fa`), check whether
+  `hic/pretext_maps_processed/*hr.pretext` (and the `scp` tip built from it)
+  also sits under that subdir, and update `microchromosome-combine`'s own
+  merged-small glob, `large_glob_specs`, and every
+  `second_shot_dir / f"{tol_id}.…"` fallback to match — plus fail loudly when a
+  required input is missing instead of handing a non-existent path to the
+  external script. Also note the `.large.fa`/`.small.fa` names carry the
+  hap-suffix token (`.1.primary.`) from the unmerged `add-hap-suffix-handling`
+  branch the step's `_SECOND_SHOT_SCRIPT` TEMP comment mentions — confirm the
+  final naming before pinning the globs.
+
+- [x] **`curationpretext`: use `-N` instead of `--email`** — `hic-remapping`
+  passes the curator's address as `--email {ctx.email}`, which the pipeline
+  accepts but never notifies on, so no mail ever arrives. `-N <addr>` is
+  nextflow's own notification flag and works as expected. Change the flag in
+  `grit/steps/post_curation/hic_remapping.py` (and the `--email` mentions in
+  `grit/config/sanger_template.yaml` / the tests asserting on the rendered
+  command).
 
 - [x] **`busco-curated`: add `module load grit`** — singularity is available in
   the `grit` module, so the step should load it like the other module-based

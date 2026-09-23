@@ -18,6 +18,7 @@ from grit.utils.helpers import (
 from grit.utils.output import (
     print_done,
     print_step_header,
+    print_tip,
 )
 
 log = logging.getLogger(__name__)
@@ -30,14 +31,22 @@ _SECOND_SHOT_SCRIPT = (
     "microchr_second_shot_curation.py"
 )
 
-# Confirm these globs against setup_paths() in microchr_second_shot_curation.py
-# on first real run — patterns here are inferred from its documented output
-# structure, not yet exercised against real output.
+# Directory the curator copies the curated small-merged AGP into, so
+# microchromosome-combine can't pick up a pretext-to-asm-generated AGP that
+# happens to sit in the same run dir.
+CURATED_SMALL_AGP_DIR = "curated_small_agp"
+
+# setup_paths() in microchr_second_shot_curation.py writes every output flat
+# into the -o dir (only checkpoints/, logs/, microfinder/ and hic/ are nested).
+# The per-hap large FASTAs are named after the *input* curated FASTA's basename
+# (e.g. "{tol_id}.hap1.1.primary.curated.large.fa") and the chr lists after
+# "{tol_id}_{hap_name}", so both carry the literal "hap1"/"hap2" token but no
+# fixed prefix — hence the tolerant *hap1* patterns.
 _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
-    ("hap1_large_fa", "*.hap1.large.fa", []),
-    ("hap2_large_fa", "*.hap2.large.fa", []),
-    ("hap1_large_chr", "*.hap1.large.chr_list.csv", []),
-    ("hap2_large_chr", "*.hap2.large.chr_list.csv", []),
+    ("hap1_large_fa", "*hap1*.large.fa", []),
+    ("hap2_large_fa", "*hap2*.large.fa", []),
+    ("hap1_large_chr", "*hap1*.large.chr_list.csv", []),
+    ("hap2_large_chr", "*hap2*.large.chr_list.csv", []),
     ("merged_small_fa", "*_curated_small_merged.fa", []),
     ("pretext_map", "hic/pretext_maps_processed/*hr.pretext", []),
 ]
@@ -79,6 +88,7 @@ def run_microchromosome_second_shot(ctx: CurationContext) -> None:
             "microchromosome_second_shot", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
         )
         outputs = write_fake_outputs("microchromosome_second_shot", run_dir, ctx.tol_id)
+        (run_dir / CURATED_SMALL_AGP_DIR).mkdir(parents=True, exist_ok=True)
         if is_single_hap(ctx):
             # write_fake_outputs always writes both hap1/hap2 _OUTPUT_SPECS entries;
             # drop the hap2 ones (and delete the files it wrote) so a single-hap
@@ -121,6 +131,10 @@ def run_microchromosome_second_shot(ctx: CurationContext) -> None:
         else ctx.workdir / "microchromosome_second_shot" / "untracked"
     )
 
+    curated_agp_dir = run_dir / CURATED_SMALL_AGP_DIR
+    if not ctx.print_only:
+        curated_agp_dir.mkdir(parents=True, exist_ok=True)
+
     # --- run second-shot script (splits assembly + HiC remapping on smalls) ---
     second_shot_cmd = (
         f"cd {run_dir} && "
@@ -129,6 +143,7 @@ def run_microchromosome_second_shot(ctx: CurationContext) -> None:
         f"-hic {ctx.hic_dir} -lr {ctx.long_reads_dir}/fasta -rt {ctx.read_type} "
         f"-o {run_dir}"
     )
+    outputs: dict[str, str] = {}
     try:
         _run(second_shot_cmd, ctx.print_only, capture=False)
         if ctx.tracker:
@@ -149,12 +164,20 @@ def run_microchromosome_second_shot(ctx: CurationContext) -> None:
             )
         raise
 
-    # --- print scp of micro pretext map to local for curation ---
-    scp_pretext_micro = (
-        f"scp {run_dir}/hic/pretext_maps_processed/*hr.pretext "
-        f"~/curations/work/{ctx.tol_id}/second_shot_microchromosomes"
+    # --- print scp of micro pretext map to local, and of the curated AGP back ---
+    local_dir = f"~/curations/work/{ctx.tol_id}/second_shot_microchromosomes"
+    pretext_src = outputs.get("pretext_map") or (
+        f"{run_dir}/hic/pretext_maps_processed/*hr.pretext"
     )
-    log.info("Scp micro pretext map to local for curation: %s", scp_pretext_micro)
+    print_tip(
+        f"Download the micro pretext map and curate it locally:\n"
+        f"[bold cyan]scp {ctx.farm_host}:{pretext_src} {local_dir}/[/bold cyan]\n"
+        f"Then copy the curated small-merged AGP back into its own dir "
+        f"(nothing else may go in there):\n"
+        f"[bold cyan]scp {local_dir}/{ctx.tol_id}*.agp* "
+        f"{ctx.farm_host}:{curated_agp_dir}/[/bold cyan]\n"
+        f"Then run: [bold cyan]grit microchromosome-combine -t {ctx.ticket_id}[/bold cyan]"
+    )
 
     print_done(f"Microchromosome second-shot curation submitted. Output → {run_dir}")
 

@@ -82,6 +82,10 @@ class RunTracker:
         Pass ``untracked=True`` to mark the run as non-canonical from the start
         so that ``latest_run_dir`` never returns it.
 
+        The record carries the LSF cluster this host submits to, so a later
+        `bjobs` sweep can tell "this cluster has no record of the job" from
+        "I asked the wrong cluster".
+
         In print_only mode: returns a virtual path without touching the filesystem.
         """
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H_%M_%S")
@@ -89,6 +93,8 @@ class RunTracker:
         run_dir = self.workdir / step / dir_name
 
         if not self.print_only:
+            from grit.utils.helpers import lsf_cluster
+
             if create_dir:
                 run_dir.mkdir(parents=True, exist_ok=True)
             status = "untracked" if untracked else "started"
@@ -102,6 +108,7 @@ class RunTracker:
                     "tol_id": tol_id,
                     "run_dir": str(run_dir),
                     "job_id": None,
+                    "cluster": lsf_cluster(),
                 },
             )
             log.debug("Run started: step=%s run_dir=%s untracked=%s", step, run_dir, untracked)

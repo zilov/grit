@@ -1,6 +1,5 @@
 """Microchromosome second-shot curation: combine (post-curation) step."""
 
-import glob
 import logging
 from pathlib import Path
 
@@ -9,6 +8,12 @@ import rich_click as click
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.steps.post_curation.pretext_to_asm import _run_pretext_to_asm_core
+from grit.steps.pre_curation.microchromosome_second_shot import (
+    _OUTPUT_SPECS as _SECOND_SHOT_SPECS,
+)
+from grit.steps.pre_curation.microchromosome_second_shot import (
+    CURATED_SMALL_AGP_DIR,
+)
 from grit.utils.helpers import (
     _run,
     collect_outputs,
@@ -46,6 +51,10 @@ _MICRO_PTA_OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("hap2_chr_list", "{tol_id}_small.hap2.*.chromosome.list.csv", []),
 ]
 
+# Only the curated small-merged AGP the curator uploads lives in
+# CURATED_SMALL_AGP_DIR, so this glob can only ever match that file.
+_CURATED_SMALL_AGP_GLOB = "{tol_id}*.agp*"
+
 _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("hap1_fa", "{tol_id}.hap1.fa", []),
     ("hap2_fa", "{tol_id}.hap2.fa", []),
@@ -63,8 +72,8 @@ def run_microchromosome_combine(ctx: CurationContext) -> None:
     POST-curation step of the second-shot microchromosome workflow.
 
     Run after the micro pretext map has been curated locally and the
-    resulting AGP has been copied back to the ``microchromosome-second-shot``
-    run dir.
+    resulting AGP has been copied into the ``microchromosome-second-shot``
+    run dir's ``curated_small_agp/`` subdir.
 
     Steps:
         1. Locate the ``microchromosome-second-shot`` run dir and its merged
@@ -109,21 +118,22 @@ def run_microchromosome_combine(ctx: CurationContext) -> None:
 
     second_shot_dir = find_latest_dir(ctx, "microchromosome_second_shot")
 
-    # --- find merged small FASTA produced by the pre step ---
-    merged_small_matches = glob.glob(str(second_shot_dir / "*_curated_small_merged.fa"))
-    if ctx.print_only:
-        merged_small_fa = (
-            Path(sorted(merged_small_matches)[-1])
-            if merged_small_matches
-            else second_shot_dir / f"{ctx.tol_id}_curated_small_merged.fa"
-        )
-    elif not merged_small_matches:
+    # --- find the pre step's outputs, re-globbed with its own _OUTPUT_SPECS ---
+    second_shot_outputs = collect_outputs(_SECOND_SHOT_SPECS, second_shot_dir, ctx.tol_id)
+
+    def _second_shot_input(key: str, description: str) -> str:
+        """Return the pre step's output for *key*, or fail with what's missing."""
+        path = second_shot_outputs.get(key)
+        if path:
+            return path
+        if ctx.print_only:
+            return str(second_shot_dir / f"<{key}>")
         raise FileNotFoundError(
-            f"No merged small FASTA found in {second_shot_dir}.\n"
+            f"No {description} found in {second_shot_dir}.\n"
             f"Run 'grit microchromosome-second-shot -t {ctx.ticket_id}' first."
         )
-    else:
-        merged_small_fa = Path(sorted(merged_small_matches)[-1])
+
+    merged_small_fa = Path(_second_shot_input("merged_small_fa", "merged small FASTA"))
     log.info("Merged small FASTA: %s", merged_small_fa)
 
     # --- run pretext-to-asm on the curated micro AGP ---
@@ -133,25 +143,19 @@ def run_microchromosome_combine(ctx: CurationContext) -> None:
         merged_small_fa,
         f"Merged small FASTA not found at {merged_small_fa}. "
         "Run microchromosome-second-shot first.",
-        second_shot_dir,
+        second_shot_dir / CURATED_SMALL_AGP_DIR,
         f"{ctx.tol_id}_small.fa",
         _MICRO_PTA_OUTPUT_SPECS,
+        agp_glob=_CURATED_SMALL_AGP_GLOB.format(tol_id=ctx.tol_id),
     )
     small_outputs = collect_outputs(_MICRO_PTA_OUTPUT_SPECS, pta_micro_run_dir, ctx.tol_id)
 
-    # --- find large fastas/chr lists produced by the pre step ---
-    large_glob_specs: list[tuple[str, str, list[str]]] = [
-        ("hap1_large_fa", "*.hap1.large.fa", []),
-        ("hap2_large_fa", "*.hap2.large.fa", []),
-        ("hap1_large_chr", "*.hap1.large.chr_list.csv", []),
-        ("hap2_large_chr", "*.hap2.large.chr_list.csv", []),
-    ]
-    large_outputs = collect_outputs(large_glob_specs, second_shot_dir, ctx.tol_id)
-
     has_hap2 = (
-        bool(large_outputs.get("hap2_large_fa"))
+        bool(second_shot_outputs.get("hap2_large_fa"))
         if not ctx.print_only
-        else bool(large_outputs.get("hap2_large_fa") or ctx.hap2_prefix in ("hap2", "maternal"))
+        else bool(
+            second_shot_outputs.get("hap2_large_fa") or ctx.hap2_prefix in ("hap2", "maternal")
+        )
     )
 
     run_dir = (
@@ -162,18 +166,26 @@ def run_microchromosome_combine(ctx: CurationContext) -> None:
         else ctx.workdir / "microchromosome_combine" / "untracked"
     )
 
+    def _small_input(key: str, description: str) -> str:
+        """Return the micro pretext-to-asm run's output for *key*, or fail loudly."""
+        path = small_outputs.get(key)
+        if path:
+            return path
+        if ctx.print_only:
+            return str(pta_micro_run_dir / f"<{key}>")
+        raise FileNotFoundError(
+            f"No {description} found in {pta_micro_run_dir} — pretext-to-asm produced "
+            f"no usable output for the curated micro AGP."
+        )
+
     def _combine_hap(hap_token: str) -> None:
-        large_fa = large_outputs.get(f"{hap_token}_large_fa") or str(
-            second_shot_dir / f"{ctx.tol_id}.{hap_token}.large.fa"
+        large_fa = _second_shot_input(f"{hap_token}_large_fa", f"{hap_token} large FASTA")
+        large_chr = _second_shot_input(
+            f"{hap_token}_large_chr", f"{hap_token} large chromosome list"
         )
-        large_chr = large_outputs.get(f"{hap_token}_large_chr") or str(
-            second_shot_dir / f"{ctx.tol_id}.{hap_token}.large.chr_list.csv"
-        )
-        small_fa = small_outputs.get(f"{hap_token}_fa") or str(
-            pta_micro_run_dir / f"{ctx.tol_id}_small.{hap_token}.curated.fa"
-        )
-        small_chr = small_outputs.get(f"{hap_token}_chr_list") or str(
-            pta_micro_run_dir / f"{ctx.tol_id}_small.{hap_token}.chromosome.list.csv"
+        small_fa = _small_input(f"{hap_token}_fa", f"curated {hap_token} small FASTA")
+        small_chr = _small_input(
+            f"{hap_token}_chr_list", f"curated {hap_token} small chromosome list"
         )
         merged_fa = run_dir / f"{ctx.tol_id}.{hap_token}.fa"
         merged_chr = run_dir / f"{ctx.tol_id}.{hap_token}.chromosome.list.csv"

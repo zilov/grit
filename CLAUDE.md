@@ -41,6 +41,23 @@ All shell commands go through `_run(cmd, print_only)` in `grit/utils/helpers.py`
 
 **Tracking true completion of fire-and-forget bsub jobs:** `_state_update_epilogue()` builds a `bsub -Ep '...'` epilogue command that calls the hidden `grit _state-update --workdir --step --run-dir --status` CLI command; LSF runs it automatically when the job finishes, using `$LSB_JOBEXIT_STAT` to report success/failure. `_state-update` re-globs the run_dir for that step's `_OUTPUT_SPECS` and calls `RunTracker.finish()` with the real outputs — so the tracker's "success" only ever reflects verified on-disk state, not just "the submission succeeded." Every step that calls `_submit_bsub()` should pass this as `epilogue_cmd` (see `fastga.py`, `busco_synteny.py`, `rename_and_orient.py`). This mechanism only works when grit's own `bsub` call is the thing LSF is tracking — if a step instead shells out to an external script that submits (or backgrounds) its own async work internally, grit never sees a job it can attach an epilogue to, and the step's tracked status can go "success" long before the real work finishes.
 
+**Reconciling bsub jobs via `bjobs` (`_check_bjobs` → `_refresh_pending_jobs` →
+`_resolve_gone_job`):** the fallback for steps with no epilogue — chiefly
+`hic_remapping`, whose `bsub` is issued by `curationpretext.sh`. `_check_bjobs`
+returns three kinds of answer and they must stay distinct: an LSF state,
+`"gone"` (LSF explicitly answered `Job <N> is not found`, parsed from stderr)
+and `"unknown"` (LSF could not be asked — no `bjobs`, an LSF library error).
+Only the first two are evidence. `"gone"` is evidence *about the cluster that
+was queried*: a job submitted from another cluster reads exactly the same way,
+which is why `start()` records `cluster` (`lsf_cluster()`, from `LSF_ENVDIR`)
+on every run. The rule `_resolve_gone_job` applies, and any new reconciliation
+path must apply too: **output files on disk promote a run to `success` from any
+host; their absence marks it `failed` only when the job's recorded cluster is
+the one queried.** Records written before `cluster` existed have none, so they
+are never auto-failed. Completion itself is judged by `STEP_MANIFESTS` via
+`verify_outputs()` (the same criterion `grit status`'s table uses), falling back
+to "any `_OUTPUT_SPECS` match" only for steps with no manifest entry.
+
 Any step that shells out to an external script/pipeline should `cd {run_dir} && ...` before invoking it, even when the tool also takes an explicit output-dir flag — nextflow pipelines (e.g. `curationpretext`) always write `.nextflow.log`/`work/`/`.nextflow/` into the invoking cwd regardless of other flags, and `cd`-ing first keeps stray files out of wherever grit happened to be run from. See `fastga.py`, `hic_remapping.py`, `find_reference.py`, `sex_matcher.py` for the pattern.
 
 **Synchronous (non-bsub) tracked steps:** most tracked steps submit a bsub
@@ -173,7 +190,7 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   it (that belongs in the commit message, not the code)
 - **`console.print()`** for structured step output (headers, tips, done messages) via `grit/utils/output.py`
 - **Assembly type detection** — `_detect_assembly_type(yaml_data)` maps YAML keys to `(assembly_type, hap1_prefix, hap2_prefix)`: `hap1/hap2`, `primary/alternate`
-- **Canonical FASTA priority** — `find_canonical_fa`/`find_canonical_chr_list`/`find_canonical_haplotigs`
+- **Canonical FASTA priority** — `find_canonical_fa`/`find_canonical_chr_list`/`find_canonical_haplotigs`/`find_canonical_map`
   (`grit/utils/helpers.py`) resolve "the current canonical assembly" per haplotype from a single flat,
   mtime-ordered pool of tracker steps (`pretext_to_asm`, `microchromosome_combine`,
   `blast_contaminants`, `rename_and_orient[_hap2]`, `pretext_to_asm_recurate[_hap2]`) — the freshest
@@ -183,13 +200,21 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   incompletely recorded outputs can't hand canonical back to an older step (canonical must never move
   backwards in time). See
   `docs/recuration-canonical-priority.md` for the full curator-facing decision path and a flowchart — read
-  it before touching any of these three functions or the recurate step. `grit status -t`'s step-history
-  table surfaces this per row via a "Canonical" column showing per-type codes (`fa`/`hap`/`chr`), with a
+  it before touching any of these four functions or the recurate step. `grit status -t`'s step-history
+  table surfaces this per row via a "Canonical" column showing per-type codes (`fa`/`hap`/`chr`/`map`), with a
   `(1)`/`(2)` haplotype-index suffix when a ticket has more than one haplotype — e.g. a recurate row can
   read `hap(1),chr(1)` while a later rename-and-orient row reads `fa(1)`, making clear they're each
   canonical for a *different* output, not in conflict. `_canonical_mark()` marks a row for a canonical
   file found in that row's run dir even when the run's recorded `outputs` never captured it, so the
-  column can't disagree with the canonical-files table above it
+  column can't disagree with the canonical-files table above it (that re-glob matches a canonical file
+  anywhere under the run dir, since `hic_remapping` writes its map into a `pretext_maps_processed/`
+  subdir rather than the run dir itself). `find_canonical_map` is the odd one out in that pool: its
+  pool is a single step per haplotype (`hic_remapping` / `hic_remapping_hap2`) and it resolves each
+  haplotype only from that haplotype's own step and output key (`hap{1,2}_normal_pretext`) — no alias
+  or no-prefix fallback, because handing hap1's file back for hap2 here means publishing the wrong
+  haplotype's Hi-C map to NFS. Only `*normal.pretext` is canonical; the `hr.pretext` beside it is the
+  curation input and stays on the farm, and `setup`'s staged draft map never counts. Its consumers are
+  `finalize_qc`'s NFS copy and `grit status`'s download tip
 - **`GritJiraIssue`** is a shared server library injected via `sys.path` (path in user config), not a pip dependency
 
 ## Planning / design docs
@@ -205,6 +230,64 @@ When a finished task changes the architecture (new pattern, new shared
 helper, a convention this file documents becoming outdated), update this
 CLAUDE.md as part of that same task, not later — it has drifted out of date
 before from changes that weren't reflected back here.
+
+## Where this runs: laptop vs farm
+
+grit is developed in two places and the difference decides what can actually be
+verified.
+
+**Laptop (macOS, `~/github/grit`)** — no LSF, no lustre, no Jira. Only
+`pytest`, `ruff`, `--print-only` and `--dry-run` work here. Any claim that a
+real step "works" cannot be made from the laptop: `--print-only` proves the
+command string is well formed, `--dry-run` proves the sequencing/tracking logic
+holds, neither proves the tool runs.
+
+**Farm (`ssh farm22-agentic1`)** — the real environment: LSF, the `grit`
+module, lustre curation trees, Jira via `GritJiraIssue`. Key-based SSH, no
+password, reachable from the Sanger network/VPN only. The clone lives at
+`~/github/grit` on the node's NFS home (same origin and branch as the laptop —
+they diverge silently if both are committed to, so treat the farm clone as
+primary and push/pull rather than editing both).
+
+Preferred setup: VS Code Remote-SSH into the node and run Claude Code in its
+terminal (`claude`, installed at `~/.local/bin/claude`). Then editor, agent,
+repo, LSF and data are all on one side — no ssh round trip per command, and
+lustre paths are directly readable. Driving the node over `ssh` from the laptop
+works too, but every command pays the round trip and farm files can only be
+read through `ssh cat`.
+
+### Farm gotchas
+
+These are not obvious and each one reads as a missing feature rather than a
+misconfiguration:
+
+- **LSF and `module` exist only in a login shell.** `ssh node 'bsub ...'`
+  returns "command not found" and looks like LSF is absent; it lives in
+  `/software/lsf-farm22/`. Always `ssh node 'bash -lc "..."'`.
+- **`/tmp` is node-local.** A bsub job writing to `/tmp` leaves its output on
+  the compute node, invisible from the login node. Anything crossing the job
+  boundary belongs on lustre or in `$AGENT_SCRATCH` (`~/.agent_scratch`).
+- **`/lustre/.../projects` is read-only at the top level**, but the per-species
+  `working/` dirs inside are group-writable (`tolengine`, setgid). A `-w` test
+  on the parent is misleading.
+- **The node is shared** with other curators. Real compute goes through `bsub`,
+  never into the login shell.
+- **There is more than one LSF cluster, and `bjobs` only answers for its own.**
+  `farm22-agentic1` is in the `farm22` cluster; curation jobs are typically
+  submitted from a `tol22` node. Asking about a `tol22` job from `farm22` gives
+  `Job <N> is not found` — indistinguishable from a job that never existed —
+  and `bjobs -m tol22` gives `User permission denied`. So a `grit status` run on
+  the agentic node cannot see the curator's jobs, and must never conclude
+  anything from that (see the `_check_bjobs` note above). `lsid` names the
+  current cluster, `lsclusters` lists them.
+- **Everything runs as the curator's own account**, not a service account —
+  same quota, same groups, same audit trail.
+
+`~/.agentrc` on the node holds agent-session env (`PAGER=cat`, `GIT_PAGER=cat`,
+`AGENT_SCRATCH`, `NXF_HOME`); `~/.bashrc` sources it only when `CLAUDECODE=1`,
+so interactive shells keep normal paging. Agent tooling (`rg`, `fd`, `gh`,
+`yq`, `bat`, node 20 + npm) is installed under `~/.local`, user-local and
+invisible to other users on the node.
 
 ## Dev
 

@@ -420,3 +420,107 @@ def test_registry_and_backups_are_written_user_only(reg):
     written = [reg.registry_path, reg.backup_path, *reg.dir.glob("grit_registry.2*.json")]
     for path in written:
         assert path.stat().st_mode & 0o777 == 0o600, path
+
+
+# ----------------------------------------------------------------------
+# bjobs reconciliation (CORR-04): 'gone' is only evidence on the job's own cluster
+# ----------------------------------------------------------------------
+
+
+def _pending_hic_ticket(reg, tmp_path, *, cluster):
+    """Register a ticket with one in-flight hic_remapping run and return its run_dir."""
+    workdir = tmp_path / "work"
+    run_dir = workdir / "hic_remapping" / "2026-09-22T14_15_05_hap1"
+    run_dir.mkdir(parents=True)
+    reg.add_ticket("RC-4949", "fKreAnd1", "Krefftichthys anderssoni", workdir)
+    reg.append_step(
+        workdir,
+        {
+            "step": "hic_remapping",
+            "timestamp": "2026-09-22T14_15_05",
+            "status": "started",
+            "ticket_id": "RC-4949",
+            "tol_id": "fKreAnd1",
+            "run_dir": str(run_dir),
+            "job_id": "753394",
+            "cluster": cluster,
+        },
+    )
+    return workdir, run_dir
+
+
+def _latest_hic_status(reg, workdir):
+    return reg.get_steps(workdir, "hic_remapping")[-1]["status"]
+
+
+@pytest.fixture
+def bjobs_says_gone(monkeypatch):
+    monkeypatch.setattr(
+        "grit.utils.helpers._check_bjobs", lambda job_ids: dict.fromkeys(job_ids, "gone")
+    )
+    monkeypatch.setattr("grit.utils.helpers.lsf_cluster", lambda: "farm22")
+
+
+def test_gone_job_from_another_cluster_is_not_marked_failed(reg, tmp_path, bjobs_says_gone):
+    """A tol22 job queried from farm22 reads as 'not found' — that is not a failure."""
+    workdir, _ = _pending_hic_ticket(reg, tmp_path, cluster="tol22")
+
+    reg.refresh_statuses()
+
+    assert _latest_hic_status(reg, workdir) == "started"
+
+
+def test_gone_job_on_its_own_cluster_is_marked_failed(reg, tmp_path, bjobs_says_gone):
+    workdir, _ = _pending_hic_ticket(reg, tmp_path, cluster="farm22")
+
+    reg.refresh_statuses()
+
+    assert _latest_hic_status(reg, workdir) == "failed"
+
+
+def test_gone_job_without_a_recorded_cluster_is_not_marked_failed(reg, tmp_path, bjobs_says_gone):
+    """Records written before the cluster was tracked stay recoverable."""
+    workdir, _ = _pending_hic_ticket(reg, tmp_path, cluster=None)
+
+    reg.refresh_statuses()
+
+    assert _latest_hic_status(reg, workdir) == "started"
+
+
+def test_gone_job_with_outputs_succeeds_from_any_cluster(reg, tmp_path, bjobs_says_gone):
+    """Files on disk prove completion regardless of which cluster was queried."""
+    workdir, run_dir = _pending_hic_ticket(reg, tmp_path, cluster="tol22")
+    maps = run_dir / "pretext_maps_processed"
+    maps.mkdir()
+    (maps / "fKreAnd1.hap1_normal.pretext").touch()
+    (maps / "fKreAnd1.hap1_hr.pretext").touch()
+
+    reg.refresh_statuses()
+
+    record = reg.get_steps(workdir, "hic_remapping")[-1]
+    assert record["status"] == "success"
+    assert record["outputs"]["hap1_normal_pretext"].endswith("fKreAnd1.hap1_normal.pretext")
+
+
+def test_unreachable_lsf_leaves_pending_jobs_alone(reg, tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "grit.utils.helpers._check_bjobs", lambda job_ids: dict.fromkeys(job_ids, "unknown")
+    )
+    monkeypatch.setattr("grit.utils.helpers.lsf_cluster", lambda: "farm22")
+    workdir, _ = _pending_hic_ticket(reg, tmp_path, cluster="farm22")
+
+    reg.refresh_statuses()
+
+    assert _latest_hic_status(reg, workdir) == "started"
+
+
+def test_hr_pretext_alone_does_not_complete_the_run(reg, tmp_path, bjobs_says_gone):
+    """*hr.pretext can land before *normal.pretext, which is the map finalize-qc needs."""
+    workdir, run_dir = _pending_hic_ticket(reg, tmp_path, cluster="farm22")
+    maps = run_dir / "pretext_maps_processed"
+    maps.mkdir()
+    (maps / "fKreAnd1.hap1_hr.pretext").touch()
+
+    reg.refresh_statuses()
+
+    assert _latest_hic_status(reg, workdir) == "started"

@@ -9,7 +9,12 @@ import pytest
 
 from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
-from grit.steps.optional.blast_contaminants import run_blast_contaminants
+from grit.steps.optional.blast_contaminants import (
+    DECON_SCRIPT,
+    LINEAGE_SCRIPT,
+    REMOVE_CONTAMINATION_SCRIPT,
+    run_blast_contaminants,
+)
 
 
 def _attach_tracker(ctx, tmp_path):
@@ -133,6 +138,25 @@ def test_output_survives_untrack_fallback(mock_find_fa, mock_run, mock_ctx, tmp_
     # The original pretext_to_asm curated FASTA is untouched on disk regardless.
     original = tmp_path / f"{mock_ctx.tol_id}.{mock_ctx.hap1_prefix}.1.curated.fa"
     assert original.exists()
+
+
+@patch("grit.steps.optional.blast_contaminants._run", side_effect=_fake_run_finds_contaminants)
+@patch("grit.steps.optional.blast_contaminants.find_canonical_fa")
+def test_external_scripts_load_the_grit_module(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    """The lineage/decon/remove-contamination scripts are ruby and need the grit
+    module's gems — without it remove_contamination_bed dies on 'cannot load bio'."""
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_find_fa.side_effect = _fake_find_canonical_fa(tmp_path)
+    _write_cleaned_fasta(tmp_path, mock_ctx.tol_id, mock_ctx.hap1_prefix)
+    _write_cleaned_fasta(tmp_path, mock_ctx.tol_id, mock_ctx.hap2_prefix)
+
+    run_blast_contaminants(mock_ctx)
+
+    cmds = [c.args[0] for c in mock_run.call_args_list]
+    for script in (LINEAGE_SCRIPT, DECON_SCRIPT, REMOVE_CONTAMINATION_SCRIPT):
+        matching = [c for c in cmds if script in c]
+        assert matching, f"no command invoked {script}"
+        assert all("module load grit" in c for c in matching), script
 
 
 @patch("grit.steps.optional.blast_contaminants._run", side_effect=_fake_run_no_contaminants)
