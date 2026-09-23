@@ -55,10 +55,11 @@ Ticked items carry their evidence inline. Summary of what has actually landed on
 |---|---|---|
 | `1aae166` | smoke test runs in CI; console width and path matching decoupled from `$HOME` length and terminal width | `TEST-11` (smoke half) |
 | `50f2142` | smoke test can fail again (`run()` helper), four inapplicable commands dropped, farm section auto-skips off-farm; fixed the empty `alternate/` dir its first real run exposed | `DX-01` |
+| `f3ee015` | **read this one before touching any reconciliation path.** `bjobs` sweep stops reading "not found" as "finished": three-state `_check_bjobs`, cluster recorded per run, failure inferred only from the job's own cluster | `CORR-04`, `TEST-04` |
 | `256a92b` | `TODO/` excluded from ruff formatting — ruff 0.16 formats Python blocks inside Markdown and would fail CI on a design note | — |
 | `5b93ccc` | registry fails closed on an unreadable file, keeps `.bak` + dated snapshots, writes via a per-writer temp path at 0600 | `CORR-01`, `SEC-03`, `CORR-02` (interim only) |
 
-Three corrections to the assessment itself, all worth carrying forward:
+Four corrections to the assessment itself, all worth carrying forward:
 
 - **`DX-01`'s symptom was wrong.** The smoke test did not die under `set -euo
   pipefail`; `cmd && ok "..."` is exempt from `errexit`, so it ran to the end and
@@ -77,6 +78,25 @@ Three corrections to the assessment itself, all worth carrying forward:
   left an empty `alternate/` directory for single-hap tickets — the real path
   never creates one. No audit found it; running the repaired smoke test did, on
   its first green pass. Expect more of these as Batch 1's tests come online.
+- **`CORR-04` was filed with the wrong symptom, the wrong trigger and half the
+  severity — see `f3ee015`.** Filed as "a `bjobs` outage makes
+  `_resolve_gone_job` finalise still-running jobs as *success* off partially
+  written files". In the field it did the opposite: it wrote a permanent
+  *`failed`* over three tickets' healthy in-flight `hic_remapping` runs. And
+  there was no outage — `bjobs` answered correctly, for the wrong cluster.
+  `farm22-agentic1` is in `farm22`, curation jobs run in `tol22`, and LSF says
+  `Job <N> is not found` for a foreign job exactly as it does for a forgotten
+  one. Two things to carry forward:
+  **(1) An agent session on the agentic node is itself a writer to the shared
+  registry.** `grit status` reconciles and writes; run from a node that cannot
+  see the curator's jobs, it corrupts their step history. Treat `grit status`
+  on `farm22-agentic1` as a mutating command, not a read.
+  **(2) Absence of evidence keeps being read as evidence of failure, and a
+  `failed` record is not recoverable.** `pending_jobs()` treats it as terminal,
+  so the run is never re-checked and `untrack`/`retrack` do not apply to it
+  (`retrack` only promotes `untracked` runs). Any path that writes a terminal
+  status off a negative — no outputs, no job, no answer — deserves the same
+  audit. `DOM-02`, `DOM-04` and `CORR-07` are the same shape.
 
 ---
 
