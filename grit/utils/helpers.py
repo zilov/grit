@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import glob
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -105,32 +106,47 @@ def _state_update_epilogue(workdir: Path, step: str, run_dir: Path, untracked: b
     )
 
 
+_JOB_NOT_FOUND_RE = re.compile(r"Job <(\d+)> is not found")
+
+
+def lsf_cluster() -> str | None:
+    """Return the name of the LSF cluster this host queries, or None if not on LSF."""
+    envdir = os.environ.get("LSF_ENVDIR")
+    if not envdir:
+        return None
+    match = re.search(r"lsf-([^/]+)", envdir)
+    return match.group(1) if match else envdir
+
+
 def _check_bjobs(job_ids: list[str]) -> dict[str, str]:
     """
     Query LSF for the status of the given job IDs.
 
-    Returns a dict of {job_id: status_string} where status_string is one of:
-    'PEND', 'RUN', 'DONE', 'EXIT', 'ZOMBI', 'UNKWN', or 'gone' (not found).
+    Returns a dict of {job_id: status_string} where status_string is an LSF
+    state ('PEND', 'RUN', 'DONE', 'EXIT', 'ZOMBI', 'UNKWN'), 'gone' when LSF
+    explicitly answered that it has no record of the job, or 'unknown' when LSF
+    could not be asked at all. 'gone' and 'unknown' must stay distinct: only the
+    first is evidence about the job.
     """
     if not job_ids:
         return {}
-    result: dict[str, str] = {jid: "gone" for jid in job_ids}
+    result: dict[str, str] = dict.fromkeys(job_ids, "unknown")
     try:
-        ids_arg = " ".join(job_ids)
         output = subprocess.run(
-            f"bjobs -noheader {ids_arg}",
-            shell=True,
+            ["bjobs", "-noheader", *job_ids],
             capture_output=True,
             text=True,
         )
-        for line in output.stdout.splitlines():
-            parts = line.split()
-            if len(parts) >= 3:
-                jid, _user, status = parts[0], parts[1], parts[2]
-                if jid in result:
-                    result[jid] = status
-    except Exception:
+    except OSError:
         log.debug("bjobs query failed — LSF may not be available")
+        return result
+    for line in output.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[0] in result:
+            result[parts[0]] = parts[2]
+    for job_id in _JOB_NOT_FOUND_RE.findall(output.stderr):
+        if job_id in result:
+            result[job_id] = "gone"
     return result
 
 

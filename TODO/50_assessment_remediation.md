@@ -140,8 +140,10 @@ written, because Batches 2-5 need them.
 - [ ] `TEST-08` — no test of any kind covers `_state_update_epilogue` or the
       `_state-update` command. The function is pure string-building; the command
       is invocable via `CliRunner`. (`effort: S`.)
-- [ ] `TEST-04` — `_check_bjobs`'s output parsing is untested; it is a pure
-      function over an injectable string.
+- [x] `TEST-04` — **done**, alongside `CORR-04`: five tests in
+      `tests/test_helpers.py` cover the state column, the per-job "is not found"
+      lines on stderr, an unreachable LSF, a missing `bjobs` binary and the
+      empty-input short circuit.
 - [ ] `PKG-06` — add a type checker to CI against the existing ~75%/77%
       annotation coverage that nothing enforces. Highest value-per-effort gate
       available; the work is already done.
@@ -270,11 +272,33 @@ what counts as finished.
       terminal, so untracking an in-flight run is silently reverted by the next
       `grit status` via `_resolve_gone_job`, which re-`finish`es it without
       `untracked=`. CLAUDE.md asserts this is impossible.
-- [ ] `CORR-04` (critical) — `helpers.py:117` pre-seeds every job id as `"gone"`
-      and never checks the subprocess return code, so a `bjobs` outage makes
-      `_resolve_gone_job` finalise still-running jobs as success off partially
-      written files. Also the reason grit silently pretends jobs finished on a
-      non-LSF host. *Verified directly.*
+- [x] `CORR-04` (critical) — **fixed, and the finding understated it.** The
+      symptom seen in the field was the mirror image of the one recorded here:
+      not "success off partially written files" but a permanent `failed` written
+      over three tickets' still-running `hic_remapping` jobs
+      (`RC-4645`, `GRIT-1374`, `RC-4949`, all stamped in the same second by one
+      `grit status` sweep — e.g. `GRIT-1374/2026-09-21T15_30_38` marked failed at
+      22 Sep 09:56 and writing `bGraRel1.hap1_normal.pretext` at 16:08 the same
+      day). And the trigger was not an outage: `bjobs` answered perfectly, but
+      **from the wrong cluster**. `farm22-agentic1` is in the `farm22` cluster,
+      the jobs were in `tol22`, and `Job <N> is not found` is what LSF says for
+      both a forgotten job and a foreign one. `_check_bjobs` now returns `gone`
+      only for ids LSF names on stderr and `unknown` when it could not be asked;
+      `start()` records the run's cluster; missing outputs mark a run `failed`
+      only when that cluster is the one queried, while outputs on disk promote it
+      to `success` from any host. *Tests:*
+      `test_gone_job_from_another_cluster_is_not_marked_failed`,
+      `test_gone_job_on_its_own_cluster_is_marked_failed`,
+      `test_gone_job_without_a_recorded_cluster_is_not_marked_failed`,
+      `test_gone_job_with_outputs_succeeds_from_any_cluster`,
+      `test_unreachable_lsf_leaves_pending_jobs_alone`,
+      `test_hr_pretext_alone_does_not_complete_the_run`.
+      Note the second-order damage this did, which argues for the same
+      conservatism elsewhere: `pending_jobs()` treats a `failed` record as
+      terminal, so the bogus mark also stopped the run from ever being
+      re-checked, and the maps were never picked up when they did appear.
+      *Carries `TEST-04` with it* — `_check_bjobs`'s parsing is now covered
+      (`tests/test_helpers.py`), including the "LSF library call" error output.
 - [ ] `CORR-05` (critical) — `pretext_to_asm.py:117`: curated AGP chosen by
       unsorted `glob.glob(...)[0]`; a stale AGP in the workdir
       non-deterministically builds the wrong curated FASTA. *Verified directly.*

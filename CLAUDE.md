@@ -41,6 +41,23 @@ All shell commands go through `_run(cmd, print_only)` in `grit/utils/helpers.py`
 
 **Tracking true completion of fire-and-forget bsub jobs:** `_state_update_epilogue()` builds a `bsub -Ep '...'` epilogue command that calls the hidden `grit _state-update --workdir --step --run-dir --status` CLI command; LSF runs it automatically when the job finishes, using `$LSB_JOBEXIT_STAT` to report success/failure. `_state-update` re-globs the run_dir for that step's `_OUTPUT_SPECS` and calls `RunTracker.finish()` with the real outputs — so the tracker's "success" only ever reflects verified on-disk state, not just "the submission succeeded." Every step that calls `_submit_bsub()` should pass this as `epilogue_cmd` (see `fastga.py`, `busco_synteny.py`, `rename_and_orient.py`). This mechanism only works when grit's own `bsub` call is the thing LSF is tracking — if a step instead shells out to an external script that submits (or backgrounds) its own async work internally, grit never sees a job it can attach an epilogue to, and the step's tracked status can go "success" long before the real work finishes.
 
+**Reconciling bsub jobs via `bjobs` (`_check_bjobs` → `_refresh_pending_jobs` →
+`_resolve_gone_job`):** the fallback for steps with no epilogue — chiefly
+`hic_remapping`, whose `bsub` is issued by `curationpretext.sh`. `_check_bjobs`
+returns three kinds of answer and they must stay distinct: an LSF state,
+`"gone"` (LSF explicitly answered `Job <N> is not found`, parsed from stderr)
+and `"unknown"` (LSF could not be asked — no `bjobs`, an LSF library error).
+Only the first two are evidence. `"gone"` is evidence *about the cluster that
+was queried*: a job submitted from another cluster reads exactly the same way,
+which is why `start()` records `cluster` (`lsf_cluster()`, from `LSF_ENVDIR`)
+on every run. The rule `_resolve_gone_job` applies, and any new reconciliation
+path must apply too: **output files on disk promote a run to `success` from any
+host; their absence marks it `failed` only when the job's recorded cluster is
+the one queried.** Records written before `cluster` existed have none, so they
+are never auto-failed. Completion itself is judged by `STEP_MANIFESTS` via
+`verify_outputs()` (the same criterion `grit status`'s table uses), falling back
+to "any `_OUTPUT_SPECS` match" only for steps with no manifest entry.
+
 Any step that shells out to an external script/pipeline should `cd {run_dir} && ...` before invoking it, even when the tool also takes an explicit output-dir flag — nextflow pipelines (e.g. `curationpretext`) always write `.nextflow.log`/`work/`/`.nextflow/` into the invoking cwd regardless of other flags, and `cd`-ing first keeps stray files out of wherever grit happened to be run from. See `fastga.py`, `hic_remapping.py`, `find_reference.py`, `sex_matcher.py` for the pattern.
 
 **Synchronous (non-bsub) tracked steps:** most tracked steps submit a bsub
@@ -255,6 +272,14 @@ misconfiguration:
   on the parent is misleading.
 - **The node is shared** with other curators. Real compute goes through `bsub`,
   never into the login shell.
+- **There is more than one LSF cluster, and `bjobs` only answers for its own.**
+  `farm22-agentic1` is in the `farm22` cluster; curation jobs are typically
+  submitted from a `tol22` node. Asking about a `tol22` job from `farm22` gives
+  `Job <N> is not found` — indistinguishable from a job that never existed —
+  and `bjobs -m tol22` gives `User permission denied`. So a `grit status` run on
+  the agentic node cannot see the curator's jobs, and must never conclude
+  anything from that (see the `_check_bjobs` note above). `lsid` names the
+  current cluster, `lsclusters` lists them.
 - **Everything runs as the curator's own account**, not a service account —
   same quota, same groups, same audit trail.
 
