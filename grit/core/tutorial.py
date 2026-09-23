@@ -419,8 +419,50 @@ def _run_scenario_auto(scenario: Scenario, base: list[str]) -> None:
             console.print(f"\n[bold yellow]Check it:[/bold yellow] {lesson.check}")
 
 
+def _run_overview(scenario: Scenario, auto: bool) -> None:
+    """Walk tutorial 0's lessons — no ticket, no sandbox, no --dry-run.
+
+    Every lesson here is a manual_action (grit/core/tutorial_lessons.py): most
+    just wait for Enter, and two actually drive the real, unsandboxed CLI
+    (`grit --help`, `grit status` with no ticket) so the overview shows the
+    genuine tool rather than a fixture. There is nothing to reset and no base
+    flags to inject, so this does not go through run_scenario()'s sandbox setup.
+    """
+    console.print(Panel(f"[bold]{scenario.title}[/bold]\n\n{scenario.blurb}", style="bold cyan"))
+
+    base: list[str] = []
+    if auto:
+        _run_scenario_auto(scenario, base)
+    else:
+        total = len(scenario.lessons)
+        for n, lesson in enumerate(scenario.lessons, start=1):
+            if _run_lesson(lesson, scenario, base, n, total) == "quit":
+                console.print("\nStopped. Re-run `grit tutorial` any time.")
+                return
+
+    console.print(
+        Panel(
+            "That's the shape of it. Five scenarios put it into practice, easiest first:\n\n"
+            "  grit tutorial --scenario basic             1 — Basic curation (easy)\n"
+            "  grit tutorial --scenario references        2 — Working with references "
+            "(medium)\n"
+            "  grit tutorial --scenario canonical-changes  3 — Steps that change the "
+            "canonical FASTA (hard)\n"
+            "  grit tutorial --scenario recurate           4 — Curating an already-curated "
+            "map (medium)\n"
+            "  grit tutorial --scenario other              5 — Other commands (medium)\n\n"
+            "Or run `grit tutorial` with no flags for the menu.",
+            style="bold cyan",
+        )
+    )
+
+
 def run_scenario(scenario: Scenario, config_path: Path, auto: bool) -> None:
     """Reset the scenario's sandbox and walk its lessons."""
+    if scenario.is_overview:
+        _run_overview(scenario, auto)
+        return
+
     _reset_sandbox(scenario.ticket)
     base = [
         "--config",

@@ -130,6 +130,8 @@ class TestScenarios:
 
         for scenario in SCENARIOS:
             for lesson in scenario.lessons:
+                if lesson.manual_action is not None:
+                    continue  # no command to type — see test_manual_lessons below
                 assert lesson.command in cli.commands, (
                     f"{scenario.key}: {lesson.command!r} is not a registered grit command"
                 )
@@ -145,6 +147,8 @@ class TestScenarios:
     def test_expected_line_round_trips_through_the_matcher(self):
         for scenario in SCENARIOS:
             for lesson in scenario.lessons:
+                if lesson.manual_action is not None:
+                    continue  # no typed command — nothing to round-trip
                 line = expected_line(lesson, scenario.ticket).split()
                 assert matches(parse_command(line), lesson, scenario.ticket)
 
@@ -220,15 +224,60 @@ class TestLessonAndScenarioFields:
         )
         assert scenario.difficulty == ""
 
-    def test_existing_scenarios_leave_difficulty_unset(self):
+    def test_scenario_difficulties_match_the_curriculum(self):
+        expected = {
+            "overview": "",
+            "basic": "easy",
+            "references": "medium",
+            "canonical-changes": "hard",
+            "recurate": "medium",
+            "other": "medium",
+        }
         for scenario in SCENARIOS:
-            assert scenario.difficulty == ""
+            assert scenario.difficulty == expected[scenario.key], scenario.key
 
-    def test_existing_lessons_leave_shows_and_manual_action_unset(self):
+    def test_manual_lessons_have_no_command_or_args(self):
+        """A lesson with a manual_action has nothing for the learner to type."""
         for scenario in SCENARIOS:
             for lesson in scenario.lessons:
-                assert lesson.shows == ""
-                assert lesson.manual_action is None
+                if lesson.manual_action is not None:
+                    assert lesson.command == ""
+                    assert lesson.args == []
+
+    def test_typed_lessons_have_no_manual_action(self):
+        for scenario in SCENARIOS:
+            for lesson in scenario.lessons:
+                if lesson.command:
+                    assert lesson.manual_action is None
+
+    def test_manual_actions_do_not_crash(self, monkeypatch, tmp_path):
+        """Every manual_action in the curriculum runs cleanly given a ticket string.
+
+        The two overview actions drive the real CLI (`grit --help` / `grit status`
+        with no ticket) — patch cli.main so this stays hermetic and never touches
+        a real registry or terminal output.
+        """
+        import grit.core.registry as registry_mod
+        from grit.core.click_cli import cli
+
+        monkeypatch.setattr(registry_mod, "dry_run_root", lambda: tmp_path)
+        monkeypatch.setattr(cli, "main", lambda **kwargs: None)
+
+        for scenario in SCENARIOS:
+            for lesson in scenario.lessons:
+                if lesson.manual_action is not None:
+                    lesson.manual_action(scenario.ticket)  # must not raise
+
+    def test_overview_is_the_only_overview_scenario(self):
+        overviews = [s for s in SCENARIOS if s.is_overview]
+        assert [s.key for s in overviews] == ["overview"]
+
+    def test_non_overview_scenarios_have_a_real_ticket_and_typed_lessons(self):
+        for scenario in SCENARIOS:
+            if scenario.is_overview:
+                continue
+            assert scenario.ticket
+            assert any(lesson.command for lesson in scenario.lessons)
 
 
 class TestPrintOnlyBase:

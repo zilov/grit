@@ -293,12 +293,20 @@ assert_canonical "$s4" hap1 "assembly FA" "blast_contaminants/" "[S4] hap1 canon
 # accepted for backward compatibility but is no longer used by this script.
 
 # ---------------------------------------------------------------------------
-# Scenario 5: `grit tutorial --auto` end to end, per scenario.
+# Scenario 5: `grit tutorial --auto` end to end, per scenario (overview, basic,
+#   references, canonical-changes, recurate, other).
 #   The tutorial drives grit's own CLI in-process with its bundled demo YAMLs,
 #   so a step whose dry-run branch breaks, a lesson naming a command that no
 #   longer exists, or a "run status and find X" claim that stopped being true
 #   shows up here rather than in front of a new curator. Each scenario is run
 #   on its own so the assertion sees only that scenario's final canonical table.
+#   Exception: `overview` has no ticket and no --dry-run sandbox — its two
+#   "real" lessons run the actual, unsandboxed `grit --help` / `grit status`
+#   (no -t) against whatever registry exists on the machine running this
+#   script, same as the plain `grit --help` smoke-tested at the very top of
+#   this file. Read-only in practice; at most it lets status's own
+#   self-correcting `refresh_statuses()` write, exactly as an ordinary
+#   `grit status` call already can.
 # ---------------------------------------------------------------------------
 echo ""
 echo "--- Scenario 5: grit tutorial --auto ---"
@@ -318,21 +326,43 @@ $tutorial_output"
     ok "[S5] tutorial scenario '$key' ran every lesson"
 }
 
-run_tutorial_scenario standard
-std=$(final_canonical_table "$tutorial_output")
-assert_canonical "$std" hap1 "assembly FA" "rename_and_orient/" "[S5] standard ends with hap1 canonical = rename_and_orient"
-assert_canonical "$std" hap2 "assembly FA" "rename_and_orient_hap2/" "[S5] standard ends with hap2 canonical = rename_and_orient_hap2"
+# Tutorial 0 has no ticket and no --dry-run sandbox — its two "real" lessons
+# run the actual, unsandboxed `grit --help` / `grit status` (no -t), so there
+# is no canonical table to assert on. Just confirm it runs end to end and
+# reaches its closing list of the five scenarios.
+run_tutorial_scenario overview
+echo "$tutorial_output" | grep -q "grit tutorial --scenario basic" \
+    && ok "[S5] overview ends by listing the five scenarios" \
+    || fail "[S5] overview did not print its closing scenario list:
+$tutorial_output"
+echo "$tutorial_output" | grep -q "Canonical files" \
+    && fail "[S5] overview printed a canonical-files table, but it has no ticket" \
+    || ok "[S5] overview prints no canonical-files table"
 
-run_tutorial_scenario single-hap
-solo=$(final_canonical_table "$tutorial_output")
-assert_canonical "$solo" primary "assembly FA" "pretext_to_asm_recurate/" "[S5] single-hap ends with primary canonical = pretext_to_asm_recurate"
-echo "$solo" | grep -q "│ alternate " \
-    && fail "[S5] the single-hap scenario fabricated an 'alternate' canonical row" \
-    || ok "[S5] single-hap scenario shows no 'alternate' row"
+run_tutorial_scenario basic
+basic_out=$(final_canonical_table "$tutorial_output")
+assert_canonical "$basic_out" hap1 "assembly FA" "pretext_to_asm/" "[S5] basic ends with hap1 canonical = pretext_to_asm"
+assert_canonical "$basic_out" hap2 "assembly FA" "pretext_to_asm/" "[S5] basic ends with hap2 canonical = pretext_to_asm"
 
-run_tutorial_scenario oops
-oops=$(final_canonical_table "$tutorial_output")
-assert_canonical "$oops" hap1 "assembly FA" "blast_contaminants/" "[S5] oops ends with canonical bounced back to blast_contaminants"
+run_tutorial_scenario references
+refs=$(final_canonical_table "$tutorial_output")
+assert_canonical "$refs" hap1 "assembly FA" "pretext_to_asm/" "[S5] references ends with hap1 canonical = pretext_to_asm (post sex-chromosome re-curation)"
+assert_canonical "$refs" hap2 "assembly FA" "pretext_to_asm/" "[S5] references ends with hap2 canonical = pretext_to_asm (post sex-chromosome re-curation)"
+
+run_tutorial_scenario canonical-changes
+canon=$(final_canonical_table "$tutorial_output")
+assert_canonical "$canon" hap1 "assembly FA" "rename_and_orient/" "[S5] canonical-changes ends with hap1 canonical = rename_and_orient"
+assert_canonical "$canon" hap2 "assembly FA" "rename_and_orient_hap2/" "[S5] canonical-changes ends with hap2 canonical = rename_and_orient_hap2"
+
+run_tutorial_scenario recurate
+recur=$(final_canonical_table "$tutorial_output")
+assert_canonical "$recur" hap1 "assembly FA" "pretext_to_asm_recurate/" "[S5] recurate ends with hap1 canonical = pretext_to_asm_recurate"
+assert_canonical "$recur" hap2 "assembly FA" "pretext_to_asm_recurate_hap2/" "[S5] recurate ends with hap2 canonical = pretext_to_asm_recurate_hap2"
+
+run_tutorial_scenario other
+other_out=$(final_canonical_table "$tutorial_output")
+assert_canonical "$other_out" hap1 "assembly FA" "rename_and_orient/" "[S5] other ends with hap1 canonical = rename_and_orient (after untrack + a corrected redo)"
+assert_canonical "$other_out" hap2 "assembly FA" "rename_and_orient_hap2/" "[S5] other ends with hap2 canonical = rename_and_orient_hap2"
 
 # --all is what CI would reach for; assert only that it completes.
 if grit --config "$CONFIG" tutorial --auto --all >/dev/null 2>&1; then

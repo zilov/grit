@@ -78,20 +78,68 @@ grit [--yaml FILE] [--print-only] [--logging-level LEVEL] <COMMAND> -t RC-1234
 
 `grit tutorial` is the guided walkthrough new curators start with. The engine is
 `grit/core/tutorial.py`; the lesson and scenario prose lives in
-`grit/core/tutorial_lessons.py`, with bundled fictional tickets
-`grit/config/tutorial_demo.yaml` (hap1/hap2) and `tutorial_demo_primary.yaml`
-(primary/alternate). It never touches Jira, LSF, lustre or the real registry —
-every command runs through grit's own CLI in-process
+`grit/core/tutorial_lessons.py`, with one bundled fictional ticket YAML,
+`grit/config/tutorial_demo.yaml` (hap1/hap2) — every scenario shares it, single-hap
+tickets are only mentioned in tutorial 0's text, not modelled with a second
+fixture. Every scenario after tutorial 0 never touches Jira, LSF, lustre or the
+real registry — every command runs through grit's own CLI in-process
 (`cli.main(..., standalone_mode=False)`) with `--config`/`--yaml`/`--dry-run`
 injected, so a step is never re-implemented and a renamed command breaks the
 tutorial loudly instead of teaching a stale interface.
+
+Six scenarios, in `SCENARIOS` (`grit/core/tutorial_lessons.py`), selected with
+`grit tutorial --scenario <key>`:
+
+- `overview` — tutorial 0, no ticket, no commands to type (see below).
+- `basic` (easy) — tutorial 1: `setup` through `finalize-qc`/`pp` end to end.
+- `references` (medium) — tutorial 2: `find-reference`, `busco-synteny`,
+  `fastga`/`fastga-stats`, `super-to-scaffold`, then a hand re-curation and
+  `post-curation`.
+- `canonical-changes` (hard) — tutorial 3: `microchromosome-second-shot` +
+  `microchromosome-combine`, `blast-contaminants`, `find-reference --local`,
+  `rename-and-orient`.
+- `recurate` (medium) — tutorial 4: `post-curation` then
+  `post-curation-recurate` per haplotype.
+- `other` (medium) — tutorial 5: `sex-matcher`, `blast-contaminants --untracked`,
+  a `rename-and-orient` run that comes out wrong, `grit untrack` to back it out,
+  then a corrected `rename-and-orient --mapping-table` redo.
+
+#### Tutorial 0 — the one non-sandboxed scenario
+
+Tutorial 0 has no ticket and nothing to type: it explains what grit is, what
+canonical means, and what `--dry-run`/`--print-only`/`--untracked` do, then
+runs the real, unsandboxed `grit --help` and `grit status` (no `-t`) so the
+learner sees the actual tool and their actual queue — not a fixture. This is
+genuinely different from every other scenario (no ticket, no sandbox to
+reset, no `--dry-run` in its base args), so `Scenario` carries one more field
+for it: `is_overview: bool = False`. `run_scenario()` checks it first and
+dispatches to `_run_overview()` instead of the usual `_reset_sandbox()` +
+`--dry-run` base setup. Every one of tutorial 0's `Lesson`s uses
+`manual_action` (see below) rather than a typed command — three are pure
+text that just wait for Enter, and two (`_show_grit_help`, `_show_real_status`
+in `tutorial_lessons.py`) call `_run_grit(["--help"])` /
+`_run_grit(["status"])` directly, deliberately bypassing `--config`/`--yaml`/
+`--dry-run` entirely. `_run_overview()` ends with a closing panel listing all
+five numbered scenarios and the `--scenario` flag to start each.
+
+Tutorial 1 ends the same way logically (`grit status` with no ticket, "the
+global view") but stays inside the sandbox: its lesson is also a
+`manual_action` (`_show_sandbox_status`), which calls
+`_run_grit(["--dry-run", "status"])` — real command, but pinned to the
+tutorial's own isolated registry rather than the caller's `--config`/`--yaml`.
+Both of these reuse `manual_action` for "the tutorial runs something and shows
+you the result" rather than its other use below ("you press Enter once you've
+done a real-world action") — the dataclass field doesn't distinguish the two,
+only the callable's body does.
+
+#### Typed lessons (tutorials 1-5)
 
 The learner **types** each command; the lesson advances only on a match.
 `parse_command()` normalises both sides to `(subcommand, ticket, flags)` — short
 aliases expanded, `--dry-run` ignored, `--step` keeping its value — and
 `hint_for()` names the actual fault. Both are pure string logic and are
-unit-tested in `tests/test_tutorial.py`, which also asserts that every lesson
-names a registered command and explains every flag it demands.
+unit-tested in `tests/test_tutorial.py`, which also asserts that every typed
+lesson names a registered command and explains every flag it demands.
 
 `_safe_to_run()` is the safety rule and the non-obvious part: a command that
 isn't the answer is executed only if it's `--help` or `grit status` for this
@@ -106,9 +154,10 @@ without consulting `dry_run`.
 unprompted, `--scenario <key>` picks one chain and `--all` runs them all;
 Scenario 5 of `tests/local_smoke_test.sh` drives each scenario separately and
 asserts its final canonical table, so a `check` line that stopped being true
-fails there. Design rationale: `TODO/done/53_tutorial_walkthrough.md`,
-`TODO/done/54_tutorial_interactive.md` and `TODO/55_tutorial_curriculum.md`
-(Part A: engine and usability).
+fails there — except `overview`, which it also runs (for parity with `--all`)
+but only checks for the closing scenario list, since there is no canonical
+table without a ticket. Design rationale: `TODO/done/53_tutorial_walkthrough.md`,
+`TODO/done/54_tutorial_interactive.md` and `TODO/done/55_tutorial_curriculum.md`.
 
 Before running a matched lesson's command for real under `--dry-run`,
 `_show_farm_preview()` first runs the identical command in-process with
@@ -122,22 +171,26 @@ command-printing `_run()` call is reached, since `--print-only` forces
 `ctx.dry_run = False` and the step then resolves real (non-sandbox) farm
 paths that don't exist here. On failure or an empty capture it falls back to
 the lesson's own `shows` string, or skips the heading silently if that is also
-empty. Every existing `Lesson` has `shows=""` — populating real per-step
-fallback text is curriculum work, not engine work.
+empty. Almost every lesson's live preview produces real output and needs no
+`shows` fallback; the one exception is `untrack` (tutorial 5) — it isn't a
+`grit/steps/` step at all, just a direct `RunTracker`/registry edit with no
+shell command to preview, so its `shows` says exactly that instead of showing
+nothing.
 
 A `Lesson` with `manual_action` set (a `Callable[[str], None]` taking the
-ticket ID) has no command to type — used for a real-world action like
-copying an AGP in. `_run_lesson()` dispatches these to `_run_manual_lesson()`,
-which explains the action, waits for a bare Enter via the shared `_ask()`
-idiom, then calls `manual_action(ticket)` to write whatever placeholder file
-the next lesson's command needs into that ticket's dry-run sandbox workdir
-(`dry_run_root()` in `grit/core/registry.py`) before moving on — there is no
+ticket ID) has no command to type. Most uses are a real-world action with no
+grit command — `_copy_agp_into_workdir` writes the placeholder AGP a curator
+would have `scp`'d in — but tutorial 0 and tutorial 1's closing lesson reuse
+the same field for "the tutorial runs something and shows you the result" (see
+above). `_run_lesson()` dispatches these to `_run_manual_lesson()`, which
+explains the action, waits for a bare Enter via the shared `_ask()` idiom,
+then calls `manual_action(ticket)` before moving on — there is no
 typed-command matching/hint machinery for these. `_run_scenario_auto()` runs
 the action unprompted, matching how it runs a normal lesson's command.
 
 `Scenario.difficulty` is shown in `_choose_scenario()`'s menu next to the
-title when non-empty; the three existing scenarios leave it unset until the
-curriculum rewrite sets real values.
+title when non-empty; tutorials 1-5 carry real easy/medium/hard values per the
+curriculum above, tutorial 0 leaves it unset (it isn't difficulty-rated).
 
 External config: `~/.grit/grit_curation_config.yaml` (not committed) — run `grit init` to create it pre-filled with your username; the global ticket registry lives alongside it in the same `~/.grit/` dir. In tests / CI use `--yaml` with a local fixture file.
 
