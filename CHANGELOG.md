@@ -8,7 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
-- `hic-remapping` submits the curationpretext nextflow head job itself instead of calling `curationpretext.sh`, with the same resources (`oversubscribed`, 1200 MB) and pipeline arguments, and a `_state-update` epilogue like every other bsub step. The run is now closed by LSF the moment the pipeline ends, on the cluster that ran it, so the new Pretext map becomes canonical without anyone having to run `grit status` first. `main.nf` is resolved inside the job from the wrapper the `grit` module puts on `PATH`, so pipeline version bumps still happen only in the module. Runs submitted before this change are still reconciled through `bjobs` as before.
+- `hic-remapping` submits the curationpretext nextflow head job itself instead of calling `curationpretext.sh`, with the same resources (`oversubscribed`, 1200 MB) and pipeline arguments, and a `_state-update` epilogue like every other bsub step. The run is now closed by LSF the moment the pipeline ends, on the cluster that ran it, so the new Pretext map becomes canonical without anyone having to run `grit status` first. The job runs `grit/scripts/curationpretext.sh` — the module's wrapper without its `bsub` — which resolves `main.nf` inside the job from the wrapper the `grit` module puts on `PATH`, so pipeline version bumps still happen only in the module. Runs submitted before this change are still reconciled through `bjobs` as before.
 
 ### Fixed
 

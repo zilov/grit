@@ -471,7 +471,7 @@ def test_run_hic_remapping_submits_command(mock_find_fa, mock_run, mock_ctx, tmp
 
     assert mock_run.called
     cmd = mock_run.call_args[0][0]
-    assert "nextflow run" in cmd
+    assert "curationpretext.sh" in cmd
     assert str(hap1_fa) in cmd
     assert str(mock_ctx.hic_dir) in cmd
 
@@ -742,7 +742,7 @@ def _seed_hic_run(ctx, tmp_path, status, *, job_id=None, step="hic_remapping"):
 def test_run_hic_remapping_submits_nextflow_with_epilogue(
     mock_find_fa, mock_run, mock_ctx, tmp_path
 ):
-    import re
+    from grit.steps.post_curation.hic_remapping import _CURATIONPRETEXT_SCRIPT
 
     ctx = _hic_ctx_with_tracker(mock_ctx, tmp_path)
     input_fa = tmp_path / "sDipInt39.hap1.curated.fa"
@@ -767,13 +767,9 @@ def test_run_hic_remapping_submits_nextflow_with_epilogue(
 
     assert inner.startswith(f"cd {run_dir} && ")
     assert "module load grit" in inner
-    assert "curationpretext.sh" in inner
-    assert 'nextflow run \\"\\$MAIN_NF\\"' in inner
-    assert not re.search(r"(?<!\\)\$(MAIN_NF|WRAPPER|TRACKING|\()", inner)
+    assert f"bash {_CURATIONPRETEXT_SCRIPT} --map_order unsorted" in inner
+    assert "$" not in inner
     for arg in (
-        "-profile sanger,singularity",
-        "-ansi-log false",
-        "-with-weblog http://logstash.tol.sanger.ac.uk/http",
         "--map_order unsorted",
         f"--input {input_fa}",
         "--sample sDipInt39.hap1",
@@ -892,7 +888,7 @@ def test_run_hic_remapping_print_only_passes_full_command(
     cmd, print_only = mock_run.call_args[0]
     assert print_only is True
     assert cmd.startswith("bsub -Ep '")
-    assert "nextflow run" in cmd and "--split_telomere true" in cmd
+    assert "curationpretext.sh" in cmd and "--split_telomere true" in cmd
 
 
 @patch("grit.utils.helpers._run")
@@ -2085,3 +2081,57 @@ def test_busco_curated_analyses_the_canonical_hap1_fasta(mock_bsub, mock_ctx, tm
     inner_cmd = mock_bsub.call_args[0][0]
     tokens = inner_cmd.split()
     assert tokens[tokens.index("-i") + 1] == str(hap1_fa)
+
+
+def test_curationpretext_script_runs_main_nf_from_the_loaded_wrapper(tmp_path):
+    """The repo script finds main.nf via the wrapper on PATH and runs nextflow in the foreground."""
+    import subprocess
+
+    from grit.steps.post_curation.hic_remapping import _CURATIONPRETEXT_SCRIPT
+
+    main_nf = tmp_path / "pipeline" / "main.nf"
+    main_nf.parent.mkdir()
+    main_nf.touch()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "curationpretext.sh").write_text(
+        f'nxf_run_command="nextflow run   {main_nf}"\nbsub ... $nxf_run_command\n'
+    )
+    (bin_dir / "curationpretext.sh").chmod(0o755)
+    (bin_dir / "nextflow").write_text('#!/bin/sh\necho "NEXTFLOW $*"\n')
+    (bin_dir / "nextflow").chmod(0o755)
+
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin"}
+    result = subprocess.run(
+        ["bash", str(_CURATIONPRETEXT_SCRIPT), "--sample", "x.hap1", "-resume"],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"NEXTFLOW run {main_nf} -profile sanger,singularity -ansi-log false" in result.stdout
+    assert result.stdout.rstrip().endswith("--sample x.hap1 -resume")
+
+
+def test_curationpretext_script_fails_without_main_nf(tmp_path):
+    import subprocess
+
+    from grit.steps.post_curation.hic_remapping import _CURATIONPRETEXT_SCRIPT
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "curationpretext.sh").write_text("bsub nextflow run nothing\n")
+    (bin_dir / "curationpretext.sh").chmod(0o755)
+
+    result = subprocess.run(
+        ["bash", str(_CURATIONPRETEXT_SCRIPT), "--sample", "x"],
+        capture_output=True,
+        text=True,
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin"},
+        cwd=tmp_path,
+    )
+
+    assert result.returncode != 0
+    assert "cannot locate curationpretext main.nf" in result.stderr

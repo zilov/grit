@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 
 # Same head-job resources curationpretext.sh requests; nextflow submits the real work itself.
 _HEAD_JOB_MEM_MB = 1200
-_WEBLOG_URL = "http://logstash.tol.sanger.ac.uk/http"
+_CURATIONPRETEXT_SCRIPT = Path(__file__).parent.parent.parent / "scripts" / "curationpretext.sh"
 
 _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("hap1_pretext", "pretext_maps_processed/{tol_id}*hr.pretext", []),
@@ -38,25 +38,6 @@ _OUTPUT_SPECS_HAP2: list[tuple[str, str, list[str]]] = [
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-
-def _nextflow_job_cmd(run_dir: Path, pipeline_args: str) -> str:
-    """Return the in-job shell command running curationpretext's main.nf, escaped for bsub."""
-    # $VARs are escaped (\$) so they expand inside the job, not on the submit host.
-    return (
-        f"cd {run_dir} && "
-        f"{module_cmd('CURATIONPRETEXT')} && "
-        "export NXF_DISABLE_CHECK_LATEST=1 NXF_OPTS='-Xms128m -Xmx1024m' && "
-        "WRAPPER=\\$(command -v curationpretext.sh) && "
-        "MAIN_NF=\\$(grep -oE '/[^ ]+/main[.]nf' \\\"\\$WRAPPER\\\" | head -1) && "
-        '{ [ -f \\"\\$MAIN_NF\\" ] || '
-        "{ echo 'grit: cannot locate curationpretext main.nf' >&2; false; }; } && "
-        "{ TRACKING=\\$(grep -oE '/[^ ]+/tracking_usage[.]sh +/[^ ]+' "
-        '\\"\\$WRAPPER\\" | head -1); '
-        f"[ -n \\\"\\$TRACKING\\\" ] && \\$TRACKING 'nextflow run' \\$MAIN_NF {pipeline_args} "
-        ">/dev/null 2>&1 || true; } && "
-        f'nextflow run \\"\\$MAIN_NF\\" {pipeline_args}'
-    )
 
 
 def _submit_hic_remapping(
@@ -123,10 +104,7 @@ def _submit_hic_remapping(
     sample = f"{ctx.tol_id}.{hap_prefix}"
 
     pipeline_args = (
-        "-profile sanger,singularity"
-        " -ansi-log false"
-        f" -with-weblog {_WEBLOG_URL}"
-        " --map_order unsorted"
+        "--map_order unsorted"
         f" --input {input_fa}"
         f" --sample {sample}"
         f" --cram {ctx.hic_dir}"
@@ -141,7 +119,10 @@ def _submit_hic_remapping(
         pipeline_args += f" -N {ctx.email}"
     pipeline_args += " -resume"
 
-    inner_cmd = _nextflow_job_cmd(run_dir, pipeline_args)
+    inner_cmd = (
+        f"cd {run_dir} && {module_cmd('CURATIONPRETEXT')} && "
+        f"bash {_CURATIONPRETEXT_SCRIPT} {pipeline_args}"
+    )
     bsub_opts = build_bsub_opts(
         queue="oversubscribed",
         memory_mb=_HEAD_JOB_MEM_MB,
