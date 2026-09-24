@@ -4,18 +4,27 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import re
 from pathlib import Path
 
 import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _run, find_canonical_fa, write_fake_outputs
+from grit.utils.helpers import (
+    _state_update_epilogue,
+    _submit_bsub,
+    build_bsub_opts,
+    find_canonical_fa,
+    write_fake_outputs,
+)
 from grit.utils.modules import module_cmd
 from grit.utils.output import console, print_done, print_step_header, print_tip
 
 log = logging.getLogger(__name__)
+
+# Same head-job resources curationpretext.sh requests; nextflow submits the real work itself.
+_HEAD_JOB_MEM_MB = 1200
+_WEBLOG_URL = "http://logstash.tol.sanger.ac.uk/http"
 
 _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("hap1_pretext", "pretext_maps_processed/{tol_id}*hr.pretext", []),
@@ -31,6 +40,25 @@ _OUTPUT_SPECS_HAP2: list[tuple[str, str, list[str]]] = [
 # ---------------------------------------------------------------------------
 
 
+def _nextflow_job_cmd(run_dir: Path, pipeline_args: str) -> str:
+    """Return the in-job shell command running curationpretext's main.nf, escaped for bsub."""
+    # $VARs are escaped (\$) so they expand inside the job, not on the submit host.
+    return (
+        f"cd {run_dir} && "
+        f"{module_cmd('CURATIONPRETEXT')} && "
+        "export NXF_DISABLE_CHECK_LATEST=1 NXF_OPTS='-Xms128m -Xmx1024m' && "
+        "WRAPPER=\\$(command -v curationpretext.sh) && "
+        "MAIN_NF=\\$(grep -oE '/[^ ]+/main[.]nf' \\\"\\$WRAPPER\\\" | head -1) && "
+        '{ [ -f \\"\\$MAIN_NF\\" ] || '
+        "{ echo 'grit: cannot locate curationpretext main.nf' >&2; false; }; } && "
+        "{ TRACKING=\\$(grep -oE '/[^ ]+/tracking_usage[.]sh +/[^ ]+' "
+        '\\"\\$WRAPPER\\" | head -1); '
+        f"[ -n \\\"\\$TRACKING\\\" ] && \\$TRACKING 'nextflow run' \\$MAIN_NF {pipeline_args} "
+        ">/dev/null 2>&1 || true; } && "
+        f'nextflow run \\"\\$MAIN_NF\\" {pipeline_args}'
+    )
+
+
 def _submit_hic_remapping(
     ctx: CurationContext,
     hap_prefix: str,
@@ -40,7 +68,7 @@ def _submit_hic_remapping(
 ) -> None:
     """Submit one curationpretext run for *hap_prefix*, tracked under *step_name*."""
 
-    # Check for existing successful run; re-run only if the hap-specific canonical FA is newer
+    # Skip when the latest run is in flight or done with a map newer than the canonical FASTA
     if ctx.tracker:
         prev_dir = ctx.tracker.latest_run_dir(step_name)
         hr_pretexts = (
@@ -56,31 +84,29 @@ def _submit_hic_remapping(
                 fa_newer = canonical_fa.stat().st_mtime > pretext_mtime
             except FileNotFoundError:
                 pass
+            prev_records = [
+                r for r in ctx.tracker.history(step_name) if r.get("run_dir") == str(prev_dir)
+            ]
+            prev_status = prev_records[-1].get("status") if prev_records else None
             if fa_newer:
                 log.info("Curated FASTA is newer than remapped pretext — re-running %s", step_name)
-            elif ctx.print_only:
+            elif prev_status == "started":
+                job_id = next((r["job_id"] for r in prev_records if r.get("job_id")), None)
                 print_tip(
-                    f"Remapped pretext map already exists for [bold]{hap_prefix}[/bold] "
-                    f"and is up to date — will be skipped on actual run:\n"
-                    f"  {hr_pretexts[0]}"
+                    f"HiC remapping for [bold]{hap_prefix}[/bold] is still in progress"
+                    f"{f' (job {job_id})' if job_id else ''} — not resubmitting:\n  {prev_dir}"
                 )
                 return
-            else:
-                log.info("HiC remapping already done — skipping: %s", prev_dir)
-                last = ctx.tracker.history(step_name)
-                if last and last[-1].get("status") == "started":
-                    from grit.utils.helpers import _get_step_specs, collect_outputs
-
-                    specs = _get_step_specs(step_name)
-                    outputs = (
-                        collect_outputs(
-                            specs, prev_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
-                        )
-                        if specs
-                        else None
+            elif prev_status == "success":
+                if ctx.print_only:
+                    print_tip(
+                        f"Remapped pretext map already exists for [bold]{hap_prefix}[/bold] "
+                        f"and is up to date — will be skipped on actual run:\n"
+                        f"  {hr_pretexts[0]}"
                     )
-                    ctx.tracker.finish(step_name, prev_dir, "success", outputs=outputs or None)
-                print_done(f"Already done → {prev_dir}")
+                else:
+                    log.info("HiC remapping already done — skipping: %s", prev_dir)
+                    print_done(f"Already done → {prev_dir}")
                 return
 
     run_dir = (
@@ -96,31 +122,38 @@ def _submit_hic_remapping(
 
     sample = f"{ctx.tol_id}.{hap_prefix}"
 
-    hic_cmd = (
-        f"cd {run_dir} && "
-        f"{module_cmd('CURATIONPRETEXT')} && "
-        f"curationpretext.sh -profile sanger,singularity"
-        f" --map_order unsorted"
+    pipeline_args = (
+        "-profile sanger,singularity"
+        " -ansi-log false"
+        f" -with-weblog {_WEBLOG_URL}"
+        " --map_order unsorted"
         f" --input {input_fa}"
         f" --sample {sample}"
         f" --cram {ctx.hic_dir}"
         f" --reads {ctx.long_reads_dir}/fasta"
         f" --read_type {ctx.read_type}"
         f" --outdir {run_dir}"
-        f" --split_telomere true"
+        " --split_telomere true"
     )
     if ctx.teloseq:
-        hic_cmd += f" {ctx.teloseq}"
+        pipeline_args += f" {ctx.teloseq}"
     if ctx.email:
-        hic_cmd += f" -N {ctx.email}"
-    hic_cmd += " -resume"
+        pipeline_args += f" -N {ctx.email}"
+    pipeline_args += " -resume"
+
+    inner_cmd = _nextflow_job_cmd(run_dir, pipeline_args)
+    bsub_opts = build_bsub_opts(
+        queue="oversubscribed",
+        memory_mb=_HEAD_JOB_MEM_MB,
+        output="curationpretext_%J.log",
+        run_dir=run_dir,
+    )
+    epilogue = _state_update_epilogue(ctx.workdir, step_name, run_dir, untracked=ctx.untracked)
 
     try:
-        output = _run(hic_cmd, ctx.print_only)
-        if ctx.tracker and run_dir and output and "Job <" in output:
-            m = re.search(r"Job <(\d+)>", output)
-            if m:
-                ctx.tracker.record_job(step_name, run_dir, m.group(1))
+        job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
+        if ctx.tracker and job_id:
+            ctx.tracker.record_job(step_name, run_dir, job_id)
     except Exception:
         if ctx.tracker:
             ctx.tracker.finish(step_name, run_dir, "failed", untracked=ctx.untracked)

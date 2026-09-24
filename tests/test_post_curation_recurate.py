@@ -38,7 +38,7 @@ def test_cli_help():
     assert "--hap2" in result.output
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.utils.helpers._run")
 def test_run_post_curation_recurate_dry_run_tracks_every_sub_step(mock_hic_run, mock_ctx, tmp_path):
     """dry_run must flow through pretext_to_asm_recurate and hic_remapping for
     hap1 without any real subprocess, and both sub-steps' fake outputs must be
