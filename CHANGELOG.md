@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- `grit status -t` showed, and offered for download, the previous run's Pretext map right after a `hic-remapping` job finished. The job has no bsub epilogue, so its run is closed by `grit status`: on the cluster that submitted it, `bjobs` reports `DONE`, which the registry sweep skipped and only the step-history table resolved — after the canonical files had already been resolved and printed. The sweep now resolves `DONE` like `gone` (success when the outputs are on disk, never failed), before anything reads canonical files. This applies to every bsub step whose epilogue did not fire.
+
 ## [0.4.2] - 2026-09-22
 
 ### Added
