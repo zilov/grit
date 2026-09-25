@@ -586,9 +586,31 @@ Do these whenever a related file is open.
       `pacbio_read_type` is `hifi`, so what a non-hifi PacBio value (e.g. `clr`)
       should map to downstream is unclear and needs an author/curator answer;
       this fix makes the field respected rather than guessing that mapping.
-- [ ] `CORR-14` — `_detect_assembly_type` can never return `paternal`, so every
+- [x] `CORR-14` — `_detect_assembly_type` can never return `paternal`, so every
       `paternal`/`maternal` branch is dead code that *looks* like support for
       those assembly types. Delete or implement.
+      Today: a `paternal`/`maternal` YAML falls through to the generic
+      `else` branch and raises a bare `ValueError("Cannot detect assembly
+      type from YAML keys: [...]")` — not a `ClickException`, so the curator
+      sees a raw traceback, and it looks identical to a truly unrecognised
+      YAML rather than naming the unsupported case. Fixed: `_detect_assembly_type`
+      now explicitly recognises `paternal`/`maternal` keys and raises the new
+      `UnsupportedAssemblyTypeError` (`grit/core/context.py`, a
+      `click.ClickException`) with the message "paternal/maternal assemblies
+      are not supported yet — grit only handles hap1/hap2 and primary/alternate
+      assembly YAML today." The dead `paternal`/`maternal` branches elsewhere
+      (`helpers.py`'s `_PTA_ALIASES` in the four canonical resolvers,
+      `is_single_hap`, `finalize_qc.py`, `haplotig_files.py`,
+      `microchromosome_combine.py`, `setup.py`, `status.py`) are left in place
+      per this batch's scope (those files belong to other in-flight
+      remediation work) — CLAUDE.md's assembly-type bullet now says plainly
+      that they're unreachable dead code, not working support, until trio
+      support is actually implemented. CLAUDE.md updated. Tests:
+      `test_detect_assembly_type_paternal_raises_not_supported`,
+      `test_detect_assembly_type_maternal_only_raises_not_supported`,
+      `test_unsupported_assembly_type_error_is_a_click_exception`,
+      `test_build_context_paternal_maternal_yaml_fails_loudly_not_silently`
+      (`tests/test_context.py`).
 - [ ] `CORR-20` — `except Exception: pass` swallows every parse error in
       `result_parsers.py:180-259`; the curator sees an incomplete summary and
       does not know why.

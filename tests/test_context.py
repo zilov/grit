@@ -4,10 +4,18 @@ Tests for CurationContext and build_context().
 
 from pathlib import Path
 
+import click
 import pytest
 
-from grit.core.context import CurationContext, _derive_workdir, _detect_assembly_type
+from grit.core.context import (
+    CurationContext,
+    UnsupportedAssemblyTypeError,
+    _derive_workdir,
+    _detect_assembly_type,
+)
 from tests.conftest import TEST_USER_CONFIG, TEST_YAML_HAP1, TEST_YAML_PRIMARY
+
+_NOT_SUPPORTED = "paternal/maternal assemblies are not supported yet"
 
 # --- _detect_assembly_type ---
 
@@ -29,6 +37,39 @@ def test_detect_assembly_type_primary():
 def test_detect_assembly_type_unknown():
     with pytest.raises(ValueError, match="Cannot detect assembly type"):
         _detect_assembly_type({"unknown_key": "..."})
+
+
+def test_detect_assembly_type_paternal_raises_not_supported():
+    """CORR-14: paternal/maternal keys are recognised (not treated as unknown)
+    but fail loudly — grit has no working paternal/maternal support yet."""
+    with pytest.raises(UnsupportedAssemblyTypeError, match=_NOT_SUPPORTED):
+        _detect_assembly_type({"paternal": "...", "maternal": "..."})
+
+
+def test_detect_assembly_type_maternal_only_raises_not_supported():
+    with pytest.raises(UnsupportedAssemblyTypeError, match=_NOT_SUPPORTED):
+        _detect_assembly_type({"maternal": "..."})
+
+
+def test_unsupported_assembly_type_error_is_a_click_exception():
+    """Must surface to the curator as a clean message + exit 1, not a traceback."""
+    assert issubclass(UnsupportedAssemblyTypeError, click.ClickException)
+
+
+def test_build_context_paternal_maternal_yaml_fails_loudly_not_silently():
+    """A trio-style ticket YAML using paternal/maternal keys must fail at context
+    build with a clear, actionable error — not a raw KeyError/ValueError traceback,
+    and not silent mishandling that lets the ticket proceed."""
+    yaml_data = {
+        **TEST_YAML_HAP1,
+        "paternal": TEST_YAML_HAP1["hap1"],
+        "maternal": TEST_YAML_HAP1["hap2"],
+    }
+    del yaml_data["hap1"]
+    del yaml_data["hap2"]
+
+    with pytest.raises(UnsupportedAssemblyTypeError, match=_NOT_SUPPORTED):
+        CurationContext.from_yaml("RC-trio", yaml_data, TEST_USER_CONFIG)
 
 
 # --- _derive_workdir ---

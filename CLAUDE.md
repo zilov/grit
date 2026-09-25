@@ -185,7 +185,7 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   the implementation, no historical context about bugs/commits that motivated
   it (that belongs in the commit message, not the code)
 - **`console.print()`** for structured step output (headers, tips, done messages) via `grit/utils/output.py`
-- **Assembly type detection** — `_detect_assembly_type(yaml_data)` maps YAML keys to `(assembly_type, hap1_prefix, hap2_prefix)`: `hap1/hap2`, `primary/alternate`
+- **Assembly type detection** — `_detect_assembly_type(yaml_data)` maps YAML keys to `(assembly_type, hap1_prefix, hap2_prefix)`: `hap1/hap2`, `primary/alternate`. A YAML with `paternal`/`maternal` keys is recognised but not supported: it raises `UnsupportedAssemblyTypeError` (`grit/core/context.py`, a `click.ClickException`) at context build with a clear message, rather than the generic "Cannot detect assembly type" `ValueError` an unrecognised key set gets, or silently mishandling a trio assembly. The `paternal`/`maternal` branches still present elsewhere (`helpers.py`'s `_PTA_ALIASES`, `is_single_hap`, a few step files) are dead code that can never be reached while detection rejects those keys — real trio support needs both sides done together.
 - **Canonical FASTA priority** — `find_canonical_fa`/`find_canonical_chr_list`/`find_canonical_haplotigs`/`find_canonical_map`
   (`grit/utils/helpers.py`) resolve "the current canonical assembly" per haplotype from a single flat,
   mtime-ordered pool of tracker steps (`pretext_to_asm`, `microchromosome_combine`,
