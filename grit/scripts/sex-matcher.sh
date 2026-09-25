@@ -34,16 +34,24 @@ elif [ $myTolPrefix1 == "n" ]; then
     singularity exec -B /lustre $IMAGE busco -i $myFasta -o busco5 -m genome -l /lustre/scratch122/tol/resources/busco/latest/lineages/nematoda_odb10 -c 32
     sexFile=/nfs/users/nfs_d/da16/vgp_curation_scripts/nematode_X_buscos
 else
-    echo "Not a nematode, lepidoptera or coleoptera"
+    echo "Not a nematode, lepidoptera or coleoptera" >&2
+    exit 1
 fi
 
 wait
 
-mv $myDirPath/busco5/run_*/full_table.tsv $myDirPath
+mv $myDirPath/busco5/run_*/full_table.tsv $myDirPath || {
+    echo "busco produced no full_table.tsv" >&2
+    exit 1
+}
 wait
 grep -f $sexFile $myDirPath/full_table.tsv > sex_table.tsv
 wait
 /software/grit/projects/vgp_curation_scripts/sex_matcher.py -p $myDirPath -i $myTolPrefix
 wait
 rm -r $myDirPath/busco* || true
+if ! ls $myDirPath/Best_match* > /dev/null 2>&1; then
+    echo "sex_matcher.py wrote no Best_match file" >&2
+    exit 1
+fi
 exit 0

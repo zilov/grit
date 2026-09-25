@@ -297,10 +297,18 @@ Batch 4, so do this batch first.
       `test_state_update_success_with_manifest_outputs_records_success`,
       `test_state_update_sex_matcher_success_requires_best_match_in_the_run_dir`,
       `test_state_update_untracked_with_no_outputs_keeps_the_marker`.
-- [ ] `CORR-03b` — `grit/scripts/sex-matcher.sh:49` ends in an unconditional
+- [x] `CORR-03b` — `grit/scripts/sex-matcher.sh:49` ends in an unconditional
       `exit 0`, so the step's success is unconditional: a permanently green row
       with no `Best_match` file, and the step's own resubmit guard then refuses
-      to re-run it. *Verified directly.*
+      to re-run it. *Verified directly.* **Fixed:** the script exits 1 for an
+      unsupported tol_id, when busco leaves no `full_table.tsv`, and when no
+      `Best_match*` was written; `exit 0` only after that check. (`CORR-03`'s
+      output check would already stop the green row; this makes LSF's exit
+      status agree.) *Tests:*
+      `test_sex_matcher_script_exits_zero_when_it_writes_best_match`,
+      `test_sex_matcher_script_fails_when_busco_fails`,
+      `test_sex_matcher_script_fails_when_no_best_match_is_written`,
+      `test_sex_matcher_script_fails_for_an_unsupported_tol_id`.
 - [ ] `CORR-07` — `qv.py:80-96`: synchronous tracked step records `success` as
       soon as the submitting wrapper returns. No `job_id`, so bjobs recovery can
       never repair it.
