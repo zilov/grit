@@ -2146,3 +2146,31 @@ def test_curationpretext_script_fails_without_main_nf(tmp_path):
 
     assert result.returncode != 0
     assert "cannot locate curationpretext main.nf" in result.stderr
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+@patch("grit.utils.helpers._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_hic_remapping_hap2_is_refused_on_a_single_hap_ticket(
+    mock_find_fa, mock_run, mock_ctx_primary, tmp_path, dry_run
+):
+    """Trace T7: hic-remapping --hap2 on a primary ticket would publish hap1's map as
+    the alternate's. Refuse before any run is started or submitted."""
+    import click
+
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx_primary.workdir = tmp_path
+    mock_ctx_primary.dry_run = dry_run
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(
+        mock_ctx_primary.ticket_id, mock_ctx_primary.tol_id, mock_ctx_primary.species, tmp_path
+    )
+    mock_ctx_primary.tracker = RunTracker(tmp_path, registry=reg)
+
+    with pytest.raises(click.UsageError, match="single-haplotype"):
+        run_hic_remapping(mock_ctx_primary, run_hap1=False, run_hap2=True)
+
+    mock_run.assert_not_called()
+    assert mock_ctx_primary.tracker.history() == []

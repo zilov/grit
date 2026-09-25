@@ -65,6 +65,10 @@ one haplotype or two:
 | `pretext-to-asm-recurate` | hap2 **instead of** hap1 |
 | `post-curation-recurate` | hap2 **instead of** hap1 |
 
+A `primary`/`alternate` ticket has no second haplotype: `hic-remapping --hap2`
+and `rename-and-orient --hap2` refuse to run, and every resolver answers "not
+found" for `alternate` rather than handing back the primary's files.
+
 ## User path
 
 1. **Is curation in PretextView finished?**

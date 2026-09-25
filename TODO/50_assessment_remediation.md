@@ -402,11 +402,20 @@ record, for both the epilogue path and the synchronous-step path.
 item here is about its *inputs*: what counts as a step's current output, and
 what counts as finished.
 
-- [ ] `DOM-06` (critical) — `--hap2` is not gated by `is_single_hap`, and the
+- [x] `DOM-06` (critical) — `--hap2` is not gated by `is_single_hap`, and the
       no-prefix fallbacks guard only the literal tokens `hap1`/`hap2`. On a
       `primary`/`alternate` ticket the resolvers return **hap1's** FASTA and
       chromosome list as `alternate`'s canonical files; `hic-remapping --hap2`
       then publishes hap1's Hi-C map to NFS as the alternate haplotype's.
+      *Fixed:* every resolver refuses `hap2_prefix` on a single-hap ticket
+      (`_refuse_missing_hap2`), and `hic-remapping`/`rename-and-orient` refuse
+      `--hap2` up front (`refuse_hap2_on_single_hap`). finalize-qc's hap2-map
+      copy already goes through `find_canonical_map`, so it now logs "not
+      found" instead of copying. *Tests:*
+      `test_trace_t7_single_hap_ticket_has_no_alternate_files` (4 resolvers ×
+      tracked/filesystem), `test_single_hap_ticket_still_resolves_primary`,
+      `test_hic_remapping_hap2_is_refused_on_a_single_hap_ticket`,
+      `test_hap2_is_refused_on_a_single_hap_ticket` (rename-and-orient).
 - [ ] `DOM-02` (critical) — `latest_run_dir` falls back to `started` runs, so a
       half-written FASTA from an in-flight bsub job is the freshest pool member.
 - [ ] `DOM-01` (critical) — when the newest successful run recorded no outputs,

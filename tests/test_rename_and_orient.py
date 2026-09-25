@@ -552,3 +552,22 @@ def test_unparseable_bsub_output_fails_the_run_without_storing_a_job_id(
     history = mock_ctx.tracker.history("rename_and_orient")
     assert history[-1]["status"] == "failed"
     assert all(record.get("job_id") is None for record in history)
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+@patch("grit.steps.optional.rename_and_orient._submit_bsub")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_hap2_is_refused_on_a_single_hap_ticket(
+    mock_find_fa, mock_bsub, mock_ctx_primary, tmp_path, dry_run
+):
+    """A primary/alternate ticket has no hap2: refuse before submitting anything."""
+    import click
+
+    mock_ctx_primary.workdir = tmp_path
+    mock_ctx_primary.dry_run = dry_run
+
+    with pytest.raises(click.UsageError, match="single-haplotype"):
+        run_rename_and_orient(mock_ctx_primary, run_hap2=True)
+
+    mock_bsub.assert_not_called()
+    mock_find_fa.assert_not_called()

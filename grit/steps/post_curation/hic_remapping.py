@@ -15,6 +15,7 @@ from grit.utils.helpers import (
     _submit_bsub,
     build_bsub_opts,
     find_canonical_fa,
+    refuse_hap2_on_single_hap,
     write_fake_outputs,
 )
 from grit.utils.modules import module_cmd
@@ -183,6 +184,9 @@ def run_hic_remapping(
     ``hic_dir``, ``hifi_dir``, ``ont_dir`` override the values from the ticket
     YAML. If ``ont_dir`` is supplied, ``--read_type ont`` is used automatically.
     """
+    if run_hap2:
+        refuse_hap2_on_single_hap(ctx)
+
     # Apply CLI overrides to a fresh context copy (frozen dataclass)
     overrides: dict = {}
     if hic_dir:

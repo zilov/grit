@@ -180,7 +180,13 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   (single-hap) assembly; the shared check for gating hap2-fabrication bugs, used by
   `pretext_to_asm`, `blast_contaminants`, `microchromosome_combine`,
   `super_to_scaffold`, `microchromosome_second_shot`, and `finalize_qc` (in both
-  their dry-run branches and their real paths).
+  their dry-run branches and their real paths). All five canonical resolvers
+  (`find_curated_fa`, `find_canonical_{fa,haplotigs,chr_list,map}`) raise
+  `FileNotFoundError` for `ctx.hap2_prefix` on a single-hap ticket via
+  `_refuse_missing_hap2()` — their alias/no-prefix fallbacks would otherwise
+  hand back hap1's file as `alternate`'s — and `refuse_hap2_on_single_hap()`
+  makes `hic-remapping --hap2` / `rename-and-orient --hap2` a `UsageError`
+  before anything is started or submitted.
 - **`require_workdir(ctx)`** — guards steps that need an existing workdir; skipped in print_only mode
 - **`log.*` not `print()`** — use Python `logging`; `RichHandler` formats output
 - **Minimal docstrings** — one line stating what the function returns/does, only

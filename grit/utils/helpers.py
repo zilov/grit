@@ -27,6 +27,17 @@ def is_single_hap(ctx: CurationContext) -> bool:
     return ctx.hap1_prefix in ("primary", "paternal")
 
 
+def refuse_hap2_on_single_hap(ctx: CurationContext) -> None:
+    """Raise UsageError for a ``--hap2`` request on a ticket with no second haplotype."""
+    if is_single_hap(ctx):
+        import rich_click as click
+
+        raise click.UsageError(
+            f"{ctx.tol_id} is a single-haplotype ({ctx.hap1_prefix}) assembly — "
+            f"there is no {ctx.hap2_prefix!r} haplotype, so --hap2 does not apply."
+        )
+
+
 def require_workdir(ctx: CurationContext) -> None:
     """
     Abort with a helpful message if ctx.workdir does not exist on disk.
@@ -412,6 +423,14 @@ def pta_curated_fa_exists(pta_dir: Path, tol_id: str, hap_token: str) -> bool:
     )
 
 
+def _refuse_missing_hap2(ctx: "CurationContext", hap_prefix: str, what: str) -> None:
+    """Raise FileNotFoundError when *hap_prefix* is the absent hap2 of a single-hap ticket."""
+    if hap_prefix == ctx.hap2_prefix and is_single_hap(ctx):
+        raise FileNotFoundError(
+            f"{ctx.tol_id} is a single-haplotype assembly — no {hap_prefix!r} {what}."
+        )
+
+
 def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
     Find the primary curated FASTA for *hap_prefix* in the latest pretext_to_asm run dir.
@@ -435,6 +454,7 @@ def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
         "maternal": "hap2",
     }
 
+    _refuse_missing_hap2(ctx, hap_prefix, "curated FASTA")
     pta_dir = find_latest_dir(ctx, "pretext_to_asm")
 
     def _search(token: str) -> list[str]:
@@ -560,6 +580,7 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
         "maternal": "hap2",
     }
 
+    _refuse_missing_hap2(ctx, hap_prefix, "assembly FASTA")
     if ctx.tracker:
         keys = [f"{hap_prefix}_fa", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_fa"]
         pool = [
@@ -619,6 +640,7 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
         "maternal": "hap2",
     }
 
+    _refuse_missing_hap2(ctx, hap_prefix, "haplotig FASTA")
     if ctx.tracker:
         keys = [
             f"{hap_prefix}_haplotigs",
@@ -704,6 +726,7 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
         "maternal": "hap2",
     }
 
+    _refuse_missing_hap2(ctx, hap_prefix, "chromosome list")
     if ctx.tracker:
         keys = [f"{hap_prefix}_chr_list", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_chr_list"]
         pool = [
@@ -766,11 +789,8 @@ def find_canonical_map(ctx: "CurationContext", hap_prefix: str) -> Path:
 
     Raises FileNotFoundError if nothing is found.
     """
+    _refuse_missing_hap2(ctx, hap_prefix, "Pretext map")
     is_hap2 = hap_prefix == ctx.hap2_prefix
-    if is_hap2 and is_single_hap(ctx):
-        raise FileNotFoundError(
-            f"{ctx.tol_id} is a single-haplotype assembly — no {hap_prefix!r} Pretext map."
-        )
     step = "hic_remapping_hap2" if is_hap2 else "hic_remapping"
     key = "hap2_normal_pretext" if is_hap2 else "hap1_normal_pretext"
 

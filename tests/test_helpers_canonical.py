@@ -768,3 +768,53 @@ def test_haplotigs_raise_when_nothing_exists(mock_ctx, tmp_path):
 
     with pytest.raises(FileNotFoundError):
         find_canonical_haplotigs(mock_ctx, "hap1")
+
+
+# ---------------------------------------------------------------------------
+# DOM-06 / report 06 trace T7: a primary/alternate ticket has no hap2
+# ---------------------------------------------------------------------------
+
+
+def _single_hap_pta_run(tmp_path, ctx, *, tracked=True):
+    """A primary ticket's pretext-to-asm output: unprefixed fa, chr list, haplotigs."""
+    tracker = _make_tracker(tmp_path, ctx)
+    pta_dir = _pta_dir(tmp_path)
+    fa = _write(pta_dir / f"{ctx.tol_id}.1.primary.curated.fa")
+    chr_list = _write(pta_dir / f"{ctx.tol_id}.1.primary.chromosome.list.csv")
+    haplotigs = _write(pta_dir / f"{ctx.tol_id}.1.all_haplotigs.curated.fa")
+    if tracked:
+        tracker.finish(
+            "pretext_to_asm",
+            pta_dir,
+            "success",
+            outputs={
+                "hap1_fa": str(fa),
+                "hap1_chr_list": str(chr_list),
+                "hap1_haplotigs": str(haplotigs),
+            },
+        )
+    return fa, chr_list, haplotigs
+
+
+@pytest.mark.parametrize("tracked", [True, False], ids=["tracked", "filesystem"])
+@pytest.mark.parametrize(
+    "finder",
+    [find_canonical_fa, find_canonical_chr_list, find_canonical_haplotigs, find_curated_fa],
+    ids=lambda f: f.__name__,
+)
+def test_trace_t7_single_hap_ticket_has_no_alternate_files(
+    mock_ctx_primary, tmp_path, finder, tracked
+):
+    """Resolving 'alternate' on a primary ticket must refuse, not return hap1's file."""
+    _single_hap_pta_run(tmp_path, mock_ctx_primary, tracked=tracked)
+
+    with pytest.raises(FileNotFoundError, match="single-haplotype"):
+        finder(mock_ctx_primary, "alternate")
+
+
+def test_single_hap_ticket_still_resolves_primary(mock_ctx_primary, tmp_path):
+    fa, chr_list, haplotigs = _single_hap_pta_run(tmp_path, mock_ctx_primary)
+
+    assert find_canonical_fa(mock_ctx_primary, "primary") == fa
+    assert find_canonical_chr_list(mock_ctx_primary, "primary") == chr_list
+    assert find_canonical_haplotigs(mock_ctx_primary, "primary") == haplotigs
