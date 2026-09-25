@@ -1,4 +1,4 @@
-"""Step: submit QV and k-mer completeness analysis via bsub."""
+"""Step: run QV and k-mer completeness analysis (blocks until its MerquryFK job finishes)."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ from grit.utils.modules import module_cmd
 from grit.utils.output import print_done, print_step_header
 
 log = logging.getLogger(__name__)
+
+_QV_OUTPUT_KEYS = ("qv", "completeness_stats")
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -87,10 +89,22 @@ def run_qv(ctx: CurationContext) -> None:
         f"{module_cmd('GRIT')} && cd {ctx.workdir} && "
         f"kmer_completeness.bash {ctx.tol_id} {ctx.release_version}"
     )
-    _run(cmd, ctx.print_only)
+    try:
+        # the wrapper blocks on its MerquryFK job (bsub -K) but exits 0 even when it fails
+        _run(cmd, ctx.print_only)
+        outputs = None if ctx.print_only else _find_qv_outputs(ctx)
+        if outputs is not None and set(outputs) != set(_QV_OUTPUT_KEYS):
+            raise RuntimeError(
+                "kmer_completeness.bash finished without writing "
+                f"{ctx.tol_id}.qv and {ctx.tol_id}.completeness.stats to "
+                f"{ctx.assembly_curated_dir / 'merquryk'}; see merqury.out there"
+            )
+    except Exception:
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("qv", run_dir, "failed", untracked=ctx.untracked)
+        raise
 
     if ctx.tracker and run_dir:
-        outputs = None if ctx.print_only else (_find_qv_outputs(ctx) or None)
         ctx.tracker.finish("qv", run_dir, "success", outputs=outputs, untracked=ctx.untracked)
 
     print_done("QV analysis done")
@@ -104,7 +118,7 @@ def run_qv(ctx: CurationContext) -> None:
 @click.command("qv", cls=GritCommand)
 @click.pass_context
 def qv_cmd(ctx):
-    """Submit QV and k-mer completeness analysis via bsub."""
+    """Run QV and k-mer completeness analysis; waits for the MerquryFK job."""
     from grit.core.click_cli import build_context
 
     curation_ctx = build_context(ctx.obj)

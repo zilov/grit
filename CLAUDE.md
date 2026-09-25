@@ -76,7 +76,10 @@ post-`start()` work in try/except and call `ctx.tracker.finish(step, run_dir,
 "failed", untracked=ctx.untracked)` itself on any failure (a script error,
 or a "success" exit that produced none of the expected outputs), then
 re-raise, or a crash strands the record as "started" forever with no
-recovery path but `grit untrack`.
+recovery path but `grit untrack`. `qv` is the same kind of step:
+`kmer_completeness.bash` blocks on its own `bsub -K` MerquryFK job but exits 0
+whatever that job did, so `run_qv` judges completion by the `.qv` and
+`.completeness.stats` files in `merquryk/`, never by the wrapper's exit status.
 
 ### HPC module loading
 

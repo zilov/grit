@@ -1028,24 +1028,57 @@ def test_run_qv_registers_outputs_when_files_present(mock_run, mock_ctx, tmp_pat
     assert mock_ctx.tracker.get_output("qv", "completeness_stats") == str(comp_file)
 
 
-@patch("grit.steps.post_curation.qv._run")
-def test_run_qv_outputs_empty_when_files_missing(mock_run, mock_ctx, tmp_path):
+def _qv_ctx(mock_ctx, tmp_path, *, untracked=False):
     from grit.core.registry import RegistryManager
     from grit.core.run_tracker import RunTracker
 
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.release_version = 1
+    mock_ctx.untracked = untracked
     mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
-
     reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
     reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
     mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+    return mock_ctx
 
-    run_qv(mock_ctx)
 
-    assert mock_ctx.tracker.get_output("qv", "qv") is None
-    assert mock_ctx.tracker.get_output("qv", "completeness_stats") is None
+@pytest.mark.parametrize("written", [[], ["sDipInt39.qv"]])
+@patch("grit.steps.post_curation.qv._run")
+def test_run_qv_fails_the_run_when_outputs_are_missing(mock_run, mock_ctx, tmp_path, written):
+    ctx = _qv_ctx(mock_ctx, tmp_path)
+    merquryk = ctx.assembly_curated_dir / "merquryk"
+    merquryk.mkdir(parents=True)
+    for name in written:
+        (merquryk / name).write_text("x\n")
+
+    with pytest.raises(RuntimeError, match="kmer_completeness.bash"):
+        run_qv(ctx)
+
+    assert [r["status"] for r in ctx.tracker.history("qv")] == ["started", "failed"]
+
+
+@patch("grit.steps.post_curation.qv._run")
+def test_run_qv_fails_the_run_when_the_wrapper_errors(mock_run, mock_ctx, tmp_path):
+    from grit.utils.helpers import CommandError
+
+    ctx = _qv_ctx(mock_ctx, tmp_path)
+    mock_run.side_effect = CommandError(1, "kmer_completeness.bash")
+
+    with pytest.raises(CommandError):
+        run_qv(ctx)
+
+    assert [r["status"] for r in ctx.tracker.history("qv")] == ["started", "failed"]
+
+
+@patch("grit.steps.post_curation.qv._run")
+def test_run_qv_untracked_failure_keeps_the_marker(mock_run, mock_ctx, tmp_path):
+    ctx = _qv_ctx(mock_ctx, tmp_path, untracked=True)
+
+    with pytest.raises(RuntimeError):
+        run_qv(ctx)
+
+    assert [r["status"] for r in ctx.tracker.history("qv")] == ["untracked", "untracked"]
 
 
 # ---------------------------------------------------------------------------
@@ -1053,7 +1086,7 @@ def test_run_qv_outputs_empty_when_files_missing(mock_run, mock_ctx, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.qv.run_qv")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
@@ -1104,7 +1137,7 @@ def test_finalize_for_qc_creates_curated_dir(
     assert any("touch" in c and "hap2" in c and "all_haplotigs" in c for c in calls)
 
 
-@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.qv.run_qv")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
@@ -1173,7 +1206,7 @@ def test_finalize_for_qc_print_only(mock_run, mock_ctx, tmp_path):
     assert any("mkdir" in c for c in calls)
 
 
-@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.qv.run_qv")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
@@ -1212,7 +1245,7 @@ def test_finalize_for_qc_assembly_override(
     assert any(str(custom_fa) in c for c in calls)
 
 
-@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.qv.run_qv")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
@@ -1257,7 +1290,7 @@ def test_finalize_for_qc_hap2_map_copied_when_provided(
     assert any(hap2_dest in c for c in calls)
 
 
-@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.qv.run_qv")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
@@ -1311,7 +1344,7 @@ def test_finalize_for_qc_primary_alternate_assembly_single_hap_output(
     assert mock_find_csv.call_count == 1
 
 
-@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.qv.run_qv")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
@@ -1354,7 +1387,7 @@ def test_finalize_for_qc_primary_alternate_uses_additional_haplotigs_when_not_co
     assert not any("all_haplotigs" in c for c in calls)
 
 
-@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.qv.run_qv")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
@@ -1397,7 +1430,7 @@ def test_finalize_for_qc_haplotig_dest_name_mirrors_disk_over_combine_for_curati
     assert not any("all_haplotigs" in c for c in calls)
 
 
-@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.qv.run_qv")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
@@ -1440,7 +1473,7 @@ def test_finalize_for_qc_raises_on_yaml_pta_mismatch(
     mock_run.assert_not_called()
 
 
-@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.qv.run_qv")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
@@ -1825,7 +1858,7 @@ def test_run_post_processing_dry_run_succeeds_without_existing_workdir(
     mock_mark_done.assert_not_called()
 
 
-@patch("grit.steps.post_curation.qv._run")
+@patch("grit.steps.post_curation.qv.run_qv")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
 @patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
@@ -1900,6 +1933,49 @@ def test_finalize_for_qc_ships_the_canonical_map_not_the_newest_run_dir(
     assert map_copies, "no pretext map was copied"
     assert any(str(kept) in c for c in map_copies)
     assert not any(str(rejected) in c for c in map_copies)
+
+
+@patch("grit.steps.post_curation.qv.run_qv")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_fails_its_run_when_qv_fails(
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_qv_run,
+    mock_ctx,
+    tmp_path,
+):
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
+    mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+    mock_find_fa.return_value = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
+    mock_find_csv.return_value = tmp_path / "sDipInt39.1.hap1.chromosome.list.csv"
+    mock_find_haplotigs.side_effect = FileNotFoundError("no haplotigs")
+    mock_glob.side_effect = lambda pattern: (
+        [f"{mock_ctx.tol_id}.hap1.1.curated.fa"] if "curated.fa" in pattern else []
+    )
+    mock_run.return_value = ""
+    mock_qv_run.side_effect = RuntimeError("kmer_completeness.bash wrote no .qv")
+
+    with pytest.raises(RuntimeError):
+        finalize_for_qc(mock_ctx)
+
+    statuses = [r["status"] for r in mock_ctx.tracker.history("finalize_qc")]
+    assert statuses == ["started", "failed"]
 
 
 # ---------------------------------------------------------------------------

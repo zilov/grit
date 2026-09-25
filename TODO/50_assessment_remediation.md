@@ -309,9 +309,24 @@ Batch 4, so do this batch first.
       `test_sex_matcher_script_fails_when_busco_fails`,
       `test_sex_matcher_script_fails_when_no_best_match_is_written`,
       `test_sex_matcher_script_fails_for_an_unsupported_tol_id`.
-- [ ] `CORR-07` — `qv.py:80-96`: synchronous tracked step records `success` as
+- [x] `CORR-07` — `qv.py:80-96`: synchronous tracked step records `success` as
       soon as the submitting wrapper returns. No `job_id`, so bjobs recovery can
-      never repair it.
+      never repair it. **Fixed, and the finding's mechanism was wrong:** the
+      module's `kmer_completeness.bash` (read from
+      `/software/grit/projects/vgp_curation_scripts/`, the dir `module load
+      grit` prepends to `PATH`) submits MerquryFK with `bsub -K`, so it *blocks*
+      until the job ends; the defect is that its last command is `rm`, so it
+      exits 0 whether MerquryFK succeeded or not. grit therefore never owns an
+      async job here, and the synchronous-step rule applies: `run_qv` now
+      records `success` only when both `merquryk/{tol_id}.qv` and
+      `.completeness.stats` exist, and `failed` (with `untracked=`) on a
+      wrapper error or missing outputs, then re-raises. `failed` is warranted
+      here because the work has provably ended. `finalize_qc`, which calls
+      `run_qv`, now finishes its own run `failed` too instead of stranding it.
+      *Tests:* `test_run_qv_fails_the_run_when_outputs_are_missing` (none, and
+      `.qv` only), `test_run_qv_fails_the_run_when_the_wrapper_errors`,
+      `test_run_qv_untracked_failure_keeps_the_marker`,
+      `test_finalize_for_qc_fails_its_run_when_qv_fails`.
 - [x] `CORR-08` — `hic_remapping.py:70-84`: the "already done, skipping" branch
       finalises a run as `success` from the mere existence of an output. Fixed in TODO/52.
 - [ ] `CORR-09` — four steps (`busco_curated.py:153`, `busco_synteny.py:119`,
