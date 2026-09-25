@@ -178,7 +178,9 @@ For anyone editing `find_canonical_fa` / `find_canonical_chr_list` /
   with that step's own `_OUTPUT_SPECS` rather than dropping the step from the
   comparison — otherwise a run with incompletely recorded outputs hands
   canonical back to an older step, moving it *backwards* in time with nothing
-  in `grit status` to show for it.
+  in `grit status` to show for it. For the same reason an *earlier* run of the
+  same step never stands in for the latest one: a step offers only what its
+  latest successful run recorded or left in its run dir.
 - Haplotype prefixes are matched on dot-delimited tokens, so `primary` as a
   prefix does not collide with the `.primary.curated.fa` suffix that every
   curated FASTA carries.

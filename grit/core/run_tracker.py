@@ -209,21 +209,18 @@ class RunTracker:
         """
         Return the path string for *key* from the latest successful run of *step*.
 
-        Returns None if no successful run exists or the key is absent.
-        Runs whose most recent record has status 'untracked' are excluded.
+        Returns None if no successful run exists or that run recorded no such
+        key — an older run never stands in for it. Runs whose most recent record
+        has status 'untracked' are excluded.
         """
-        runs = self.history(step)
-        untracked_dirs = _untracked_dirs(runs)
-        success_runs = [
-            r
-            for r in runs
-            if r.get("status") == "success"
-            and r.get("outputs")
-            and r.get("run_dir") not in untracked_dirs
-        ]
-        if not success_runs:
+        run_dir = self.latest_run_dir(step, include_started=False)
+        if run_dir is None:
             return None
-        return success_runs[-1]["outputs"].get(key)
+        for r in reversed(self.history(step)):
+            if r.get("status") == "success" and r.get("run_dir") == str(run_dir):
+                if r.get("outputs"):
+                    return r["outputs"].get(key)
+        return None
 
     def untrack(self, step: str, run_dir: Path | None = None) -> bool:
         """Mark the latest success run of *step* as untracked. Returns True if found."""

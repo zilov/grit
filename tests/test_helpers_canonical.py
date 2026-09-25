@@ -852,6 +852,50 @@ def test_trace_t3_in_flight_rename_and_orient_is_not_canonical(mock_ctx, tmp_pat
     assert find_canonical_chr_list(mock_ctx, "hap1") == pta_chr
 
 
+def test_trace_t2_rerun_with_uncaptured_outputs_still_wins(mock_ctx, tmp_path):
+    """rename-and-orient run 2 succeeded but its epilogue captured no outputs: its
+    on-disk FASTA C is the freshest, not run 1's superseded B."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    _pta_success(tmp_path, mock_ctx)
+
+    run1 = tmp_path / "rename_and_orient" / "2026-01-02T00_00_00"
+    fa_b = _write(run1 / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+    chr_b = _write(run1 / f"{mock_ctx.tol_id}.hap1.primary.renamed.chromosome.list.csv")
+    tracker.finish(
+        "rename_and_orient",
+        run1,
+        "success",
+        outputs={"hap1_fa": str(fa_b), "hap1_chr_list": str(chr_b)},
+    )
+
+    run2 = tmp_path / "rename_and_orient" / "2026-01-03T00_00_00"
+    fa_c = _write(run2 / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+    chr_c = _write(run2 / f"{mock_ctx.tol_id}.hap1.primary.renamed.chromosome.list.csv")
+    tracker.finish("rename_and_orient", run2, "success", outputs=None)
+
+    assert find_canonical_fa(mock_ctx, "hap1") == fa_c
+    assert find_canonical_chr_list(mock_ctx, "hap1") == chr_c
+
+
+def test_rerun_with_no_outputs_on_disk_does_not_resurrect_the_older_run(mock_ctx, tmp_path):
+    """The latest run produced nothing: the step offers nothing, and canonical passes
+    to the next pool member rather than to the step's own superseded run."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+
+    run1 = tmp_path / "rename_and_orient" / "2026-01-01T00_00_00"
+    fa_b = _write(run1 / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+    tracker.finish("rename_and_orient", run1, "success", outputs={"hap1_fa": str(fa_b)})
+
+    pta_fa, _ = _pta_success(tmp_path, mock_ctx, ts="2026-01-02T00_00_00")
+    os.utime(pta_fa, (1, 1))  # older than B: B would win if run 1 still competed
+
+    run2 = tmp_path / "rename_and_orient" / "2026-01-03T00_00_00"
+    run2.mkdir(parents=True)
+    tracker.finish("rename_and_orient", run2, "success", outputs=None)
+
+    assert find_canonical_fa(mock_ctx, "hap1") == pta_fa
+
+
 def test_in_flight_rerun_leaves_the_previous_run_of_the_step_canonical(mock_ctx, tmp_path):
     """A second rename-and-orient run in flight must not hide the first, finished one."""
     tracker = _make_tracker(tmp_path, mock_ctx)

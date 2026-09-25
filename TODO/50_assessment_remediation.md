@@ -425,11 +425,18 @@ what counts as finished.
       `test_in_flight_recurate_haplotigs_are_not_canonical`,
       `test_in_flight_rerun_leaves_the_previous_run_of_the_step_canonical`,
       `test_in_flight_hic_remapping_map_is_not_canonical`.
-- [ ] `DOM-01` (critical) — when the newest successful run recorded no outputs,
+- [x] `DOM-01` (critical) — when the newest successful run recorded no outputs,
       `get_output` substitutes an older run of the same step and the re-glob
       never fires; `143f425` covers the other half only. Re-check after Batch 3:
       the trigger should be gone, but the code path remains and should still be
-      closed.
+      closed. *Fixed:* `get_output` reads only the latest successful run dir
+      (any success record for that dir, so a retrack/re-finish without outputs
+      keeps them) and otherwise returns None, so `_step_output` re-globs the
+      right run. Also applies to `qv`/`finalize_qc`/`validate_files` lookups.
+      *Tests:* `test_trace_t2_rerun_with_uncaptured_outputs_still_wins`,
+      `test_rerun_with_no_outputs_on_disk_does_not_resurrect_the_older_run`,
+      `test_get_output_does_not_substitute_an_older_run`,
+      `test_get_output_reads_an_earlier_record_of_the_same_run`.
 - [ ] `DOM-03` (critical) — the filesystem fallbacks of all three resolvers go
       through `find_latest_dir`, which never consults untracked status, so an
       `--untracked` run becomes canonical for fa, haplotigs *and* chr_list and

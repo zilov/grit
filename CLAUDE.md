@@ -203,7 +203,10 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   whose latest successful run recorded no matching output key is not dropped from that comparison:
   `_step_output()` re-globs that run dir with the step's `_OUTPUT_SPECS` first, so a run with
   incompletely recorded outputs can't hand canonical back to an older step (canonical must never move
-  backwards in time). Only a *finished* run competes: `_step_output` asks for
+  backwards in time). The recorded output comes from `RunTracker.get_output()`, which reads only the
+  step's latest successful run (any of that run dir's success records) and returns None rather than
+  let an older run of the same step stand in — otherwise the re-glob never fires (report 06 T2). Only
+  a *finished* run competes: `_step_output` asks for
   `latest_run_dir(step, include_started=False)`, because a `started` run is a bsub job that may still
   be writing the file (report 06 T3); the default `include_started=True` stays for callers that need
   to see in-flight runs (resubmit guards, `untrack`, `cleanup`). See
