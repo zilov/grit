@@ -664,9 +664,23 @@ Do these whenever a related file is open.
 - [ ] `ARCH-15` — the dry-run fixture writer exists twice; the recurate copy
       cannot express a 4-element "multi" spec and raises `ValueError` at dry-run
       time only.
-- [ ] `ARCH-20` — `grit/__init__.py` re-exports private helpers (`_run`,
+- [x] `ARCH-20` — `grit/__init__.py` re-exports private helpers (`_run`,
       `_submit_bsub`, …) as public surface; `grit/steps/__init__.py` eagerly
       imports all 21 step modules.
+      Fixed the `grit/__init__.py` half only (the eager-import half of
+      `grit/steps/__init__.py` is unchanged, per this batch's scope): removed
+      `_run`, `_submit_bsub`, `_clean_species_name`, and
+      `_find_pretext_map_in_workdir` from the top-level re-exports —
+      `grep -rn "grit\._run\|grit\._submit_bsub\|grit\._clean_species_name\|
+      grit\._find_pretext_map_in_workdir\|from grit import"` across `tests/`
+      and `grit/scripts/` found zero importers going through the `grit.`
+      package root (only `grit.utils.helpers.*` direct imports), so nothing
+      outside is broken. The genuinely public re-exports (`cli`,
+      `CurationContext`, `build_bsub_opts`, `module_cmd`, `console`,
+      `print_done`, `print_next_step`, `print_step_header`) are unchanged.
+      Tests: `test_grit_package_does_not_reexport_private_helpers`,
+      `test_grit_package_still_exports_its_intended_public_surface`
+      (`tests/test_package_exports.py`).
 - [ ] `TEST-05` — mocking `_run` removes `check=True`, so every mock signals
       success and no test distinguishes "ran" from "succeeded";
       `CalledProcessError` is caught in exactly one place in all of `grit/`.
