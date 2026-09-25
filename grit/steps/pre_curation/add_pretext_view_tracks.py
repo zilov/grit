@@ -110,7 +110,7 @@ def add_telo_track(ctx: CurationContext) -> None:
 
                module purge && module load pretextgraph/0.0.7--h4ac6f70_0 && \\
                zcat {telo_bed_gz} | \\
-               awk '{ print $1\\t$2\\t$3\\t($3-$2) }' | \\
+               awk '{ print $1"\\t"$2"\\t"$3"\\t"($3-$2) }' | \\
                PretextGraph -i {pretext_map_path} -n telomere
 
     Prints:
@@ -140,7 +140,7 @@ def add_telo_track(ctx: CurationContext) -> None:
     cmd = (
         f"{ml} && "
         f"zcat {telo_arg} | "
-        r"awk '{ print $1\"\t\"$2\"\t\"$3\"\t\"($3-$2) }' | "
+        'awk \'{ print $1"\\t"$2"\\t"$3"\\t"($3-$2) }\' | '
         f"PretextGraph -i {pretext_map} -n telomere"
     )
     _run(cmd, ctx.print_only)

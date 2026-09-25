@@ -629,8 +629,27 @@ Do these whenever a related file is open.
       `test_collect_curation_results_qv_read_error_is_logged`,
       `test_collect_curation_results_completeness_read_error_is_logged`
       (`tests/test_result_parsers.py`).
-- [ ] `CORR-21` — the telomere track's awk program is mis-escaped
+- [x] `CORR-21` — the telomere track's awk program is mis-escaped
       (`add_pretext_view_tracks.py:143`, `92-97`, `62`).
+      Fixed the mis-escaping at line 143: the awk program was built from a
+      raw string (`r"..."`) so `\"` and `\t` inside it stayed literal
+      backslash-quote/backslash-t pairs instead of becoming real `"` and a
+      tab escape awk can parse — bash's single quotes pass that straight to
+      awk, which died with a syntax error (proven with the real `awk`
+      binary). Now built as a normal string with `\"` → `"` and `\\t` → the
+      two-char `\t` escape awk itself interprets, producing
+      `awk '{ print $1"\t"$2"\t"$3"\t"($3-$2) }'`. Docstring example at line
+      113 updated to match. Test:
+      `test_add_telo_track_builds_a_syntactically_valid_awk_program`
+      (`tests/test_add_pretext_view_tracks.py`) — extracts the generated awk
+      program from the built command and actually runs it through `awk`
+      (skipped if `awk` isn't on PATH), asserting correct tab-separated
+      output. Out of scope for this item: the broader last-stage-exit-status
+      masking noted in the same finding (`add_bedgraph_track`/`add_gap_track`
+      pipelines still report success on an upstream `zcat`/`cat`/`python3`
+      failure since none of the three commands use `set -o pipefail`) —
+      that's a separate, more invasive change than "fix the mis-escaping"
+      and wasn't attempted here.
 - [ ] `ARCH-16` — two commands bypass `_run()`, so "all shell commands go
       through `_run`" is false. `cleanup._size_bytes` shells GNU-only `du -sb
       --apparent-size`, silently rendering every size as `?` off-farm;
