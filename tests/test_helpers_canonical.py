@@ -1088,3 +1088,45 @@ def test_a_stale_map_in_the_filesystem_fallback_is_skipped(mock_ctx, tmp_path, m
     _stale_handle_on(monkeypatch, new_map)
 
     assert find_canonical_map(mock_ctx, "hap1") == old_map
+
+
+# ---------------------------------------------------------------------------
+# DOM-14: each rename-and-orient step competes only for its own haplotype
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "step, key, asked",
+    [
+        ("rename_and_orient_hap2", "hap1_fa", "hap1"),
+        ("rename_and_orient", "hap2_fa", "hap2"),
+    ],
+)
+def test_rename_and_orient_steps_never_cross_haplotypes(mock_ctx, tmp_path, step, key, asked):
+    """Even if a step's output key named the other haplotype, it must not compete for it."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    pta_fa = _write(pta_dir / f"{mock_ctx.tol_id}.{asked}.1.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={f"{asked}_fa": str(pta_fa)})
+
+    other_dir = tmp_path / step / "2026-01-02T00_00_00"
+    other_fa = _write(other_dir / "renamed.fa")
+    tracker.finish(step, other_dir, "success", outputs={key: str(other_fa)})
+
+    assert find_canonical_fa(mock_ctx, asked) == pta_fa
+
+
+def test_rename_and_orient_hap2_is_canonical_for_hap2(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    rao_dir = tmp_path / "rename_and_orient_hap2" / "2026-01-02T00_00_00"
+    rao_fa = _write(rao_dir / f"{mock_ctx.tol_id}.hap2.primary.renamed.fa")
+    rao_chr = _write(rao_dir / f"{mock_ctx.tol_id}.hap2.primary.renamed.chromosome.list.csv")
+    tracker.finish(
+        "rename_and_orient_hap2",
+        rao_dir,
+        "success",
+        outputs={"hap2_fa": str(rao_fa), "hap2_chr_list": str(rao_chr)},
+    )
+
+    assert find_canonical_fa(mock_ctx, "hap2") == rao_fa
+    assert find_canonical_chr_list(mock_ctx, "hap2") == rao_chr

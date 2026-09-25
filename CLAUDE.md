@@ -201,7 +201,9 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
 - **Canonical FASTA priority** — `find_canonical_fa`/`find_canonical_chr_list`/`find_canonical_haplotigs`/`find_canonical_map`
   (`grit/utils/helpers.py`) resolve "the current canonical assembly" per haplotype from a single flat,
   mtime-ordered pool of tracker steps (`pretext_to_asm`, `microchromosome_combine`,
-  `blast_contaminants`, `rename_and_orient[_hap2]`, `pretext_to_asm_recurate[_hap2]`) — the freshest
+  `blast_contaminants`, `rename_and_orient[_hap2]`, `pretext_to_asm_recurate[_hap2]` — each `_hap2`
+  step only in hap2's pool and its unsuffixed twin only in hap1's, via `_rename_and_orient_step_name()`
+  / `_recurate_step_name()`, never by relying on output keys differing) — the freshest
   existing tracked output wins outright, with a filesystem fallback when nothing is tracked — that
   fallback skips run dirs the tracker marks `untracked` or still `started`
   (`find_latest_dir(..., settled_only=True)`, `_settled_matches()`), so it only ever sees dirs the

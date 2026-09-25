@@ -24,7 +24,7 @@ The pool differs per file type, because not every step produces every file:
 
 | File | Steps in the pool |
 |---|---|
-| assembly FASTA | `pretext_to_asm`, `microchromosome_combine`, `blast_contaminants`, `rename_and_orient`, `rename_and_orient_hap2`, `pretext_to_asm_recurate[_hap2]` |
+| assembly FASTA | `pretext_to_asm`, `microchromosome_combine`, `blast_contaminants`, `rename_and_orient[_hap2]`, `pretext_to_asm_recurate[_hap2]` |
 | chromosome list | the same, minus `blast_contaminants` |
 | haplotigs | `pretext_to_asm`, `pretext_to_asm_recurate[_hap2]` |
 | Pretext map | `hic_remapping` (hap1) or `hic_remapping_hap2` (hap2) |
@@ -190,7 +190,9 @@ For anyone editing `find_canonical_fa` / `find_canonical_chr_list` /
   curated FASTA carries.
 - `pretext_to_asm_recurate` and `pretext_to_asm_recurate_hap2` are separate
   step names, as are `rename_and_orient` and `rename_and_orient_hap2`, and
-  `hic_remapping` and `hic_remapping_hap2`.
+  `hic_remapping` and `hic_remapping_hap2`. `[_hap2]` in the pool table means
+  the `_hap2` step is in hap2's pool and the unsuffixed one in hap1's — never
+  both — so one haplotype's run can never compete for the other's slot.
 - `find_canonical_map` resolves a haplotype only from that haplotype's own
   step and output key, with no alias or no-prefix fallback. Keep it that way:
   the fallbacks that make sense for FASTA naming are what let hap1's file be

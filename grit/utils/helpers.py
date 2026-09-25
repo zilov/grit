@@ -503,6 +503,13 @@ def _mtime(path: Path) -> float | None:
         return None
 
 
+def _rename_and_orient_step_name(ctx: "CurationContext", hap_prefix: str) -> str:
+    """Tracker step name recording this haplotype's rename-and-orient run."""
+    if hap_prefix == ctx.hap2_prefix:
+        return "rename_and_orient_hap2"
+    return "rename_and_orient"
+
+
 def _step_output(
     ctx: "CurationContext", step: str, key_variants: list[str], hap_prefix: str
 ) -> Path | None:
@@ -573,8 +580,8 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     Resolution order:
       1. Tracker outputs across a single ordered pool (``pretext_to_asm``,
          ``microchromosome_combine``, ``blast_contaminants``,
-         ``rename_and_orient``, ``rename_and_orient_hap2``, this haplotype's
-         ``pretext_to_asm_recurate``), compared by mtime — the freshest
+         and this haplotype's ``rename_and_orient`` and
+         ``pretext_to_asm_recurate`` steps), compared by mtime — the freshest
          existing file wins outright, ties going to the first-listed step.
       2. Filesystem glob in {workdir}/rename_and_orient*/*/{tol_id}.{hap_prefix}.*.fa
       3. ``pretext_to_asm`` output via find_curated_fa (excludes haplotig files)
@@ -597,8 +604,7 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
             "pretext_to_asm",
             "microchromosome_combine",
             "blast_contaminants",
-            "rename_and_orient",
-            "rename_and_orient_hap2",
+            _rename_and_orient_step_name(ctx, hap_prefix),
             _recurate_step_name(ctx, hap_prefix),
         ]
         canonical = _latest_tracked_output(ctx, pool, keys, hap_prefix)
@@ -714,10 +720,10 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
 
     Resolution order:
       1. Tracker outputs across a single ordered pool (``pretext_to_asm``,
-         ``microchromosome_combine``, ``rename_and_orient``,
-         ``rename_and_orient_hap2``, this haplotype's
-         ``pretext_to_asm_recurate``), compared by mtime — the freshest
-         existing file wins outright, ties going to the first-listed step.
+         ``microchromosome_combine``, and this haplotype's
+         ``rename_and_orient`` and ``pretext_to_asm_recurate`` steps), compared
+         by mtime — the freshest existing file wins outright, ties going to the
+         first-listed step.
       2. ``rename_and_orient`` output —
          {workdir}/rename_and_orient*/*/{tol_id}.{hap_prefix}.*.chromosome.list.csv
       3. ``pretext_to_asm`` output — {tol_id}.{hap_prefix}.*.chromosome.list.csv
@@ -744,8 +750,7 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
         pool = [
             "pretext_to_asm",
             "microchromosome_combine",
-            "rename_and_orient",
-            "rename_and_orient_hap2",
+            _rename_and_orient_step_name(ctx, hap_prefix),
             _recurate_step_name(ctx, hap_prefix),
         ]
         canonical = _latest_tracked_output(ctx, pool, keys, hap_prefix)

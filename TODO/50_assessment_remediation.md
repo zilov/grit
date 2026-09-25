@@ -505,9 +505,13 @@ what counts as finished.
       Path(path).parents`, for the hic-remapping map); only a map test covered
       it. *Test:* `test_show_ticket_history_credits_unrecorded_blast_output_in_its_hap_subdir`
       (fails against the old `parent ==` check).
-- [ ] `DOM-14` — both `rename_and_orient` and `rename_and_orient_hap2` sit in
+- [x] `DOM-14` — both `rename_and_orient` and `rename_and_orient_hap2` sit in
       the pool for every haplotype; cross-hap contamination is prevented only by
-      their output keys happening to differ, not by any hap check.
+      their output keys happening to differ, not by any hap check. *Fixed:*
+      `_rename_and_orient_step_name()` puts only this haplotype's step in the
+      fa and chr-list pools, as `_recurate_step_name()` already did. *Tests:*
+      `test_rename_and_orient_steps_never_cross_haplotypes` (both directions),
+      `test_rename_and_orient_hap2_is_canonical_for_hap2`.
 - [x] `DOM-16` — `_latest_tracked_output` stats candidates unguarded and
       `_resolve_canonical_files` catches only `FileNotFoundError`, so a stale
       NFS handle (`OSError`/ESTALE) crashes the resolver. *Fixed:* every
