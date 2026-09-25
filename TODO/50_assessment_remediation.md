@@ -529,7 +529,10 @@ performs no registry writes.
       legitimate double quote in `inner_cmd` silently truncates the job's
       command while bsub still reports success. Enforce it in code, not in
       institutional knowledge. (Batch 1's tests are what make this checkable.)
-- [ ] `PKG-01` — `rename-and-orient` sourced from an unpinned git URL on a
+- [x] `PKG-01` — **done:** `[tool.uv.sources]` git override dropped; the dep now
+      resolves from PyPI (`rename-and-orient` 1.2.3 locked). *Verified:* `pip install .`
+      into a fresh venv installs grit + `rename-and-orient` 1.2.3 and both CLIs run.
+      Was: `rename-and-orient` sourced from an unpinned git URL on a
       personal account via uv-only `[tool.uv.sources]`: unpublishable to PyPI,
       `pip install -e .` broken, and `uv.lock` pins `1.2.0` against a `>=1.2.2`
       constraint.

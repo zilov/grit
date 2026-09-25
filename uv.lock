@@ -59,7 +59,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "rename-and-orient", git = "https://github.com/zilov/rename-and-orient" },
+    { name = "rename-and-orient", specifier = ">=1.2.2" },
     { name = "rich-click", specifier = ">=1.8.0" },
 ]
 
@@ -210,8 +210,12 @@ wheels = [
 
 [[package]]
 name = "rename-and-orient"
-version = "1.2.0"
-source = { git = "https://github.com/zilov/rename-and-orient#d389cc5ec91c31cb4c41dee081fb08532f097fbd" }
+version = "1.2.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/88/02/e63a406b68e97389d9ce0d8313c9d8fd2afb74968db1e7ff123a5d350818/rename_and_orient-1.2.3.tar.gz", hash = "sha256:56dc89ca4660be531f3e35c5171ef0aa8b45644c2fb813065f0b0dab04000426", size = 188028, upload-time = "2026-09-22T12:05:40.981Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b4/c3/b3bcab391af86a24dc6db5455c952830fbd2d81a619e949c5f7f9150f2c7/rename_and_orient-1.2.3-py3-none-any.whl", hash = "sha256:6e8d2d661f8c0ce4fde2be06468c07fa8f706f6c9253d894d7da375985268d9e", size = 20264, upload-time = "2026-09-22T12:05:39.718Z" },
+]
 
 [[package]]
 name = "rich"

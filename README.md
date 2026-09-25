@@ -24,8 +24,8 @@ uv tool install "grit @ git+ssh://git@github.com/zilov/grit.git"
 uv sync
 ```
 
-`rename-and-orient` is pinned to a git source via `[tool.uv.sources]`, which plain
-`pip` does not resolve — install with `uv`, not `pip install -e .`.
+All dependencies, including `rename-and-orient`, come from PyPI, so plain
+`pip install .` (or `pip install -e .` for development) works too.
 
 To pick up a newer version:
 

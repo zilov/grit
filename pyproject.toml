@@ -13,9 +13,6 @@ dependencies = [
     "rename-and-orient>=1.2.2",
 ]
 
-[tool.uv.sources]
-rename-and-orient = { git = "https://github.com/zilov/rename-and-orient" }
-
 [tool.uv]
 package = true
 
