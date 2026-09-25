@@ -374,9 +374,22 @@ Batch 4, so do this batch first.
       Was: when bsub's stdout lacked `Job <`, `_submit_bsub` returned that
       stdout as the job id; a non-numeric "job_id" then reached the registry
       and `bjobs`.
-- [ ] `CORR-18` — the epilogue rests on two unguarded assumptions: `sys.argv[0]`
+- [x] `CORR-18` — the epilogue rests on two unguarded assumptions: `sys.argv[0]`
       being a path valid on the compute node (see also Phase 2 / `PORT-02`), and
-      `$LSB_JOBEXIT_STAT` being set.
+      `$LSB_JOBEXIT_STAT` being set. **Fixed:** the epilogue is a `case` on
+      `${LSB_JOBEXIT_STAT:-}` — `0` → success, other digits → failed, unset or
+      non-numeric → no call at all (was: a `test` syntax error that recorded a
+      successful job `failed`). The grit path is `sys.argv[0]` made absolute, or
+      `shutil.which("grit")` when argv[0] is not an executable; all arguments go
+      through `shlex.join`, and `_submit_bsub` passes `-Ep` via `shlex.quote`
+      instead of bare single quotes. Still open: a venv path that is not mounted
+      on the exec host (that is `PORT-02`), and node death skipping post-exec
+      (the bjobs paths cover it). *Tests:*
+      `test_epilogue_without_a_numeric_exit_status_records_nothing` (unset,
+      empty, non-numeric), `test_epilogue_survives_paths_with_spaces_and_quotes`,
+      `test_epilogue_resolves_a_relative_grit_path`,
+      `test_epilogue_falls_back_to_grit_on_path_when_argv0_is_not_executable`,
+      `test_epilogue_run_by_lsf_calls_state_update_with_the_job_outcome`.
 
 *Batch done when:* a test proves an empty output glob cannot produce a `success`
 record, for both the epilogue path and the synchronous-step path.

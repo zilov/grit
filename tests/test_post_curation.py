@@ -1,5 +1,6 @@
 """Tests for post_curation steps."""
 
+import shlex
 from pathlib import Path
 from unittest.mock import patch
 
@@ -755,14 +756,15 @@ def test_run_hic_remapping_submits_nextflow_with_epilogue(
     record = ctx.tracker.history("hic_remapping")[-1]
     run_dir = record["run_dir"]
 
-    head, inner = cmd.split(' "', 1)
-    assert head.startswith("bsub -Ep '")
-    assert "_state-update" in head
-    assert f"--step hic_remapping --run-dir {run_dir} " in head
-    assert "--untracked" not in head
-    assert "-q oversubscribed" in head
-    assert "-M 1200" in head
-    assert f"-o {run_dir}/curationpretext_%J.log" in head
+    argv = shlex.split(cmd)
+    assert argv[:2] == ["bsub", "-Ep"]
+    epilogue, opts, inner = argv[2], " ".join(argv[3:-1]), argv[-1]
+    assert "_state-update" in epilogue
+    assert f"--step hic_remapping --run-dir {run_dir} " in epilogue
+    assert "--untracked" not in epilogue
+    assert "-q oversubscribed" in opts
+    assert "-M 1200" in opts
+    assert f"-o {run_dir}/curationpretext_%J.log" in opts
 
     assert inner.startswith(f"cd {run_dir} && ")
     assert "module load grit" in inner
@@ -781,7 +783,7 @@ def test_run_hic_remapping_submits_nextflow_with_epilogue(
         "-N curator@sanger.ac.uk",
     ):
         assert arg in inner
-    assert inner.rstrip('"').endswith("-resume")
+    assert inner.endswith("-resume")
 
     assert record["status"] == "started"
     assert record["job_id"] == "770835"
@@ -797,10 +799,10 @@ def test_run_hic_remapping_hap2_untracked_epilogue(mock_find_fa, mock_run, mock_
 
     run_hic_remapping(ctx, run_hap1=False, run_hap2=True)
 
-    head = mock_run.call_args[0][0].split(' "', 1)[0]
+    epilogue = shlex.split(mock_run.call_args[0][0])[2]
     run_dir = ctx.tracker.history("hic_remapping_hap2")[-1]["run_dir"]
-    assert f"--step hic_remapping_hap2 --run-dir {run_dir} " in head
-    assert "--untracked'" in head
+    assert f"--step hic_remapping_hap2 --run-dir {run_dir} " in epilogue
+    assert epilogue.endswith(" --untracked")
 
 
 @patch("grit.utils.helpers._run")

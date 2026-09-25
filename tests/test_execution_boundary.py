@@ -260,7 +260,7 @@ def test_submit_bsub_passes_the_epilogue_as_one_unexpanded_argument(fake_bsub, f
 
     argv = _argv(fake_bsub)
     assert argv[:2] == ["-Ep", epilogue]
-    assert "$LSB_JOBEXIT_STAT" in argv[1]
+    assert "${LSB_JOBEXIT_STAT:-}" in argv[1]
     assert argv[2:] == ["-q", "normal", "true"]
 
 
@@ -320,27 +320,44 @@ def test_submit_bsub_sets_no_timeout():
 # ---------------------------------------------------------------------------
 
 
-def test_epilogue_string_shape(monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["/opt/grit/bin/grit"])
-    epilogue = _state_update_epilogue(Path("/wd"), "fastga", Path("/wd/fastga/run1"))
-    assert epilogue == (
-        "/opt/grit/bin/grit _state-update --workdir /wd --step fastga "
-        "--run-dir /wd/fastga/run1 "
-        "--status $([ $LSB_JOBEXIT_STAT -eq 0 ] && echo success || echo failed)"
-    )
-
-
 def test_epilogue_appends_untracked_flag(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["/opt/grit/bin/grit"])
     epilogue = _state_update_epilogue(Path("/wd"), "fastga", Path("/wd/r"), untracked=True)
     assert epilogue.endswith(" --untracked")
 
 
-def _run_epilogue(epilogue: str, exit_stat: str | None) -> None:
+def _run_epilogue(epilogue: str, exit_stat: str | None, cwd: Path | None = None) -> None:
     env = {k: v for k, v in os.environ.items() if k != "LSB_JOBEXIT_STAT"}
     if exit_stat is not None:
         env["LSB_JOBEXIT_STAT"] = exit_stat
-    subprocess.run(["sh", "-c", epilogue], env=env, check=True, capture_output=True)
+    subprocess.run(["sh", "-c", epilogue], env=env, check=True, capture_output=True, cwd=cwd)
+
+
+def _submit_and_run_epilogue(fake_bsub, workdir, run_dir, exit_stat, untracked=False, cwd=None):
+    """Submit through the real shell, then run the -Ep argument bsub received as LSF would."""
+    _submit_bsub(
+        "true",
+        "-q normal",
+        epilogue_cmd=_state_update_epilogue(workdir, "fastga", run_dir, untracked=untracked),
+    )
+    _run_epilogue(_argv(fake_bsub)[1], exit_stat, cwd=cwd)
+
+
+def _expected_argv(workdir, run_dir, *tail):
+    return [
+        "_state-update",
+        "--workdir",
+        str(workdir),
+        "--step",
+        "fastga",
+        "--run-dir",
+        str(run_dir),
+        *tail,
+    ]
+
+
+def _recording_grit(path: Path, record: Path) -> Path:
+    return _executable(path, f"#!/bin/sh\nprintf '%s\\0' \"$@\" > {record}\n")
 
 
 @pytest.mark.parametrize(
@@ -350,33 +367,71 @@ def _run_epilogue(epilogue: str, exit_stat: str | None) -> None:
         ("256", False, ["--status", "failed"]),
         ("0", True, ["--status", "success", "--untracked"]),
         ("9", True, ["--status", "failed", "--untracked"]),
-        (None, False, ["--status", "failed"]),
     ],
 )
 def test_epilogue_run_by_lsf_calls_state_update_with_the_job_outcome(
     fake_bsub, fake_grit, tmp_path, exit_stat, untracked, expected_tail
 ):
-    """Submit through the real shell, then run the -Ep argument bsub received as LSF would."""
     _, grit_record = fake_grit
     workdir, run_dir = tmp_path / "wd", tmp_path / "wd" / "fastga" / "run1"
-    _submit_bsub(
-        "true",
-        "-q normal",
-        epilogue_cmd=_state_update_epilogue(workdir, "fastga", run_dir, untracked=untracked),
-    )
 
-    _run_epilogue(_argv(fake_bsub)[1], exit_stat)
+    _submit_and_run_epilogue(fake_bsub, workdir, run_dir, exit_stat, untracked)
 
-    assert _argv(grit_record) == [
-        "_state-update",
-        "--workdir",
-        str(workdir),
-        "--step",
-        "fastga",
-        "--run-dir",
-        str(run_dir),
-        *expected_tail,
-    ]
+    assert _argv(grit_record) == _expected_argv(workdir, run_dir, *expected_tail)
+
+
+@pytest.mark.parametrize("exit_stat", [None, "", "not-a-number"])
+def test_epilogue_without_a_numeric_exit_status_records_nothing(
+    fake_bsub, fake_grit, tmp_path, exit_stat
+):
+    """No usable LSB_JOBEXIT_STAT is no evidence either way: leave the run for bjobs."""
+    _, grit_record = fake_grit
+    workdir, run_dir = tmp_path / "wd", tmp_path / "wd" / "fastga" / "run1"
+
+    _submit_and_run_epilogue(fake_bsub, workdir, run_dir, exit_stat)
+
+    assert not grit_record.exists()
+
+
+def test_epilogue_survives_paths_with_spaces_and_quotes(fake_bsub, fake_grit, tmp_path):
+    _, grit_record = fake_grit
+    workdir = tmp_path / "curator's wd"
+    run_dir = workdir / "fastga" / 'run "$1" `x`'
+
+    _submit_and_run_epilogue(fake_bsub, workdir, run_dir, "0")
+
+    assert _argv(grit_record) == _expected_argv(workdir, run_dir, "--status", "success")
+
+
+def test_epilogue_resolves_a_relative_grit_path(fake_bsub, tmp_path, monkeypatch):
+    record = tmp_path / "grit.argv"
+    (tmp_path / "relbin").mkdir()
+    _recording_grit(tmp_path / "relbin" / "grit", record)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["relbin/grit"])
+    workdir, run_dir = tmp_path / "wd", tmp_path / "wd" / "fastga" / "run1"
+    elsewhere = tmp_path / "exec-host-cwd"
+    elsewhere.mkdir()
+
+    _submit_and_run_epilogue(fake_bsub, workdir, run_dir, "0", cwd=elsewhere)
+
+    assert _argv(record) == _expected_argv(workdir, run_dir, "--status", "success")
+
+
+def test_epilogue_falls_back_to_grit_on_path_when_argv0_is_not_executable(
+    fake_bsub, tmp_path, monkeypatch
+):
+    record = tmp_path / "grit.argv"
+    bindir = tmp_path / "gritbin"
+    bindir.mkdir()
+    _recording_grit(bindir / "grit", record)
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(sys, "argv", [str(tmp_path / "grit" / "__main__.py")])
+    workdir, run_dir = tmp_path / "wd", tmp_path / "wd" / "fastga" / "run1"
+
+    _submit_and_run_epilogue(fake_bsub, workdir, run_dir, "0")
+
+    assert _argv(record) == _expected_argv(workdir, run_dir, "--status", "success")
 
 
 # ---------------------------------------------------------------------------

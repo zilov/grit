@@ -7,6 +7,8 @@ import glob
 import logging
 import os
 import re
+import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -143,7 +145,7 @@ def _submit_bsub(
     *epilogue_cmd*: when provided, appended as ``-Ep '...'`` so LSF runs it
     after the job completes. Typically used to call ``grit _state-update``.
     """
-    epilogue_part = f" -Ep '{epilogue_cmd}'" if epilogue_cmd else ""
+    epilogue_part = f" -Ep {shlex.quote(epilogue_cmd)}" if epilogue_cmd else ""
     bsub_cmd = f'bsub{epilogue_part} {bsub_opts} "{inner_cmd}"'
     output = _run(bsub_cmd, print_only)
     if print_only:
@@ -159,22 +161,46 @@ def _submit_bsub(
     return job_id
 
 
+def _grit_executable() -> str:
+    """Return an absolute path to the running grit executable, else `grit` from $PATH."""
+    argv0 = os.path.abspath(sys.argv[0]) if sys.argv and sys.argv[0] else ""
+    if argv0 and os.path.isfile(argv0) and os.access(argv0, os.X_OK):
+        return argv0
+    on_path = shutil.which("grit")
+    if on_path:
+        return os.path.abspath(on_path)
+    log.warning("No grit executable found for the bsub epilogue; relying on $PATH on the node")
+    return "grit"
+
+
 def _state_update_epilogue(workdir: Path, step: str, run_dir: Path, untracked: bool = False) -> str:
     """
     Build the bsub -Ep epilogue command that calls `grit _state-update` when a job finishes.
 
-    Uses $LSB_JOBEXIT_STAT (set by LSF in epilogue environment) to determine success vs failed.
-    The `grit` command must be on $PATH on compute nodes.
+    Reports success/failed from $LSB_JOBEXIT_STAT, and calls nothing when it is unset
+    or non-numeric, leaving the run for the bjobs sweep.
 
     Pass ``untracked=True`` when the job was submitted for a run started with
     ``tracker.start(untracked=True)``, so the epilogue's `finish()` call doesn't
     clobber the untracked marker with 'success'/'failed'.
     """
-    grit_bin = sys.argv[0]  # full path — ensures grit is found in bsub epilogue environment
+    call = shlex.join(
+        [
+            _grit_executable(),
+            "_state-update",
+            "--workdir",
+            str(workdir),
+            "--step",
+            step,
+            "--run-dir",
+            str(run_dir),
+            "--status",
+        ]
+    )
     untracked_flag = " --untracked" if untracked else ""
     return (
-        f"{grit_bin} _state-update --workdir {workdir} --step {step} --run-dir {run_dir} "
-        f"--status $([ $LSB_JOBEXIT_STAT -eq 0 ] && echo success || echo failed){untracked_flag}"
+        'case "${LSB_JOBEXIT_STAT:-}" in 0) s=success ;; ""|*[!0-9]*) s= ;; *) s=failed ;; esac; '
+        f'[ -z "$s" ] || {call} "$s"{untracked_flag}'
     )
 
 
