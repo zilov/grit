@@ -13,8 +13,11 @@ recurating hap1 has no effect on hap2.
 ## The model: one flat pool, freshest wins
 
 There are no tiers and no step that outranks another. `grit` looks at a pool of
-steps, keeps the ones that still have an output on disk for this haplotype, and
-returns the one with the **newest file mtime**. A tie goes to whichever step is
+steps, keeps the ones whose latest *finished* run still has an output on disk
+for this haplotype, and returns the one with the **newest file mtime**. A run
+whose job is still in flight does not count yet — its file may be half
+written — so launching `hic-remapping` straight after submitting
+`rename-and-orient` remaps the previous canonical FASTA, not a partial one. A tie goes to whichever step is
 listed first — that is a tie-break, not a priority.
 
 The pool differs per file type, because not every step produces every file:

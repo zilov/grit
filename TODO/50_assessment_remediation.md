@@ -416,8 +416,15 @@ what counts as finished.
       tracked/filesystem), `test_single_hap_ticket_still_resolves_primary`,
       `test_hic_remapping_hap2_is_refused_on_a_single_hap_ticket`,
       `test_hap2_is_refused_on_a_single_hap_ticket` (rename-and-orient).
-- [ ] `DOM-02` (critical) — `latest_run_dir` falls back to `started` runs, so a
+- [x] `DOM-02` (critical) — `latest_run_dir` falls back to `started` runs, so a
       half-written FASTA from an in-flight bsub job is the freshest pool member.
+      *Fixed:* `latest_run_dir(step, include_started=False)` for the resolver's
+      re-glob; the default is unchanged for the resubmit guards, `untrack` and
+      `cleanup`. The filesystem fallbacks skip in-flight dirs too (with
+      `DOM-03`). *Tests:* `test_trace_t3_in_flight_rename_and_orient_is_not_canonical`,
+      `test_in_flight_recurate_haplotigs_are_not_canonical`,
+      `test_in_flight_rerun_leaves_the_previous_run_of_the_step_canonical`,
+      `test_in_flight_hic_remapping_map_is_not_canonical`.
 - [ ] `DOM-01` (critical) — when the newest successful run recorded no outputs,
       `get_output` substitutes an older run of the same step and the re-glob
       never fires; `143f425` covers the other half only. Re-check after Batch 3:

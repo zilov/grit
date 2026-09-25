@@ -818,3 +818,76 @@ def test_single_hap_ticket_still_resolves_primary(mock_ctx_primary, tmp_path):
     assert find_canonical_fa(mock_ctx_primary, "primary") == fa
     assert find_canonical_chr_list(mock_ctx_primary, "primary") == chr_list
     assert find_canonical_haplotigs(mock_ctx_primary, "primary") == haplotigs
+
+
+# ---------------------------------------------------------------------------
+# DOM-02 / report 06 trace T3: an in-flight run's files are not canonical
+# ---------------------------------------------------------------------------
+
+
+def _pta_success(tmp_path, ctx, ts="2026-01-01T00_00_00"):
+    pta_dir = _pta_dir(tmp_path, ts)
+    fa = _write(pta_dir / f"{ctx.tol_id}.hap1.1.curated.fa")
+    chr_list = _write(pta_dir / f"{ctx.tol_id}.hap1.1.chromosome.list.csv")
+    ctx.tracker.finish(
+        "pretext_to_asm",
+        pta_dir,
+        "success",
+        outputs={"hap1_fa": str(fa), "hap1_chr_list": str(chr_list)},
+    )
+    return fa, chr_list
+
+
+def test_trace_t3_in_flight_rename_and_orient_is_not_canonical(mock_ctx, tmp_path):
+    """rename-and-orient's bsub job is still writing: canonical stays pretext-to-asm's."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_fa, pta_chr = _pta_success(tmp_path, mock_ctx)
+
+    rao_dir = tracker.start("rename_and_orient", mock_ctx.ticket_id, mock_ctx.tol_id)
+    tracker.record_job("rename_and_orient", rao_dir, "12345")
+    _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")  # half-written
+    _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.chromosome.list.csv")
+
+    assert find_canonical_fa(mock_ctx, "hap1") == pta_fa
+    assert find_canonical_chr_list(mock_ctx, "hap1") == pta_chr
+
+
+def test_in_flight_rerun_leaves_the_previous_run_of_the_step_canonical(mock_ctx, tmp_path):
+    """A second rename-and-orient run in flight must not hide the first, finished one."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    _pta_success(tmp_path, mock_ctx)
+
+    done_dir = tmp_path / "rename_and_orient" / "2026-01-02T00_00_00"
+    done_fa = _write(done_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+    tracker.finish("rename_and_orient", done_dir, "success", outputs={"hap1_fa": str(done_fa)})
+
+    running_dir = tracker.start("rename_and_orient", mock_ctx.ticket_id, mock_ctx.tol_id)
+    _write(running_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+
+    assert find_canonical_fa(mock_ctx, "hap1") == done_fa
+
+
+def test_in_flight_recurate_haplotigs_are_not_canonical(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    pta_hap = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_haplotigs": str(pta_hap)})
+
+    rec_dir = tracker.start("pretext_to_asm_recurate", mock_ctx.ticket_id, mock_ctx.tol_id)
+    _write(rec_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == pta_hap
+
+
+def test_in_flight_hic_remapping_map_is_not_canonical(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    done_dir = tmp_path / "hic_remapping" / "2026-01-01T00_00_00"
+    done_map = _write_map(done_dir, mock_ctx.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping", done_dir, "success", outputs={"hap1_normal_pretext": str(done_map)}
+    )
+
+    running_dir = tracker.start("hic_remapping", mock_ctx.ticket_id, mock_ctx.tol_id)
+    _write_map(running_dir, mock_ctx.tol_id, "hap1")
+
+    assert find_canonical_map(mock_ctx, "hap1") == done_map

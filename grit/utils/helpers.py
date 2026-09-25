@@ -501,17 +501,18 @@ def _step_output(
     """
     Path *step* currently offers for any of *key_variants*, or None.
 
-    Falls back to re-globbing the step's latest run dir with its output specs
-    when the tracked outputs hold no such key, so a run whose outputs were
-    recorded incompletely still competes with its real on-disk files instead of
-    handing the canonical slot to an older step.
+    Falls back to re-globbing the step's latest successful run dir with its
+    output specs when the tracked outputs hold no such key, so a run whose
+    outputs were recorded incompletely still competes with its real on-disk
+    files instead of handing the canonical slot to an older step. A run still
+    in flight never competes: its files may be mid-write.
     """
     for k in key_variants:
         val = ctx.tracker.get_output(step, k)
         if val and Path(val).exists():
             return Path(val)
 
-    run_dir = ctx.tracker.latest_run_dir(step)
+    run_dir = ctx.tracker.latest_run_dir(step, include_started=False)
     if not run_dir or not run_dir.exists():
         return None
     if step.startswith("pretext_to_asm_recurate"):

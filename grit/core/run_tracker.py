@@ -172,12 +172,13 @@ class RunTracker:
         """Return all step records, optionally filtered by step name."""
         return self._registry.get_steps(self.workdir, step)
 
-    def latest_run_dir(self, step: str) -> Path | None:
+    def latest_run_dir(self, step: str, *, include_started: bool = True) -> Path | None:
         """
         Return the run_dir of the last *successful* run for a step, or None.
 
         If the step only has a 'started' entry (bsub job still running or finished
-        but _state-update hasn't fired yet), returns that run_dir as a fallback.
+        but _state-update hasn't fired yet), returns that run_dir as a fallback
+        unless ``include_started=False``.
         Run dirs whose most recent record has status 'untracked' are excluded.
         """
         runs = self.history(step)
@@ -191,6 +192,8 @@ class RunTracker:
         ]
         if success_runs:
             return Path(success_runs[-1]["run_dir"])
+        if not include_started:
+            return None
         started_runs = [
             r
             for r in runs
