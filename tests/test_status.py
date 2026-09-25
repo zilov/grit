@@ -1,5 +1,6 @@
 """Tests for grit/core/status.py."""
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -1157,3 +1158,34 @@ def test_show_ticket_history_marks_the_row_holding_the_canonical_map(tmp_path, m
         line for line in out.splitlines() if "hic_remapping" in line and "success" in line
     )
     assert "map(1)" in hic_line
+
+
+def test_show_ticket_history_credits_unrecorded_blast_output_in_its_hap_subdir(
+    tmp_path, monkeypatch, capsys
+):
+    """DOM-12: blast-contaminants writes into {run_dir}/{hap}/ and may record no
+    outputs. The re-globbed decontaminated FASTA is canonical, and its row must say so."""
+    monkeypatch.setattr(console, "width", 200)
+    tol_id = "sDipInt39"
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    pta_dir = tracker.start("pretext_to_asm", "RC-1234", tol_id)
+    pta_fa = pta_dir / f"{tol_id}.hap1.1.curated.fa"
+    pta_fa.write_text(">s\n")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_fa": str(pta_fa)})
+
+    bc_dir = tracker.start("blast_contaminants", "RC-1234", tol_id, suffix="b")
+    bc_fa = bc_dir / "hap1" / f"{tol_id}.hap1.1.decontaminated.fa"
+    bc_fa.parent.mkdir()
+    bc_fa.write_text(">s\n")
+    os.utime(pta_fa, (1000, 1000))
+    os.utime(bc_fa, (2000, 2000))
+    tracker.finish("blast_contaminants", bc_dir, "success", outputs=None)
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    lines = capsys.readouterr().out.splitlines()
+    bc_line = next(line for line in lines if "blast_contaminants" in line and "success" in line)
+    pta_line = next(line for line in lines if "pretext_to_asm" in line and "success" in line)
+    assert "fa(1)" in bc_line
+    assert "fa(1)" not in pta_line

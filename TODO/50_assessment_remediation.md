@@ -498,10 +498,13 @@ what counts as finished.
 - [ ] `DOM-10` — `untrack` excludes only the named run dir, so canonical passes
       to an earlier run of the *same* step before any other pool member, not to
       "the next-freshest pool member" as the spec says (L147-149).
-- [ ] `DOM-12` — the unrecorded-file credit matches `Path(path).parent ==
+- [x] `DOM-12` — the unrecorded-file credit matches `Path(path).parent ==
       run_dir`, so it misses steps whose outputs live in a subdirectory — i.e.
       the spec's "the two tables can't disagree" (L188-191) fails exactly for
-      `blast_contaminants`.
+      `blast_contaminants`. *Already fixed by `78f9d35`* (`run_dir in
+      Path(path).parents`, for the hic-remapping map); only a map test covered
+      it. *Test:* `test_show_ticket_history_credits_unrecorded_blast_output_in_its_hap_subdir`
+      (fails against the old `parent ==` check).
 - [ ] `DOM-14` — both `rename_and_orient` and `rename_and_orient_hap2` sit in
       the pool for every haplotype; cross-hap contamination is prevented only by
       their output keys happening to differ, not by any hap check.
