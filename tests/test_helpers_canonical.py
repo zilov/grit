@@ -935,3 +935,113 @@ def test_in_flight_hic_remapping_map_is_not_canonical(mock_ctx, tmp_path):
     _write_map(running_dir, mock_ctx.tol_id, "hap1")
 
     assert find_canonical_map(mock_ctx, "hap1") == done_map
+
+
+# ---------------------------------------------------------------------------
+# DOM-03 / report 06 trace T4: the filesystem fallbacks respect the tracker
+# ---------------------------------------------------------------------------
+
+
+def _untracked_pta_run(ctx):
+    """A `pretext-to-asm --untracked` run with the full dual-hap output set."""
+    run_dir = ctx.tracker.start("pretext_to_asm", ctx.ticket_id, ctx.tol_id, untracked=True)
+    fa = _write(run_dir / f"{ctx.tol_id}.hap1.1.curated.fa")
+    chr_list = _write(run_dir / f"{ctx.tol_id}.hap1.1.chromosome.list.csv")
+    _write(run_dir / f"{ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    ctx.tracker.finish(
+        "pretext_to_asm",
+        run_dir,
+        "success",
+        outputs={"hap1_fa": str(fa), "hap1_chr_list": str(chr_list)},
+        untracked=True,
+    )
+    return run_dir
+
+
+@pytest.mark.parametrize(
+    "finder",
+    [find_canonical_fa, find_canonical_chr_list, find_canonical_haplotigs, find_curated_fa],
+    ids=lambda f: f.__name__,
+)
+def test_trace_t4_an_untracked_only_run_is_never_canonical(mock_ctx, tmp_path, finder):
+    _make_tracker(tmp_path, mock_ctx)
+    _untracked_pta_run(mock_ctx)
+
+    with pytest.raises(FileNotFoundError):
+        finder(mock_ctx, "hap1")
+
+
+@pytest.mark.parametrize(
+    "finder, name",
+    [
+        (find_canonical_fa, "hap1.1.curated.fa"),
+        (find_canonical_chr_list, "hap1.1.chromosome.list.csv"),
+        (find_canonical_haplotigs, "hap1.1.all_haplotigs.curated.fa"),
+    ],
+    ids=["fa", "chr_list", "haplotigs"],
+)
+def test_filesystem_fallback_skips_a_newer_untracked_run(mock_ctx, tmp_path, finder, name):
+    """A pre-tracking pretext_to_asm dir on disk stays canonical over a newer untracked run."""
+    _make_tracker(tmp_path, mock_ctx)
+    legacy = _write(_pta_dir(tmp_path) / f"{mock_ctx.tol_id}.{name}")
+    _untracked_pta_run(mock_ctx)
+
+    assert finder(mock_ctx, "hap1") == legacy
+
+
+def test_untracking_the_only_pretext_to_asm_run_takes_it_out_of_canonical(mock_ctx, tmp_path):
+    """Trace T4's second half: `grit untrack -s pretext_to_asm` must not be a no-op."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    _pta_success(tmp_path, mock_ctx)
+    tracker.untrack("pretext_to_asm")
+
+    with pytest.raises(FileNotFoundError):
+        find_canonical_fa(mock_ctx, "hap1")
+
+
+@pytest.mark.parametrize("untracked", [True, False], ids=["untracked", "in_flight"])
+def test_rename_and_orient_fallback_skips_unsettled_runs(mock_ctx, tmp_path, untracked):
+    _make_tracker(tmp_path, mock_ctx)
+    legacy_fa = _write(_pta_dir(tmp_path) / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    legacy_chr = _write(_pta_dir(tmp_path) / f"{mock_ctx.tol_id}.hap1.1.chromosome.list.csv")
+
+    rao_dir = mock_ctx.tracker.start(
+        "rename_and_orient", mock_ctx.ticket_id, mock_ctx.tol_id, untracked=untracked
+    )
+    _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+    _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.chromosome.list.csv")
+
+    assert find_canonical_fa(mock_ctx, "hap1") == legacy_fa
+    assert find_canonical_chr_list(mock_ctx, "hap1") == legacy_chr
+
+
+def test_filesystem_fallback_skips_an_in_flight_pretext_to_asm_run(mock_ctx, tmp_path):
+    _make_tracker(tmp_path, mock_ctx)
+    legacy = _write(_pta_dir(tmp_path) / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    running = mock_ctx.tracker.start("pretext_to_asm", mock_ctx.ticket_id, mock_ctx.tol_id)
+    _write(running / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+
+    assert find_canonical_fa(mock_ctx, "hap1") == legacy
+
+
+@pytest.mark.parametrize("untracked", [True, False], ids=["untracked", "in_flight"])
+def test_canonical_map_fallback_skips_unsettled_runs(mock_ctx, tmp_path, untracked):
+    _make_tracker(tmp_path, mock_ctx)
+    legacy = _write_map(tmp_path / "hic_remapping" / "2026-01-01T00_00_00", mock_ctx.tol_id, "hap1")
+    run_dir = mock_ctx.tracker.start(
+        "hic_remapping", mock_ctx.ticket_id, mock_ctx.tol_id, untracked=untracked
+    )
+    _write_map(run_dir, mock_ctx.tol_id, "hap1")
+
+    assert find_canonical_map(mock_ctx, "hap1") == legacy
+
+
+def test_find_latest_dir_skips_an_untracked_run(mock_ctx, tmp_path):
+    from grit.utils.helpers import find_latest_dir
+
+    _make_tracker(tmp_path, mock_ctx)
+    kept = _pta_dir(tmp_path)
+    kept.mkdir(parents=True)
+    _untracked_pta_run(mock_ctx)
+
+    assert find_latest_dir(mock_ctx, "pretext_to_asm") == kept

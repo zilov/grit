@@ -437,10 +437,23 @@ what counts as finished.
       `test_rerun_with_no_outputs_on_disk_does_not_resurrect_the_older_run`,
       `test_get_output_does_not_substitute_an_older_run`,
       `test_get_output_reads_an_earlier_record_of_the_same_run`.
-- [ ] `DOM-03` (critical) — the filesystem fallbacks of all three resolvers go
+- [x] `DOM-03` (critical) — the filesystem fallbacks of all three resolvers go
       through `find_latest_dir`, which never consults untracked status, so an
       `--untracked` run becomes canonical for fa, haplotigs *and* chr_list and
-      is shipped by `finalize-qc`.
+      is shipped by `finalize-qc`. *Fixed:* `find_latest_dir` skips untracked
+      run dirs for every caller; with `settled_only=True` (all resolver
+      fallbacks) it also skips in-flight ones, and the `rename_and_orient*` and
+      hic-remapping map globs filter the same way (`_settled_matches`).
+      `test_show_ticket_history_resolves_done_job_without_waiting_for_gone` now
+      runs the `refresh_statuses()` sweep first, as `grit status` does: a
+      still-`started` run is no longer canonical before it. *Tests:*
+      `test_trace_t4_an_untracked_only_run_is_never_canonical` (4 resolvers),
+      `test_filesystem_fallback_skips_a_newer_untracked_run` (fa/chr/haplotigs),
+      `test_untracking_the_only_pretext_to_asm_run_takes_it_out_of_canonical`,
+      `test_rename_and_orient_fallback_skips_unsettled_runs`,
+      `test_filesystem_fallback_skips_an_in_flight_pretext_to_asm_run`,
+      `test_canonical_map_fallback_skips_unsettled_runs`,
+      `test_find_latest_dir_skips_an_untracked_run`.
 - [ ] `DOM-04` (critical) — `pending_jobs()` treats only `success`/`failed` as
       terminal, so untracking an in-flight run is silently reverted by the next
       `grit status` via `_resolve_gone_job`, which re-`finish`es it without

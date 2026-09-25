@@ -455,7 +455,7 @@ def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     }
 
     _refuse_missing_hap2(ctx, hap_prefix, "curated FASTA")
-    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm", settled_only=True)
 
     def _search(token: str) -> list[str]:
         return [
@@ -599,7 +599,9 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     def _rao_search(token: str) -> list[str]:
         rao_pattern = ctx.workdir / "rename_and_orient*" / "*" / f"{ctx.tol_id}.{token}.*.fa"
         return [
-            f for f in glob.glob(str(rao_pattern)) if not any(kw in f for kw in _HAPLOTIG_KEYWORDS)
+            f
+            for f in _settled_matches(ctx, glob.glob(str(rao_pattern)))
+            if not any(kw in f for kw in _HAPLOTIG_KEYWORDS)
         ]
 
     matches = _rao_search(hap_prefix)
@@ -652,7 +654,7 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
         if canonical:
             return canonical
 
-    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm", settled_only=True)
 
     def _hap_specific(token: str) -> Path | None:
         for pattern in (
@@ -748,7 +750,7 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
         rao_pattern = (
             ctx.workdir / "rename_and_orient*" / "*" / f"{ctx.tol_id}.{token}.*.chromosome.list.csv"
         )
-        return glob.glob(str(rao_pattern))
+        return _settled_matches(ctx, glob.glob(str(rao_pattern)))
 
     matches = _search_rao(hap_prefix)
     if not matches and hap_prefix in _PTA_ALIASES:
@@ -756,7 +758,7 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     if matches:
         return Path(sorted(matches)[-1])
 
-    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm", settled_only=True)
     matches = _search_dir(pta_dir, hap_prefix)
     if not matches and hap_prefix in _PTA_ALIASES:
         matches = _search_dir(pta_dir, _PTA_ALIASES[hap_prefix])
@@ -801,7 +803,8 @@ def find_canonical_map(ctx: "CurationContext", hap_prefix: str) -> Path:
             return canonical
 
     pattern = ctx.workdir / step / "*" / "pretext_maps_processed" / f"{ctx.tol_id}*normal.pretext"
-    matches = glob.glob(str(pattern))
+    excluded = _excluded_run_dirs(ctx, step, settled_only=True)
+    matches = [m for m in glob.glob(str(pattern)) if Path(m).parent.parent.name not in excluded]
     if not matches:
         raise FileNotFoundError(
             f"No remapped Pretext map for {hap_prefix!r} found under "
@@ -874,7 +877,31 @@ def parse_agp_tags(agp_path: Path) -> dict[str, set[str]]:
     return tags
 
 
-def find_latest_dir(ctx: "CurationContext", step: str) -> Path:
+def _excluded_run_dirs(ctx: "CurationContext", step: str, *, settled_only: bool) -> set[str]:
+    """Names of *step*'s run dirs marked untracked (and, if *settled_only*, in flight)."""
+    if not ctx.tracker:
+        return set()
+    excluded = {"untracked", "started"} if settled_only else {"untracked"}
+    return {
+        name for name, status in ctx.tracker.run_dir_statuses(step).items() if status in excluded
+    }
+
+
+def _settled_matches(ctx: "CurationContext", matches: list[str]) -> list[str]:
+    """Drop globbed ``{workdir}/<step>/<run_dir>/<file>`` paths from untracked or in-flight runs."""
+    excluded: dict[str, set[str]] = {}
+    kept = []
+    for m in matches:
+        run_dir = Path(m).parent
+        step = run_dir.parent.name
+        if step not in excluded:
+            excluded[step] = _excluded_run_dirs(ctx, step, settled_only=True)
+        if run_dir.name not in excluded[step]:
+            kept.append(m)
+    return kept
+
+
+def find_latest_dir(ctx: "CurationContext", step: str, *, settled_only: bool = False) -> Path:
     """
     Return the output directory for *step*, trying locations in priority order:
       1. Alphabetically-last subdir of workdir/step/ that exists on filesystem,
@@ -885,20 +912,25 @@ def find_latest_dir(ctx: "CurationContext", step: str) -> Path:
       3. workdir / step / "untracked"    — run before tracking was introduced.
       4. workdir                          — last resort.
 
+    Run dirs the tracker marks untracked are never returned; with
+    ``settled_only=True`` neither are runs still in flight (latest record
+    ``started``), whose files may be mid-write.
+
     In print-only mode the tracker path is accepted even if it does not exist yet
     (so printed commands show the expected real path rather than a fallback).
     """
     # Filesystem scan: pick the alphabetically-last (newest timestamp) subdir
     step_dir = ctx.workdir / step
+    excluded = _excluded_run_dirs(ctx, step, settled_only=settled_only)
     fs_latest: Path | None = None
     if step_dir.is_dir():
-        subdirs = sorted(d for d in step_dir.iterdir() if d.is_dir())
+        subdirs = sorted(d for d in step_dir.iterdir() if d.is_dir() and d.name not in excluded)
         if subdirs:
             fs_latest = subdirs[-1]
 
     tracked: Path | None = None
     if ctx.tracker:
-        tracked = ctx.tracker.latest_run_dir(step)
+        tracked = ctx.tracker.latest_run_dir(step, include_started=not settled_only)
         if tracked and not tracked.exists() and not ctx.print_only:
             tracked = None  # stale tracker entry
 

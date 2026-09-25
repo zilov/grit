@@ -136,6 +136,9 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   guard) only act on records with `status="started"`, which an untracked run
   never has — for the same reason `record_job()` finds nothing to patch, so an
   untracked bsub run stores no `job_id` and can't be recovered via bjobs.
+  The resolvers' filesystem fallbacks honour the marker too: `find_latest_dir()`
+  never returns a run dir whose latest record is `untracked` (for any caller), so
+  an `--untracked` run cannot become canonical just by being the newest dir on disk.
 - **No global state** — everything flows through `ctx`
 - **`print_only` everywhere** — every step respects `ctx.print_only`; `_run()` enforces it
 - **`--dry-run`** — a separate mode from `print_only`, for exercising step-sequencing/
@@ -199,7 +202,10 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   (`grit/utils/helpers.py`) resolve "the current canonical assembly" per haplotype from a single flat,
   mtime-ordered pool of tracker steps (`pretext_to_asm`, `microchromosome_combine`,
   `blast_contaminants`, `rename_and_orient[_hap2]`, `pretext_to_asm_recurate[_hap2]`) — the freshest
-  existing tracked output wins outright, with a filesystem fallback when nothing is tracked. A step
+  existing tracked output wins outright, with a filesystem fallback when nothing is tracked — that
+  fallback skips run dirs the tracker marks `untracked` or still `started`
+  (`find_latest_dir(..., settled_only=True)`, `_settled_matches()`), so it only ever sees dirs the
+  tracker has no opinion on or has seen finish. A step
   whose latest successful run recorded no matching output key is not dropped from that comparison:
   `_step_output()` re-globs that run dir with the step's `_OUTPUT_SPECS` first, so a run with
   incompletely recorded outputs can't hand canonical back to an older step (canonical must never move

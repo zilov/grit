@@ -205,6 +205,14 @@ class RunTracker:
             return Path(started_runs[-1]["run_dir"])
         return None
 
+    def run_dir_statuses(self, step: str) -> dict[str, str]:
+        """Map each of *step*'s run dir names to the status of its most recent record."""
+        latest: dict[str, str] = {}
+        for r in self.history(step):
+            if r.get("run_dir"):
+                latest[Path(r["run_dir"]).name] = r.get("status", "")
+        return latest
+
     def get_output(self, step: str, key: str) -> str | None:
         """
         Return the path string for *key* from the latest successful run of *step*.

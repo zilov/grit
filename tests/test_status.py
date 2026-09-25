@@ -361,10 +361,13 @@ def test_show_ticket_history_resolves_done_job_without_waiting_for_gone(
     (maps_dir / f"{tol_id}.hap1_hr.pretext").write_text("")
     (maps_dir / f"{tol_id}.hap1_normal.pretext").write_text("")
 
+    # `grit status` sweeps pending jobs before rendering; a run still `started`
+    # is in flight and never canonical, so the tip depends on the sweep.
     with (
         patch("grit.utils.helpers._check_bjobs", return_value={"685359": "DONE"}),
         patch("grit.core.status.print_tip") as mock_print_tip,
     ):
+        reg.refresh_statuses()
         show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
 
     out = capsys.readouterr().out

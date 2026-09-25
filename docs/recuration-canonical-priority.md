@@ -53,7 +53,11 @@ as such.
 
 If nothing in a pool has a live tracked output — a fresh clone, a workdir
 populated outside `grit` — resolution falls back to globbing the workdir:
-`rename_and_orient*` run dirs first, then the `pretext_to_asm` output.
+`rename_and_orient*` run dirs first, then the `pretext_to_asm` output. The
+fallback still skips run dirs that `grit` knows are untracked or still in
+flight, so an `--untracked` run never becomes canonical by being the newest
+directory on disk, and untracking the only run of a step leaves that file
+type with no canonical file rather than changing nothing.
 
 ### `--hap2` does not mean the same thing everywhere
 
