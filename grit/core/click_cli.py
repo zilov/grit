@@ -228,22 +228,38 @@ def state_update_cmd(workdir, step, run_dir, status, job_id, untracked):
     """[Internal] Called by bsub -Ep epilogue to record job completion."""
     from grit.core.registry import RegistryManager
     from grit.core.run_tracker import RunTracker
-    from grit.utils.helpers import _get_step_specs, collect_outputs
+    from grit.utils.helpers import finished_run_outputs
 
     workdir_path = Path(workdir)
     tracker = RunTracker(workdir_path)
     outputs = None
     if status == "success":
         ticket = RegistryManager().find_ticket_by_workdir(workdir_path)
-        if ticket:
-            tol_id = ticket.get("tol_id", "")
-            hap1 = ticket.get("hap1_prefix", "hap1")
-            hap2 = ticket.get("hap2_prefix", "hap2")
-            specs = _get_step_specs(step)
-            if specs and tol_id:
-                outputs = (
-                    collect_outputs(specs, Path(run_dir), tol_id, hap1=hap1, hap2=hap2) or None
-                )
+        tol_id = ticket.get("tol_id", "") if ticket else ""
+        complete, found = (
+            finished_run_outputs(
+                tracker,
+                step,
+                Path(run_dir),
+                tol_id,
+                hap1=ticket.get("hap1_prefix", "hap1"),
+                hap2=ticket.get("hap2_prefix", "hap2"),
+            )
+            if tol_id
+            else (False, {})
+        )
+        if not complete:
+            # exit 0 without the outputs proves neither outcome; leave the run
+            # `started` so `grit status`'s bjobs sweep re-checks it later
+            log.warning(
+                "_state-update: step=%s job_id=%s exited 0 but its outputs are incomplete "
+                "in %s; not recording success",
+                step,
+                job_id,
+                run_dir,
+            )
+            return
+        outputs = found or None
     tracker.finish(step, Path(run_dir), status, job_id=job_id, outputs=outputs, untracked=untracked)
     log.info(
         "_state-update: step=%s status=%s job_id=%s outputs=%s",

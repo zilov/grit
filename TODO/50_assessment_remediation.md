@@ -281,11 +281,22 @@ Root cause: `success` is recorded from the scheduler's exit status, not from
 verified outputs. Fixing the root deactivates the trigger for `DOM-01` in
 Batch 4, so do this batch first.
 
-- [ ] `CORR-03` (root) — `click_cli.py:228-251`: `state_update_cmd` passes the
+- [x] `CORR-03` (root) — `click_cli.py:228-251`: `state_update_cmd` passes the
       LSF-derived `status` straight to `tracker.finish()`; `outputs` is
       best-effort and, when empty, becomes `None` without downgrading the
       status. Rule to enforce: `success` requires outputs; empty outputs
-      downgrade. *Verified directly.*
+      downgrade. *Verified directly.* **Fixed:** exit 0 is recorded `success`
+      only when `finished_run_outputs()` calls the run complete (manifest via
+      `verify_outputs()`, else any `_OUTPUT_SPECS` match; `sex_matcher` by
+      `Best_match*` in its run dir). Otherwise the epilogue writes nothing: the
+      run stays `started` with its `job_id` for the bjobs sweep, not `failed`,
+      since exit 0 without outputs is no evidence of failure and `failed` is
+      terminal. *Tests:*
+      `test_state_update_success_with_no_outputs_leaves_the_run_started`,
+      `test_state_update_success_with_partial_outputs_leaves_the_run_started`,
+      `test_state_update_success_with_manifest_outputs_records_success`,
+      `test_state_update_sex_matcher_success_requires_best_match_in_the_run_dir`,
+      `test_state_update_untracked_with_no_outputs_keeps_the_marker`.
 - [ ] `CORR-03b` — `grit/scripts/sex-matcher.sh:49` ends in an unconditional
       `exit 0`, so the step's success is unconditional: a permanently green row
       with no `Best_match` file, and the step's own resubmit guard then refuses

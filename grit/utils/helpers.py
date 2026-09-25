@@ -1063,6 +1063,21 @@ def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
         return []
 
 
+def finished_run_outputs(
+    tracker, step: str, run_dir: Path, tol_id: str, *, hap1: str = "hap1", hap2: str = "hap2"
+) -> tuple[bool, dict[str, str]]:
+    """Return (complete, outputs) for a finished run, judged by STEP_MANIFESTS where one exists."""
+    specs = _get_step_specs(step)
+    outputs = collect_outputs(specs, run_dir, tol_id, hap1=hap1, hap2=hap2) if specs else {}
+    if step == "sex_matcher":
+        # its manifest names the workdir, but sex-matcher.sh writes into the run dir
+        return run_dir.is_dir() and any(run_dir.glob("Best_match*")), outputs
+    verdict = tracker.verify_outputs(step, tol_id, run_dir)
+    if verdict == "not_tracked":
+        return bool(outputs), outputs
+    return verdict in ("ok", "no_files"), outputs
+
+
 def _sort_by_mtime(files: list[str]) -> list[str]:
     """Return files sorted by modification time, newest first."""
     return sorted(files, key=lambda x: Path(x).stat().st_mtime, reverse=True)

@@ -19,6 +19,7 @@ from click.testing import CliRunner
 
 from grit.core.click_cli import cli
 from grit.core.registry import RegistryManager
+from grit.core.run_tracker import RunTracker
 from grit.utils.helpers import (
     BsubSubmissionError,
     _run,
@@ -379,7 +380,7 @@ def test_epilogue_run_by_lsf_calls_state_update_with_the_job_outcome(
 
 
 # ---------------------------------------------------------------------------
-# `grit _state-update` — current behaviour
+# `grit _state-update`
 # ---------------------------------------------------------------------------
 
 
@@ -399,7 +400,7 @@ def seeded(tmp_path, monkeypatch):
     return reg, workdir, run_dir
 
 
-def _state_update(workdir, run_dir, *extra):
+def _state_update(workdir, run_dir, *extra, step="rename_and_orient"):
     return CliRunner().invoke(
         cli,
         [
@@ -407,7 +408,7 @@ def _state_update(workdir, run_dir, *extra):
             "--workdir",
             str(workdir),
             "--step",
-            "rename_and_orient",
+            step,
             "--run-dir",
             str(run_dir),
             *extra,
@@ -433,15 +434,85 @@ def test_state_update_success_records_outputs_found_on_disk(seeded):
     assert record["outputs"] == written
 
 
-def test_state_update_success_with_no_outputs_still_records_success(seeded):
-    """Current behaviour, pending CORR-03: an empty glob does not downgrade the status."""
+def test_state_update_success_with_no_outputs_leaves_the_run_started(seeded):
+    """An exit-0 job whose outputs are absent is not evidence of success, nor of failure."""
     reg, workdir, run_dir = seeded
+    reg.patch_step_job_id(workdir, "rename_and_orient", run_dir, "77")
 
-    result = _state_update(workdir, run_dir, "--status", "success")
+    result = _state_update(workdir, run_dir, "--status", "success", "--job-id", "77")
+
+    assert result.exit_code == 0, result.output
+    records = reg.get_steps(workdir, "rename_and_orient")
+    assert [r["status"] for r in records] == ["started"]
+    pending = RunTracker(workdir, registry=reg).pending_jobs()
+    assert [r["job_id"] for r in pending] == ["77"]
+
+
+def _started_hic_run(reg, workdir, *maps):
+    run_dir = workdir / "hic_remapping" / "2026-01-01T00_00_00_hap1"
+    (run_dir / "pretext_maps_processed").mkdir(parents=True)
+    reg.append_step(
+        workdir, {"step": "hic_remapping", "status": "started", "run_dir": str(run_dir)}
+    )
+    for name in maps:
+        (run_dir / "pretext_maps_processed" / name).write_text("x")
+    return run_dir
+
+
+def test_state_update_success_with_partial_outputs_leaves_the_run_started(seeded):
+    reg, workdir, _ = seeded
+    run_dir = _started_hic_run(reg, workdir, "sDipInt39.hap1_hr.pretext")
+
+    result = _state_update(workdir, run_dir, "--status", "success", step="hic_remapping")
+
+    assert result.exit_code == 0, result.output
+    assert [r["status"] for r in reg.get_steps(workdir, "hic_remapping")] == ["started"]
+
+
+def test_state_update_success_with_manifest_outputs_records_success(seeded):
+    reg, workdir, _ = seeded
+    run_dir = _started_hic_run(
+        reg, workdir, "sDipInt39.hap1_hr.pretext", "sDipInt39.hap1_normal.pretext"
+    )
+
+    result = _state_update(workdir, run_dir, "--status", "success", step="hic_remapping")
+
+    assert result.exit_code == 0, result.output
+    record = reg.get_steps(workdir, "hic_remapping")[-1]
+    assert record["status"] == "success"
+    assert set(record["outputs"]) == {"hap1_pretext", "hap1_normal_pretext"}
+
+
+@pytest.mark.parametrize(("best_match", "expected"), [(True, "success"), (False, "started")])
+def test_state_update_sex_matcher_success_requires_best_match_in_the_run_dir(
+    seeded, best_match, expected
+):
+    reg, workdir, _ = seeded
+    run_dir = workdir / "sex_matcher" / "2026-01-01T00_00_00"
+    run_dir.mkdir(parents=True)
+    reg.append_step(workdir, {"step": "sex_matcher", "status": "started", "run_dir": str(run_dir)})
+    if best_match:
+        (run_dir / "Best_match_1.txt").write_text("x")
+
+    result = _state_update(workdir, run_dir, "--status", "success", step="sex_matcher")
+
+    assert result.exit_code == 0, result.output
+    assert reg.get_steps(workdir, "sex_matcher")[-1]["status"] == expected
+
+
+def test_state_update_untracked_with_no_outputs_keeps_the_marker(seeded):
+    reg, workdir, _ = seeded
+    run_dir = workdir / "rename_and_orient" / "2026-01-02T00_00_00"
+    run_dir.mkdir(parents=True)
+    reg.append_step(
+        workdir, {"step": "rename_and_orient", "status": "untracked", "run_dir": str(run_dir)}
+    )
+
+    result = _state_update(workdir, run_dir, "--status", "success", "--untracked")
 
     assert result.exit_code == 0, result.output
     record = _last_record(reg, workdir)
-    assert record["status"] == "success"
+    assert record["status"] == "untracked"
     assert "outputs" not in record
 
 
