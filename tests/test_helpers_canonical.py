@@ -1,5 +1,8 @@
 """Tests for the canonical-output priority chain in grit/utils/helpers.py."""
 
+import itertools
+import os
+
 import pytest
 
 from grit.core.registry import RegistryManager
@@ -20,9 +23,15 @@ def _make_tracker(tmp_path, ctx):
     return ctx.tracker
 
 
+_MTIMES = itertools.count(1_000_000, 10)
+
+
 def _write(path):
+    """Write *path* with an mtime strictly later than every earlier ``_write``."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(">seq\n")
+    mtime = next(_MTIMES)
+    os.utime(path, (mtime, mtime))
     return path
 
 
@@ -214,8 +223,6 @@ def test_pretext_to_asm_rerun_after_rename_and_orient_wins(mock_ctx, tmp_path):
     pta_fa2 = _write(pta_dir2 / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
     tracker.finish("pretext_to_asm", pta_dir2, "success", outputs={"hap1_fa": str(pta_fa2)})
 
-    import os
-
     os.utime(pta_fa, (1000, 1000))
     os.utime(bc_fa, (2000, 2000))
     os.utime(rao_fa, (3000, 3000))
@@ -226,8 +233,6 @@ def test_pretext_to_asm_rerun_after_rename_and_orient_wins(mock_ctx, tmp_path):
 
 def test_blast_contaminants_rerun_after_rename_and_orient_wins(mock_ctx, tmp_path):
     """A fresh blast_contaminants re-run must beat a now-stale rename_and_orient output."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     rao_dir = tmp_path / "rename_and_orient" / "2026-01-01T00_00_00"
     rao_fa = _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
@@ -246,8 +251,6 @@ def test_blast_contaminants_rerun_after_rename_and_orient_wins(mock_ctx, tmp_pat
 def test_microchromosome_combine_rerun_after_blast_contaminants_wins(mock_ctx, tmp_path):
     """A fresh microchromosome_combine re-run must beat a now-stale blast_contaminants
     output — recency wins within and across tiers, tier order is only a tie-break."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     bc_dir = tmp_path / "blast_contaminants" / "2026-01-01T00_00_00"
     bc_fa = _write(bc_dir / f"{mock_ctx.tol_id}.hap1.1.decontaminated.fa")
@@ -268,8 +271,6 @@ def test_microchromosome_combine_rerun_after_blast_contaminants_wins(mock_ctx, t
 def test_pool_tie_break_favors_first_listed_step(mock_ctx, tmp_path):
     """On an exact mtime tie between two pool members, the first-listed step
     (pretext_to_asm, earlier in the flat pool order) wins."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     pta_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
     pta_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
@@ -289,8 +290,6 @@ def test_pool_tie_break_favors_first_listed_step(mock_ctx, tmp_path):
 def test_blast_contaminants_after_recurate_with_newer_mtime_wins(mock_ctx, tmp_path):
     """blast_contaminants run after pretext_to_asm_recurate, with a newer mtime,
     correctly becomes canonical — recuration is no longer an unconditional top tier."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     recurate_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-01T00_00_00"
     recurate_fa = _write(recurate_dir / f"{mock_ctx.tol_id}.1.primary.curated.fa")
@@ -311,8 +310,6 @@ def test_blast_contaminants_after_recurate_with_newer_mtime_wins(mock_ctx, tmp_p
 def test_rename_and_orient_after_recurate_with_newer_mtime_wins(mock_ctx, tmp_path):
     """rename_and_orient run after pretext_to_asm_recurate, with a newer mtime,
     correctly becomes canonical."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     recurate_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-01T00_00_00"
     recurate_fa = _write(recurate_dir / f"{mock_ctx.tol_id}.1.primary.curated.fa")
@@ -333,8 +330,6 @@ def test_rename_and_orient_after_recurate_with_newer_mtime_wins(mock_ctx, tmp_pa
 def test_pretext_to_asm_rerun_after_recurate_with_newer_mtime_wins(mock_ctx, tmp_path):
     """A fresh pretext_to_asm re-run correctly wins back over a stale recurate
     output, matching the recency-wins model applied to the rest of the pool."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     recurate_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-01T00_00_00"
     recurate_fa = _write(recurate_dir / f"{mock_ctx.tol_id}.1.primary.curated.fa")
@@ -415,8 +410,6 @@ def test_rename_and_orient_chr_list_beats_older_pretext_to_asm(mock_ctx, tmp_pat
     older pretext_to_asm one, instead of find_canonical_chr_list returning
     before it ever considers rename_and_orient (previously impossible since
     rename_and_orient never had a tracked chr_list output at all)."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     pta_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
     pta_chr_list = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.chromosome.list.csv")
@@ -441,8 +434,6 @@ def test_pretext_to_asm_chr_list_rerun_after_rename_and_orient_wins(mock_ctx, tm
     still be able to displace an older rename_and_orient one — proving the
     mtime pool genuinely competes both ways, not just that rename_and_orient
     always wins once tracked."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     rao_dir = tmp_path / "rename_and_orient" / "2026-01-01T00_00_00"
     rao_chr_list = _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.chromosome.list.csv")
@@ -467,8 +458,6 @@ def test_chr_list_from_newer_run_dir_wins_when_output_key_was_not_recorded(mock_
     outputs must still win over an older rename_and_orient one: the file is in
     that run's dir, so resolution re-globs the run dir instead of silently
     falling back to the stale step."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     rao_dir = tmp_path / "rename_and_orient" / "2026-01-01T00_00_00"
     rao_chr_list = _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.chromosome.list.csv")
@@ -491,8 +480,6 @@ def test_chr_list_of_latest_run_beats_earlier_run_of_the_same_step(mock_ctx, tmp
     """When the latest run of a step recorded no chr_list, an earlier run of
     that same step must not stand in for it — the latest run dir's own file is
     what the step currently offers."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     old_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
     old_chr_list = _write(old_dir / f"{mock_ctx.tol_id}.hap1.1.chromosome.list.csv")

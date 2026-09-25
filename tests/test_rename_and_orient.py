@@ -1,5 +1,6 @@
 """Tests for rename_and_orient step."""
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -406,6 +407,7 @@ def test_chained_dry_run_forward_chain_through_canonical_pool(mock_ctx, tmp_path
 
     run_pretext_to_asm(mock_ctx)
     pretext_output = Path(mock_ctx.tracker.get_output("pretext_to_asm", "hap1_fa"))
+    os.utime(pretext_output, (1000, 1000))
     assert find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix) == pretext_output
 
     run_blast_contaminants(mock_ctx)
@@ -413,6 +415,7 @@ def test_chained_dry_run_forward_chain_through_canonical_pool(mock_ctx, tmp_path
         mock_ctx.tracker.get_output("blast_contaminants", f"{mock_ctx.hap1_prefix}_fa")
     )
     assert blast_output != pretext_output
+    os.utime(blast_output, (2000, 2000))
     assert find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix) == blast_output
 
     with patch("grit.steps.optional.rename_and_orient._submit_bsub") as mock_bsub:
@@ -421,6 +424,7 @@ def test_chained_dry_run_forward_chain_through_canonical_pool(mock_ctx, tmp_path
 
     rename_output = Path(mock_ctx.tracker.get_output("rename_and_orient", "hap1_fa"))
     assert rename_output != blast_output
+    os.utime(rename_output, (3000, 3000))
     assert find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix) == rename_output
 
 

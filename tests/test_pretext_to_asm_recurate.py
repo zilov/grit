@@ -424,14 +424,17 @@ def test_chained_dry_run_forward_chain_from_recurate(mock_ctx, tmp_path):
 
     run_pretext_to_asm(mock_ctx)
     pretext_output = Path(tracker.get_output("pretext_to_asm", "hap1_fa"))
+    os.utime(pretext_output, (1000, 1000))
     assert find_canonical_fa(mock_ctx, "hap1") == pretext_output
 
     run_pretext_to_asm_recurate(mock_ctx, "hap1", "pretext_to_asm_recurate")
     recurate_output = Path(tracker.get_output("pretext_to_asm_recurate", "hap1_fa"))
     assert recurate_output != pretext_output
+    os.utime(recurate_output, (2000, 2000))
     assert find_canonical_fa(mock_ctx, "hap1") == recurate_output
 
     run_blast_contaminants(mock_ctx)
     blast_output = Path(tracker.get_output("blast_contaminants", "hap1_fa"))
     assert blast_output != recurate_output
+    os.utime(blast_output, (3000, 3000))
     assert find_canonical_fa(mock_ctx, "hap1") == blast_output
