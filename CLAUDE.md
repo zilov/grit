@@ -35,7 +35,7 @@ Each step file exports:
 
 ### Command execution
 
-All shell commands go through `_run(cmd, print_only)` in `grit/utils/helpers.py`. When `print_only=True`, commands are printed but not executed — enables dry-run mode via `--print-only` flag.
+All shell commands go through `_run(cmd, print_only)` in `grit/utils/helpers.py`. When `print_only=True`, commands are printed but not executed — enables dry-run mode via `--print-only` flag. A captured command that fails raises `CommandError` (a `CalledProcessError` subclass, so existing `except` clauses still match) whose message ends with the tail of the tool's stderr, and the same tail is logged at error level — so the curator sees the tool's own diagnostic, not just an exit code. Callers that parse the return value get stdout only; stderr never leaks into it.
 
 `bsub` jobs are submitted via `_submit_bsub()` → `_run()`. Job IDs are parsed and logged; execution is non-blocking (fire-and-forget).
 

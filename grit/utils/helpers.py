@@ -40,6 +40,22 @@ def require_workdir(ctx: CurationContext) -> None:
         raise SystemExit(1)
 
 
+_STDERR_TAIL_LINES = 40
+
+
+def _stderr_tail(stderr: str | None) -> str:
+    """Return the last _STDERR_TAIL_LINES lines of *stderr*, stripped."""
+    return "\n".join((stderr or "").strip().splitlines()[-_STDERR_TAIL_LINES:])
+
+
+class CommandError(subprocess.CalledProcessError):
+    """A failed `_run` command whose message ends with the tail of the tool's stderr."""
+
+    def __str__(self) -> str:
+        tail = _stderr_tail(self.stderr)
+        return f"{super().__str__()}\n{tail}" if tail else super().__str__()
+
+
 def _run(cmd: str, print_only: bool = False, *, capture: bool = True) -> str:
     """
     Print *cmd*; execute it unless print_only is True.
@@ -48,13 +64,21 @@ def _run(cmd: str, print_only: bool = False, *, capture: bool = True) -> str:
     When *capture* is ``False``, stdout and stderr are passed through to the
     terminal so the caller can see live output; the return value is ``""``.
 
-    Returns stdout (stripped) when captured, otherwise an empty string.
+    Returns stdout (stripped) when captured, otherwise an empty string. A captured
+    command that fails raises CommandError carrying its stderr, which is also logged.
     """
     console.print(f"\n[yellow]Command:[/yellow] [green]{escape(cmd)}[/green]")
     if print_only:
         return ""
     if capture:
-        result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            tail = _stderr_tail(result.stderr)
+            if tail:
+                log.error("Command failed (exit %d), stderr:\n%s", result.returncode, tail)
+            raise CommandError(result.returncode, cmd, output=result.stdout, stderr=result.stderr)
+        if result.stderr.strip():
+            log.debug("stderr: %s", result.stderr.strip())
         return result.stdout.strip()
     subprocess.run(cmd, shell=True, check=True)
     return ""

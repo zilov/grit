@@ -5,6 +5,7 @@ These run the real shell (and a fake `bsub`/`grit` on $PATH) instead of
 mocking `_run`, so a mis-quoted command line fails here.
 """
 
+import logging
 import os
 import stat
 import subprocess
@@ -99,6 +100,43 @@ def test_run_uncaptured_executes_and_returns_empty(tmp_path):
 def test_run_uncaptured_raises_on_nonzero_exit():
     with pytest.raises(subprocess.CalledProcessError):
         _run("exit 4", capture=False)
+
+
+def test_run_success_returns_stdout_without_stderr():
+    assert _run("echo out; echo 'warning: chatter' >&2") == "out"
+
+
+def test_run_failure_error_carries_the_tools_stderr():
+    # the diagnostic is built at run time so it cannot leak in via the command text
+    with pytest.raises(subprocess.CalledProcessError) as excinfo:
+        _run("echo partial; echo nospace | sed 's/no/No-/' >&2; exit 1")
+    err = excinfo.value
+    assert "No-space" in err.stderr
+    assert "No-space" in str(err)
+    assert err.output == "partial\n"
+
+
+def test_run_failure_logs_the_tools_stderr(caplog):
+    with caplog.at_level(logging.ERROR, logger="grit.utils.helpers"):
+        with pytest.raises(subprocess.CalledProcessError):
+            _run("echo truncated | sed 's/t/T/' >&2; exit 2")
+    assert "Truncated" in caplog.text
+    assert "exit 2" in caplog.text
+
+
+def test_run_failure_message_keeps_only_the_stderr_tail():
+    with pytest.raises(subprocess.CalledProcessError) as excinfo:
+        _run("for i in $(seq 1 500); do echo line$i >&2; done; exit 1")
+    err = excinfo.value
+    assert "line500" in str(err)
+    assert "line1\n" not in str(err)
+    assert err.stderr.startswith("line1\n")
+
+
+def test_run_failure_without_stderr_keeps_the_plain_message():
+    with pytest.raises(subprocess.CalledProcessError) as excinfo:
+        _run("exit 5")
+    assert str(excinfo.value) == "Command 'exit 5' returned non-zero exit status 5."
 
 
 # ---------------------------------------------------------------------------

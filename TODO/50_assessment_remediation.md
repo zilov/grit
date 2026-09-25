@@ -148,10 +148,19 @@ written, because Batches 2-5 need them.
       canonical-FASTA regression check) run on a laptop. Verified green, and
       verified to fail when a command fails.
       Now runs in CI as its own step (`TEST-11`'s smoke half).
-- [ ] `CORR-12` — `_run` captures stderr and discards it; a failing farm tool
-      reaches the curator as an exit code plus a traceback with the tool's own
-      diagnostic lost. Surface it. This is the single biggest improvement to
-      debugging cost in the report.
+- [x] `CORR-12` — **done.** A failing captured `_run` now logs the last 40
+      lines of the tool's stderr and raises `CommandError`, a
+      `CalledProcessError` subclass whose message ends with that tail (full
+      stderr stays on `.stderr`); stdout-parsing callers (`_submit_bsub`,
+      `blast_contaminants`' lineage lookup — the only two that use the return
+      value) are unaffected. *Tests:*
+      `test_run_failure_error_carries_the_tools_stderr`,
+      `test_run_failure_logs_the_tools_stderr`,
+      `test_run_failure_message_keeps_only_the_stderr_tail`,
+      `test_run_success_returns_stdout_without_stderr`,
+      `test_run_failure_without_stderr_keeps_the_plain_message`. Was: `_run`
+      captured stderr and discarded it; a failing farm tool reached the curator
+      as an exit code plus a traceback with the tool's own diagnostic lost.
 - [ ] `CORR-22` — `_run` sets no timeout anywhere.
 - [x] `TEST-01` — **done** in `tests/test_execution_boundary.py`, which runs the
       real shell into a fake `bsub` on `$PATH` (records its argv) instead of
