@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import glob
 import logging
 import os
 import re
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -56,7 +58,31 @@ class CommandError(subprocess.CalledProcessError):
         return f"{super().__str__()}\n{tail}" if tail else super().__str__()
 
 
-def _run(cmd: str, print_only: bool = False, *, capture: bool = True) -> str:
+def _run_with_timeout(
+    cmd: str, capture: bool, timeout: float
+) -> tuple[int, str | None, str | None]:
+    """Run *cmd* in its own process group and kill the whole group if *timeout* expires."""
+    pipe = subprocess.PIPE if capture else None
+    proc = subprocess.Popen(
+        cmd, shell=True, stdout=pipe, stderr=pipe, text=True, start_new_session=True
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except BaseException as exc:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        stdout, stderr = proc.communicate()
+        if not isinstance(exc, subprocess.TimeoutExpired):
+            raise
+        tail = _stderr_tail(stderr)
+        log.error("Command timed out after %ss%s", timeout, f", stderr:\n{tail}" if tail else "")
+        raise subprocess.TimeoutExpired(cmd, timeout, output=stdout, stderr=stderr) from None
+    return proc.returncode, stdout, stderr
+
+
+def _run(
+    cmd: str, print_only: bool = False, *, capture: bool = True, timeout: float | None = None
+) -> str:
     """
     Print *cmd*; execute it unless print_only is True.
 
@@ -66,22 +92,30 @@ def _run(cmd: str, print_only: bool = False, *, capture: bool = True) -> str:
 
     Returns stdout (stripped) when captured, otherwise an empty string. A captured
     command that fails raises CommandError carrying its stderr, which is also logged.
+    With *timeout* (seconds), the command and its children are killed and
+    TimeoutExpired is raised once it expires; the default waits indefinitely.
     """
     console.print(f"\n[yellow]Command:[/yellow] [green]{escape(cmd)}[/green]")
     if print_only:
         return ""
-    if capture:
+    if timeout is not None:
+        returncode, stdout, stderr = _run_with_timeout(cmd, capture, timeout)
+    elif capture:
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        if result.returncode != 0:
-            tail = _stderr_tail(result.stderr)
-            if tail:
-                log.error("Command failed (exit %d), stderr:\n%s", result.returncode, tail)
-            raise CommandError(result.returncode, cmd, output=result.stdout, stderr=result.stderr)
-        if result.stderr.strip():
-            log.debug("stderr: %s", result.stderr.strip())
-        return result.stdout.strip()
-    subprocess.run(cmd, shell=True, check=True)
-    return ""
+        returncode, stdout, stderr = result.returncode, result.stdout, result.stderr
+    else:
+        subprocess.run(cmd, shell=True, check=True)
+        return ""
+    if returncode != 0:
+        if not capture:
+            raise subprocess.CalledProcessError(returncode, cmd)
+        tail = _stderr_tail(stderr)
+        if tail:
+            log.error("Command failed (exit %d), stderr:\n%s", returncode, tail)
+        raise CommandError(returncode, cmd, output=stdout, stderr=stderr)
+    if stderr and stderr.strip():
+        log.debug("stderr: %s", stderr.strip())
+    return stdout.strip() if capture and stdout else ""
 
 
 def _submit_bsub(

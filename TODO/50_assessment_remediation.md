@@ -161,7 +161,22 @@ written, because Batches 2-5 need them.
       `test_run_failure_without_stderr_keeps_the_plain_message`. Was: `_run`
       captured stderr and discarded it; a failing farm tool reached the curator
       as an exit code plus a traceback with the tool's own diagnostic lost.
-- [ ] `CORR-22` — `_run` sets no timeout anywhere.
+- [x] `CORR-22` — **done (the `_run` half).** `_run` takes an optional
+      `timeout`; when set, the command runs in its own process group and the
+      whole group is killed on expiry (a plain `subprocess.run(timeout=)` only
+      kills the shell, and then blocks on the grandchild still holding the
+      pipe), raising `TimeoutExpired` with the stderr so far, also logged.
+      Default stays `None`: no caller-independent bound is safe (multi-GB `cp`
+      to NFS, assembly-sized tools), and no call site was given one; bsub
+      submissions deliberately have none. *Tests:*
+      `test_run_timeout_kills_the_command_and_its_children` (captured and
+      uncaptured), `test_run_timeout_keeps_and_logs_the_stderr_so_far`,
+      `test_run_timeout_does_not_fire_for_a_fast_command`,
+      `test_run_timeout_still_raises_on_nonzero_exit`,
+      `test_run_without_timeout_waits_for_the_command`,
+      `test_submit_bsub_sets_no_timeout`. Not addressed: the finding's second
+      half, `grit status` mutating the registry — that is reconcile-once
+      (Batch 6 / Phase 2). Was: `_run` set no timeout anywhere.
 - [x] `TEST-01` — **done** in `tests/test_execution_boundary.py`, which runs the
       real shell into a fake `bsub` on `$PATH` (records its argv) instead of
       mocking `_run`, so quoting is checked by tokenisation, not substrings.

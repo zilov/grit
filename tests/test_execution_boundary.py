@@ -10,7 +10,9 @@ import os
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
@@ -139,6 +141,49 @@ def test_run_failure_without_stderr_keeps_the_plain_message():
     assert str(excinfo.value) == "Command 'exit 5' returned non-zero exit status 5."
 
 
+def _wait_until_gone(pid: int, seconds: float = 3.0) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def test_run_without_timeout_waits_for_the_command():
+    assert _run("sleep 0.3; echo done") == "done"
+
+
+@pytest.mark.parametrize("capture", [True, False])
+def test_run_timeout_kills_the_command_and_its_children(tmp_path, capture):
+    pidfile = tmp_path / "child.pid"
+    started = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired):
+        _run(f"sh -c 'echo $$ > {pidfile}; exec sleep 30'; true", timeout=0.5, capture=capture)
+    assert time.monotonic() - started < 5
+    assert _wait_until_gone(int(pidfile.read_text()))
+
+
+def test_run_timeout_keeps_and_logs_the_stderr_so_far(caplog):
+    with caplog.at_level(logging.ERROR, logger="grit.utils.helpers"):
+        with pytest.raises(subprocess.TimeoutExpired) as excinfo:
+            _run("echo stalled | sed 's/s/S/' >&2; sleep 30", timeout=0.5)
+    assert "Stalled" in excinfo.value.stderr
+    assert "Stalled" in caplog.text
+    assert "timed out" in caplog.text
+
+
+def test_run_timeout_does_not_fire_for_a_fast_command():
+    assert _run("echo quick", timeout=10) == "quick"
+
+
+def test_run_timeout_still_raises_on_nonzero_exit():
+    with pytest.raises(subprocess.CalledProcessError):
+        _run("exit 6", timeout=10)
+
+
 # ---------------------------------------------------------------------------
 # build_bsub_opts
 # ---------------------------------------------------------------------------
@@ -240,6 +285,12 @@ def test_submit_bsub_raises_when_bsub_rejects_the_job(fake_bsub, monkeypatch):
     monkeypatch.setenv("FAKE_BSUB_EXIT", "255")
     with pytest.raises(subprocess.CalledProcessError):
         _submit_bsub("true", "-q normal")
+
+
+def test_submit_bsub_sets_no_timeout():
+    with patch("grit.utils.helpers._run", return_value=BANNER) as mock_run:
+        _submit_bsub("true", "-q normal")
+    assert "timeout" not in mock_run.call_args.kwargs
 
 
 # ---------------------------------------------------------------------------

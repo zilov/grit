@@ -35,7 +35,7 @@ Each step file exports:
 
 ### Command execution
 
-All shell commands go through `_run(cmd, print_only)` in `grit/utils/helpers.py`. When `print_only=True`, commands are printed but not executed — enables dry-run mode via `--print-only` flag. A captured command that fails raises `CommandError` (a `CalledProcessError` subclass, so existing `except` clauses still match) whose message ends with the tail of the tool's stderr, and the same tail is logged at error level — so the curator sees the tool's own diagnostic, not just an exit code. Callers that parse the return value get stdout only; stderr never leaks into it.
+All shell commands go through `_run(cmd, print_only)` in `grit/utils/helpers.py`. When `print_only=True`, commands are printed but not executed — enables dry-run mode via `--print-only` flag. A captured command that fails raises `CommandError` (a `CalledProcessError` subclass, so existing `except` clauses still match) whose message ends with the tail of the tool's stderr, and the same tail is logged at error level — so the curator sees the tool's own diagnostic, not just an exit code. Callers that parse the return value get stdout only; stderr never leaks into it. `_run(..., timeout=seconds)` runs the command in its own process group and kills the whole group (shell and children) on expiry, raising `TimeoutExpired`; the default is no timeout, because the synchronous `_run` calls include multi-GB copies to NFS and tools whose runtime scales with the assembly, and a wrong default would kill real work. Never put a timeout on a `bsub` submission.
 
 `bsub` jobs are submitted via `_submit_bsub()` → `_run()`. Job IDs are parsed and logged; execution is non-blocking (fire-and-forget).
 
