@@ -547,9 +547,12 @@ performs no registry writes.
       uv tool install .` flow (matching the repo's actual `origin` remote),
       with `examples.md` pointing back to README for the from-git and
       local-dev variants.
-- [ ] `DOC-03` — README mislabels `--print-only` as "Dry run" next to the real
-      `--dry-run` flag; `--dry-run` (the strongest onboarding affordance in the
-      project) is documented only in `CLAUDE.md`.
+- [x] `DOC-03` — **already fixed**, before this remediation pass, by
+      `6c8b0ac` ("docs: refresh README and examples.md for the 0.4.2
+      release"), which relabelled `--print-only` correctly and added the
+      `--dry-run` example block at `README.md:89-95`. Verified current README
+      text matches CLAUDE.md's `--dry-run` description; no further change
+      needed.
 - [ ] `.gitignore` covers only `__pycache__` and `.worktrees/`; `.claude/` and
       `.superpowers/` are not covered.
 
