@@ -85,10 +85,6 @@ STEP_MANIFESTS: dict[str, dict] = {
         "dir": "run_dir",
         "files": [],  # output goes to assembly_curated_dir; just track exit code
     },
-    "validate_files": {
-        "dir": "run_dir",
-        "files": [],  # no output files; success = exit 0
-    },
     "finalize_qc": {
         "dir": "run_dir",
         "files": [],
@@ -112,7 +108,6 @@ STEP_TO_STATUS: dict[str, str] = {
     "haplotig_files": "post_curation",
     "hic_remapping": "remapping",
     "qv": "ready_for_qc",
-    "validate_files": "ready_for_qc",
     "finalize_qc": "post_processing",
     "post_processing": "done",
 }

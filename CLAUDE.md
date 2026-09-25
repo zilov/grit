@@ -165,11 +165,6 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   `rm -rf ~/.grit/dry_run`. See `tests/local_smoke_test.sh`'s dry-run section
   for a real chained example.
 
-  `validate-files` is allowlisted in `_DRY_RUN_SUPPORTED_COMMANDS` for when it's
-  eventually registered on the CLI group, but its Click command is currently
-  commented out in `click_cli.py` (pre-existing, unrelated gap) — `grit
-  validate-files`/`grit --dry-run validate-files` are not reachable today.
-
   `add_pretext_view_tracks.py` deliberately has no dry-run branch and is not in
   `_DRY_RUN_SUPPORTED_COMMANDS` — it mutates a `.pretext` binary in place, has
   no tracked output to fake, and plays no part in the canonical-resolution/

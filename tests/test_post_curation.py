@@ -12,7 +12,6 @@ from grit.steps.post_curation import (
     run_hic_remapping,
     run_pretext_to_asm,
     run_qv,
-    validate_curated_files,
 )
 
 # ---------------------------------------------------------------------------
@@ -1047,72 +1046,6 @@ def test_run_qv_outputs_empty_when_files_missing(mock_run, mock_ctx, tmp_path):
 
     assert mock_ctx.tracker.get_output("qv", "qv") is None
     assert mock_ctx.tracker.get_output("qv", "completeness_stats") is None
-
-
-# ---------------------------------------------------------------------------
-# validate_curated_files
-# ---------------------------------------------------------------------------
-
-
-def test_validate_curated_files_print_only(mock_ctx, tmp_path):
-    """In print_only mode, function must not raise even with no files present."""
-    mock_ctx.workdir = tmp_path
-    mock_ctx.tol_id = "sDipInt39"
-    mock_ctx.release_version = 1
-    mock_ctx.assembly_curated_dir = tmp_path / "curated"
-    mock_ctx.print_only = True
-
-    validate_curated_files(mock_ctx)  # should not raise
-
-
-def test_validate_curated_files_parses_log(mock_ctx, tmp_path):
-    mock_ctx.workdir = tmp_path
-    mock_ctx.tol_id = "sDipInt39"
-    mock_ctx.release_version = 1
-    mock_ctx.assembly_curated_dir = tmp_path / "curated"
-
-    log = tmp_path / "sDipInt39.log"
-    log.write_text("Curation made 3 break 2 join 1 cut in session\n")
-
-    validate_curated_files(mock_ctx)  # should not raise
-
-
-def test_validate_curated_files_warns_on_missing_log(mock_ctx, tmp_path, capsys):
-    mock_ctx.workdir = tmp_path
-    mock_ctx.tol_id = "sDipInt39"
-    mock_ctx.release_version = 1
-    mock_ctx.assembly_curated_dir = tmp_path / "curated"
-    # no log file created
-
-    validate_curated_files(mock_ctx)  # should not raise
-
-
-def test_validate_curated_files_reads_tracker_qv_output(mock_ctx, tmp_path, capsys):
-    """When qv registered outputs, validate-files must read those exact paths,
-    not glob curated_dir/merquryk (which may contain stale/unrelated files)."""
-    from grit.core.registry import RegistryManager
-    from grit.core.run_tracker import RunTracker
-
-    mock_ctx.workdir = tmp_path
-    mock_ctx.tol_id = "sDipInt39"
-    mock_ctx.release_version = 1
-    mock_ctx.assembly_curated_dir = tmp_path / "curated"
-
-    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
-    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
-    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
-
-    tracked_qv = tmp_path / "elsewhere" / "sDipInt39.qv"
-    tracked_qv.parent.mkdir()
-    tracked_qv.write_text("tracked qv content\n")
-    mock_ctx.tracker.finish(
-        "qv", tmp_path / "qv" / "run1", "success", outputs={"qv": str(tracked_qv)}
-    )
-
-    validate_curated_files(mock_ctx)  # should not raise
-
-    out = capsys.readouterr().out
-    assert "tracked qv content" in out
 
 
 # ---------------------------------------------------------------------------

@@ -128,13 +128,16 @@ to be trustworthy first. This is also where the missing boundary tests get
 written, because Batches 2-5 need them.
 
 - [ ] `ARCH-07` — four commands allowlisted for `--dry-run` with zero `dry_run`
-      code: `haplotig_files`, `validate_files`, `post_curation`,
+      code: `haplotig_files`, ~~`validate_files`~~ (deleted, `ARCH-07b`), `post_curation`,
       `post_curation_recurate`. `grit --dry-run haplotig-files` does real
       filesystem writes. Either implement the branch or remove from
       `_DRY_RUN_SUPPORTED_COMMANDS`. *Verified: 0 `dry_run` hits in all four.*
-- [ ] `ARCH-07b` — `validate-files` is allowlisted, has a `_cmd`, and is
-      commented out of the command tree (`click_cli.py:280`): 151 LOC
-      unreachable. Register it or delete it.
+- [x] `ARCH-07b` — **deleted** (author's call, 2026-09-25: unused, not called
+      from notebooks either). Nothing invoked `run_validate_files` besides its own
+      unregistered `_cmd`, and the registry held no `validate_files` records, so
+      its `STEP_MANIFESTS`/`STEP_TO_STATUS` entries and the dry-run allowlist entry
+      went with it. `ARCH-07` is now down to three commands. *Evidence:* `grep -rn
+      validate_files grit/ tests/` is empty.
 - [x] `DX-01` — **fixed, and the finding's diagnosis was wrong in a way that
       mattered.** The script does not die at line 66: every step was written as
       `cmd && ok "..."`, and bash exempts all but the last command of an AND-OR

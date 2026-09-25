@@ -56,7 +56,7 @@ def run_qv(ctx: CurationContext) -> None:
 
     Prints:
         Step header, command, done message.
-    Next step hint: ``validate_curated_files(ctx)``
+    Next step hint: ``finalize_for_qc(ctx)``
     """
     log.info("qv | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "QV analysis")

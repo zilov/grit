@@ -151,7 +151,6 @@ from grit.steps.post_curation.pretext_to_asm_recurate import (  # noqa: E402
 from grit.steps.post_curation.qv import qv_cmd  # noqa: E402
 
 # Not yet tested via CLI / not current — disabled for initial release.
-# from grit.steps.post_curation.validate_files import validate_files_cmd  # noqa: E402
 # from grit.steps.pre_curation.add_pretext_view_tracks import (  # noqa: E402
 #     add_bedgraph_track_cmd,
 #     add_gap_track_cmd,
@@ -274,7 +273,6 @@ cli.add_command(post_curation_recurate_cmd)
 cli.add_command(pretext_to_asm_cmd)
 cli.add_command(pretext_to_asm_recurate_cmd)
 cli.add_command(qv_cmd)
-# cli.add_command(validate_files_cmd)  # disabled for initial release, not yet tested via CLI
 cli.add_command(blast_contaminants_cmd)
 cli.add_command(busco_curated_cmd)
 cli.add_command(busco_synteny_cmd)
