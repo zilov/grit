@@ -495,6 +495,14 @@ def _recurate_step_name(ctx: "CurationContext", hap_prefix: str) -> str:
     return "pretext_to_asm_recurate"
 
 
+def _size(path: Path) -> int | None:
+    """*path*'s size in bytes, or None when it cannot be stat'ed."""
+    try:
+        return path.stat().st_size
+    except OSError:
+        return None
+
+
 def _mtime(path: Path) -> float | None:
     """*path*'s mtime, or None when it cannot be stat'ed (missing, stale NFS handle, …)."""
     try:
@@ -648,6 +656,8 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
 
     Hap-specific patterns are tried first (dot-delimited token + alias); no-prefix
     patterns are only tried for ``hap1_prefix`` to avoid double-copying the same file.
+    An empty hap-specific file (haplotig-files' placeholder) yields to a non-empty
+    no-prefix file in the same directory.
 
     Raises FileNotFoundError if nothing is found.
     """
@@ -659,6 +669,35 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
     }
 
     _refuse_missing_hap2(ctx, hap_prefix, "haplotig FASTA")
+
+    def _combined(directory: Path, *, non_empty: bool = False) -> Path | None:
+        # No-hap-prefix files — assigned to hap1 only, to avoid double-copying
+        if hap_prefix != ctx.hap1_prefix:
+            return None
+        for pattern in (
+            f"{ctx.tol_id}*.haplotigs.fa",  # dual hap combined
+            f"{ctx.tol_id}*.all_haplotigs.curated.fa",  # merged
+            f"{ctx.tol_id}*.additional_haplotigs.curated.fa",  # single hap
+        ):
+            combined = [
+                m
+                for m in glob.glob(str(directory / pattern))
+                if "hap1" not in Path(m).name
+                and "hap2" not in Path(m).name
+                and ctx.hap1_prefix not in Path(m).name
+                and ctx.hap2_prefix not in Path(m).name
+                and (not non_empty or _size(Path(m)))
+            ]
+            if combined:
+                return Path(sorted(combined)[-1])
+        return None
+
+    def _real(candidate: Path) -> Path:
+        # haplotig-files' empty placeholder never hides the real haplotigs beside it
+        if _size(candidate) == 0:
+            return _combined(candidate.parent, non_empty=True) or candidate
+        return candidate
+
     if ctx.tracker:
         keys = [
             f"{hap_prefix}_haplotigs",
@@ -667,7 +706,7 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
         pool = ["pretext_to_asm", _recurate_step_name(ctx, hap_prefix)]
         canonical = _latest_tracked_output(ctx, pool, keys, hap_prefix)
         if canonical:
-            return canonical
+            return _real(canonical)
 
     pta_dir = find_latest_dir(ctx, "pretext_to_asm", settled_only=True)
 
@@ -681,35 +720,17 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
                 return Path(sorted(matches)[-1])
         return None
 
-    # 1. Exact token
+    # 1. Exact token, then 2. alias (primary→hap1, alternate→hap2)
     result = _hap_specific(hap_prefix)
+    if not result and hap_prefix in _PTA_ALIASES:
+        result = _hap_specific(_PTA_ALIASES[hap_prefix])
+    if result:
+        return _real(result)
+
+    # 3. No-hap-prefix patterns
+    result = _combined(pta_dir)
     if result:
         return result
-    # 2. Alias (primary→hap1, alternate→hap2)
-    if hap_prefix in _PTA_ALIASES:
-        result = _hap_specific(_PTA_ALIASES[hap_prefix])
-        if result:
-            return result
-
-    # 3. No-hap-prefix patterns — assign to hap1 only to avoid double-copying
-    if hap_prefix == ctx.hap1_prefix:
-        for pattern in (
-            str(pta_dir / f"{ctx.tol_id}*.haplotigs.fa"),  # dual hap combined
-            str(pta_dir / f"{ctx.tol_id}*.all_haplotigs.curated.fa"),  # merged
-            str(pta_dir / f"{ctx.tol_id}*.additional_haplotigs.curated.fa"),  # single hap
-        ):
-            matches = glob.glob(pattern)
-            # Exclude any file that is already hap-specific (contains hap1 or hap2 token)
-            combined = [
-                m
-                for m in matches
-                if "hap1" not in Path(m).name
-                and "hap2" not in Path(m).name
-                and ctx.hap1_prefix not in Path(m).name
-                and ctx.hap2_prefix not in Path(m).name
-            ]
-            if combined:
-                return Path(sorted(combined)[-1])
 
     raise FileNotFoundError(f"No haplotig FASTA for {hap_prefix!r} found in {pta_dir}.")
 

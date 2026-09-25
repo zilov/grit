@@ -488,10 +488,19 @@ what counts as finished.
 - [ ] `CORR-05` (critical) — `pretext_to_asm.py:117`: curated AGP chosen by
       unsorted `glob.glob(...)[0]`; a stale AGP in the workdir
       non-deterministically builds the wrong curated FASTA. *Verified directly.*
-- [ ] `DOM-07` — `haplotig-files` touches empty hap-prefixed placeholders into
+- [x] `DOM-07` — `haplotig-files` touches empty hap-prefixed placeholders into
       the `pretext_to_asm` run dir, where the re-glob and
       `find_canonical_haplotigs`' fallback prefer them over the real combined
-      file beside them.
+      file beside them. *Fixed in the resolver:* a zero-byte hap-specific pick
+      (tracked or fallback) yields to a non-empty no-prefix haplotigs file in
+      the same dir (hap1 only, as before); `haplotig-files` itself is
+      unchanged, so the placeholder still stands in when there are no
+      haplotigs. Whether pretext-to-asm's dual-hap file really is
+      `{tol_id}.1.haplotigs.fa` is still unverified from this repo. *Tests:*
+      `test_trace_t8_placeholder_does_not_outrank_the_real_combined_haplotigs`
+      (tracked/filesystem, runs the real `run_haplotig_files`),
+      `test_placeholder_is_used_when_there_are_no_real_haplotigs`,
+      `test_a_real_hap_specific_haplotigs_file_is_kept`.
 - [ ] `DOM-11` — `cleanup`'s keep-set excludes untracked runs, so the newest run
       dir is deleted while an older tracked one is kept, making `retrack`
       unrecoverable.

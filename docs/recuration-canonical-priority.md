@@ -32,6 +32,10 @@ The pool differs per file type, because not every step produces every file:
 `blast_contaminants` is absent from the chromosome-list pool because contaminant
 filtering was assumed not to touch the chromosome list, and the rename/contam
 steps are absent from the haplotigs pool because they do not produce haplotigs.
+The empty `{tol_id}.{hap}.*.all_haplotigs.curated.fa` placeholders that
+`haplotig-files` creates never hide real haplotigs: an empty file yields to a
+non-empty combined haplotigs file (`{tol_id}.1.haplotigs.fa`) in the same run
+dir, which — as the combined file for both haplotypes — is hap1's.
 
 The map pool holds a single step per haplotype, since only hic-remapping
 produces a remapped map — but the same rules apply, and the point of resolving

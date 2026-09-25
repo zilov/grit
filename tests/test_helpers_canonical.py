@@ -1130,3 +1130,60 @@ def test_rename_and_orient_hap2_is_canonical_for_hap2(mock_ctx, tmp_path):
 
     assert find_canonical_fa(mock_ctx, "hap2") == rao_fa
     assert find_canonical_chr_list(mock_ctx, "hap2") == rao_chr
+
+
+# ---------------------------------------------------------------------------
+# DOM-07 / report 06 trace T8: haplotig-files' placeholders never beat real haplotigs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("tracked", [True, False], ids=["tracked", "filesystem"])
+def test_trace_t8_placeholder_does_not_outrank_the_real_combined_haplotigs(
+    mock_ctx, tmp_path, tracked
+):
+    """`grit post-curation`: pretext-to-asm writes the combined {tol}.1.haplotigs.fa,
+    then haplotig-files touches empty hap-prefixed placeholders beside it."""
+    from grit.steps.post_curation.haplotig_files import run_haplotig_files
+
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    mock_ctx.print_only = False
+    pta_dir = _pta_dir(tmp_path)
+    hap1_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    hap2_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap2.1.curated.fa")
+    combined = _write(pta_dir / f"{mock_ctx.tol_id}.1.haplotigs.fa")
+    if tracked:
+        tracker.finish(
+            "pretext_to_asm",
+            pta_dir,
+            "success",
+            outputs={"hap1_fa": str(hap1_fa), "hap2_fa": str(hap2_fa)},
+        )
+
+    run_haplotig_files(mock_ctx)
+    placeholder = pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa"
+    assert placeholder.exists() and placeholder.stat().st_size == 0
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == combined
+
+
+def test_placeholder_is_used_when_there_are_no_real_haplotigs(mock_ctx, tmp_path):
+    """No haplotigs came out of curation: the placeholder is the right answer."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    placeholder = pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa"
+    placeholder.parent.mkdir(parents=True)
+    placeholder.touch()
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs=None)
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == placeholder
+
+
+def test_a_real_hap_specific_haplotigs_file_is_kept(mock_ctx, tmp_path):
+    """A non-empty hap-prefixed file is real output and wins over a combined file."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    _write(pta_dir / f"{mock_ctx.tol_id}.1.haplotigs.fa")
+    hap1 = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs=None)
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == hap1
