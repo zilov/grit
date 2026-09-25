@@ -537,8 +537,12 @@ performs no registry writes.
       under their own `uv run --script` environment, not the installed
       package's. Removed all three from `[project] dependencies` in
       `pyproject.toml`; regenerated `uv.lock` with `uv lock`.
-- [ ] `PKG-06b` — CI never builds or installs the package, so nothing verifies
-      that `grit/config/sanger_template.yaml` ships in the wheel.
+- [x] `PKG-06b` — **done.** `grit/config/sanger_template.yaml` and
+      `grit/scripts/*` were already shipped in the wheel (verified locally via
+      `uv build --offline` + a Python `zipfile` check), so no packaging-config
+      change was needed. Added a `Build package` + `Verify packaged data files
+      ship in the wheel` step to `.github/workflows/ci.yml` so a future
+      regression (like CHANGELOG 0.3.4's) fails CI instead of shipping silently.
 - [x] `PKG-07` — **done.** README's Installation section offered a `pip install
       -e .` path that cannot work (PKG-01's git-only dependency source) and a
       different clone URL scheme than `docs/examples.md`. Removed the broken

@@ -34,3 +34,30 @@ jobs:
       # when /lustre is absent, so the runner executes the dry-run scenarios.
       - name: Smoke test (dry-run scenarios)
         run: uv run bash tests/local_smoke_test.sh
+
+      # Regression guard for the 0.3.4 bug (CHANGELOG): bundled non-.py files
+      # (grit/config/sanger_template.yaml, grit/scripts/*) only reach a real
+      # install through the built wheel, never through the tests above, which
+      # run against the checked-out source tree.
+      - name: Build package
+        run: uv build
+
+      - name: Verify packaged data files ship in the wheel
+        run: |
+          wheel=$(ls dist/*.whl)
+          python3 -c "
+          import sys, zipfile
+          wheel = sys.argv[1]
+          required = ['grit/config/sanger_template.yaml']
+          with zipfile.ZipFile(wheel) as zf:
+              names = set(zf.namelist())
+          missing = [f for f in required if f not in names]
+          if missing:
+              print(f'Missing from {wheel}: {missing}', file=sys.stderr)
+              sys.exit(1)
+          scripts = [n for n in names if n.startswith('grit/scripts/')]
+          if not scripts:
+              print(f'No grit/scripts/* files found in {wheel}', file=sys.stderr)
+              sys.exit(1)
+          print(f'OK: {wheel} contains {required} and {len(scripts)} scripts/ files')
+          " "$wheel"
