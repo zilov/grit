@@ -485,9 +485,17 @@ what counts as finished.
       re-checked, and the maps were never picked up when they did appear.
       *Carries `TEST-04` with it* — `_check_bjobs`'s parsing is now covered
       (`tests/test_helpers.py`), including the "LSF library call" error output.
-- [ ] `CORR-05` (critical) — `pretext_to_asm.py:117`: curated AGP chosen by
+- [x] `CORR-05` (critical) — `pretext_to_asm.py:117`: curated AGP chosen by
       unsorted `glob.glob(...)[0]`; a stale AGP in the workdir
       non-deterministically builds the wrong curated FASTA. *Verified directly.*
+      *Already fixed by `3d03f86`* (now `pretext_to_asm.py:135-153`): the
+      matches are sorted, and more than one match fails the run (`failed`
+      recorded) listing every candidate rather than guessing — no rule in the
+      code distinguishes a stale AGP from the current one. Shared by
+      pretext-to-asm, recurate and microchromosome-combine via
+      `_run_pretext_to_asm_core`. *Test:*
+      `test_agp_pick_is_deterministic_and_fails_on_multiple_matches`
+      (`tests/test_microchromosome.py`).
 - [x] `DOM-07` — `haplotig-files` touches empty hap-prefixed placeholders into
       the `pretext_to_asm` run dir, where the re-glob and
       `find_canonical_haplotigs`' fallback prefer them over the real combined
@@ -533,11 +541,18 @@ what counts as finished.
 - [ ] `DOM-08` (plausible) — mtime is compared across files written by different
       clocks (login host vs compute node); a few seconds of negative skew
       reverses pool order. The run-dir ISO timestamps, all from one host, are
-      never consulted.
+      never consulted. *Not done — proposal:* keep mtime as the key, but have
+      `grit status` warn when the pool's mtime winner is not the member whose
+      run dir timestamp (submit-host clock) is newest; that detects skew
+      without changing the policy.
 - [ ] `DOM-09` (plausible) — the "already done" skip decides whether a curator's
       new curation round runs, from input-vs-output mtime alone, so any
       mtime-preserving copy of the AGP (`cp -p`, `rsync -a`, archive extraction)
       makes grit print "Already done", run nothing, and write no tracker record.
+      *Not done — proposal:* record the input AGP's sha256 in the run's
+      `outputs` and skip only when the hash matches; fall back to today's
+      mtime test for runs without one, and name the compared files in the
+      "Already done" line.
 - [x] `TEST-07` — `find_canonical_haplotigs` (86 LOC) has zero direct tests and
       is mocked out in all its consumers. Write them; `DOM-06`/`DOM-07` had
       nothing that could catch them. *Tests:* the `find_canonical_haplotigs`
@@ -554,7 +569,10 @@ what counts as finished.
       uniqueness check.
 
 *Batch done when:* the scenario traces in report 06 §"Scenario traces" are
-encoded as tests and pass.
+encoded as tests and pass. *Resolver half:* T1, T2, T3, T4, T7, T8 are
+`test_trace_t{1,2,3,4,7,8}_*` in `tests/test_helpers_canonical.py`. Still
+open: T5 (`DOM-04`), T6 (`DOM-05`, Batch 5), T9/T10 (`DOM-08`/`DOM-09`,
+plausible).
 
 ---
 

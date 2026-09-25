@@ -1187,3 +1187,53 @@ def test_a_real_hap_specific_haplotigs_file_is_kept(mock_ctx, tmp_path):
     tracker.finish("pretext_to_asm", pta_dir, "success", outputs=None)
 
     assert find_canonical_haplotigs(mock_ctx, "hap1") == hap1
+
+
+# ---------------------------------------------------------------------------
+# Report 06 trace T1: the documented happy chain, all three file types
+# ---------------------------------------------------------------------------
+
+
+def test_trace_t1_documented_chain(mock_ctx, tmp_path):
+    """pretext-to-asm → blast-contaminants → recurate → rename-and-orient: rename owns
+    fa and chr list, recurate owns the haplotigs (rename produces none)."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    tol = mock_ctx.tol_id
+
+    pta_dir = _pta_dir(tmp_path)
+    pta = {
+        "hap1_fa": _write(pta_dir / f"{tol}.hap1.1.curated.fa"),
+        "hap1_chr_list": _write(pta_dir / f"{tol}.hap1.1.chromosome.list.csv"),
+        "hap1_haplotigs": _write(pta_dir / f"{tol}.hap1.1.all_haplotigs.curated.fa"),
+    }
+    tracker.finish(
+        "pretext_to_asm", pta_dir, "success", outputs={k: str(v) for k, v in pta.items()}
+    )
+
+    bc_dir = tmp_path / "blast_contaminants" / "2026-01-02T00_00_00"
+    bc_fa = _write(bc_dir / "hap1" / f"{tol}.hap1.1.decontaminated.fa")
+    tracker.finish("blast_contaminants", bc_dir, "success", outputs={"hap1_fa": str(bc_fa)})
+
+    rec_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-03T00_00_00"
+    rec = {
+        "hap1_fa": _write(rec_dir / f"{tol}.hap1.1.curated.fa"),
+        "hap1_chr_list": _write(rec_dir / f"{tol}.1.primary.chromosome.list.csv"),
+        "hap1_haplotigs": _write(rec_dir / f"{tol}.hap1.1.all_haplotigs.curated.fa"),
+    }
+    tracker.finish(
+        "pretext_to_asm_recurate", rec_dir, "success", outputs={k: str(v) for k, v in rec.items()}
+    )
+
+    rao_dir = tmp_path / "rename_and_orient" / "2026-01-04T00_00_00"
+    rao_fa = _write(rao_dir / f"{tol}.hap1.primary.renamed.fa")
+    rao_chr = _write(rao_dir / f"{tol}.hap1.primary.renamed.chromosome.list.csv")
+    tracker.finish(
+        "rename_and_orient",
+        rao_dir,
+        "success",
+        outputs={"hap1_fa": str(rao_fa), "hap1_chr_list": str(rao_chr)},
+    )
+
+    assert find_canonical_fa(mock_ctx, "hap1") == rao_fa
+    assert find_canonical_chr_list(mock_ctx, "hap1") == rao_chr
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == rec["hap1_haplotigs"]
