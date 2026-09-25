@@ -10,6 +10,7 @@ from grit.core.run_tracker import RunTracker
 from grit.utils.helpers import (
     find_canonical_chr_list,
     find_canonical_fa,
+    find_canonical_haplotigs,
     find_canonical_map,
     find_curated_fa,
 )
@@ -614,3 +615,156 @@ def test_canonical_map_raises_when_no_map_exists(mock_ctx, tmp_path):
     _make_tracker(tmp_path, mock_ctx)
     with pytest.raises(FileNotFoundError):
         find_canonical_map(mock_ctx, "hap1")
+
+
+# ---------------------------------------------------------------------------
+# find_canonical_haplotigs — the haplotig FASTA per haplotype
+# ---------------------------------------------------------------------------
+
+
+def _pta_dir(tmp_path, ts="2026-01-01T00_00_00"):
+    return tmp_path / "pretext_to_asm" / ts
+
+
+def test_haplotigs_come_from_the_tracked_pretext_to_asm_output(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    hap1 = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    hap2 = _write(pta_dir / f"{mock_ctx.tol_id}.hap2.1.all_haplotigs.curated.fa")
+    tracker.finish(
+        "pretext_to_asm",
+        pta_dir,
+        "success",
+        outputs={"hap1_haplotigs": str(hap1), "hap2_haplotigs": str(hap2)},
+    )
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == hap1
+    assert find_canonical_haplotigs(mock_ctx, "hap2") == hap2
+
+
+def test_haplotigs_of_a_newer_recurate_round_win(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    pta_hap = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_haplotigs": str(pta_hap)})
+
+    rec_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-02T00_00_00"
+    rec_hap = _write(rec_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish(
+        "pretext_to_asm_recurate", rec_dir, "success", outputs={"hap1_haplotigs": str(rec_hap)}
+    )
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == rec_hap
+
+
+def test_haplotigs_of_a_pretext_to_asm_rerun_beat_an_older_recurate(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    rec_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-01T00_00_00"
+    rec_hap = _write(rec_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish(
+        "pretext_to_asm_recurate", rec_dir, "success", outputs={"hap1_haplotigs": str(rec_hap)}
+    )
+
+    pta_dir = _pta_dir(tmp_path, "2026-01-02T00_00_00")
+    pta_hap = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_haplotigs": str(pta_hap)})
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == pta_hap
+
+
+def test_haplotigs_hap2_recurate_does_not_touch_hap1(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    pta_hap1 = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    pta_hap2 = _write(pta_dir / f"{mock_ctx.tol_id}.hap2.1.all_haplotigs.curated.fa")
+    tracker.finish(
+        "pretext_to_asm",
+        pta_dir,
+        "success",
+        outputs={"hap1_haplotigs": str(pta_hap1), "hap2_haplotigs": str(pta_hap2)},
+    )
+
+    rec_dir = tmp_path / "pretext_to_asm_recurate_hap2" / "2026-01-02T00_00_00"
+    rec_hap2 = _write(rec_dir / f"{mock_ctx.tol_id}.hap2.1.all_haplotigs.curated.fa")
+    tracker.finish(
+        "pretext_to_asm_recurate_hap2",
+        rec_dir,
+        "success",
+        outputs={"hap2_haplotigs": str(rec_hap2)},
+    )
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == pta_hap1
+    assert find_canonical_haplotigs(mock_ctx, "hap2") == rec_hap2
+
+
+def test_haplotigs_of_an_untracked_recurate_do_not_count(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    pta_hap = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_haplotigs": str(pta_hap)})
+
+    rec_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-02T00_00_00"
+    rec_hap = _write(rec_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish(
+        "pretext_to_asm_recurate",
+        rec_dir,
+        "success",
+        outputs={"hap1_haplotigs": str(rec_hap)},
+        untracked=True,
+    )
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == pta_hap
+
+
+def test_haplotigs_unrecorded_in_the_latest_run_are_re_globbed(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    pta_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    pta_hap = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_fa": str(pta_fa)})
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == pta_hap
+
+
+def test_haplotigs_fall_back_to_a_hap_specific_file_on_disk(mock_ctx, tmp_path):
+    _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    hap2 = _write(pta_dir / f"{mock_ctx.tol_id}.hap2.1.haplotigs.fa")
+
+    assert find_canonical_haplotigs(mock_ctx, "hap2") == hap2
+
+
+def test_haplotigs_fall_back_through_the_primary_to_hap1_alias(mock_ctx_primary, tmp_path):
+    _make_tracker(tmp_path, mock_ctx_primary)
+    pta_dir = _pta_dir(tmp_path)
+    hap = _write(pta_dir / f"{mock_ctx_primary.tol_id}.hap1.1.all_haplotigs.curated.fa")
+
+    assert find_canonical_haplotigs(mock_ctx_primary, "primary") == hap
+
+
+def test_combined_haplotigs_go_to_hap1_only(mock_ctx, tmp_path):
+    """The dual-hap combined file has no hap token; handing it to both haps would
+    copy the same haplotigs twice."""
+    _make_tracker(tmp_path, mock_ctx)
+    combined = _write(_pta_dir(tmp_path) / f"{mock_ctx.tol_id}.1.haplotigs.fa")
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == combined
+    with pytest.raises(FileNotFoundError):
+        find_canonical_haplotigs(mock_ctx, "hap2")
+
+
+def test_single_hap_additional_haplotigs_are_found(mock_ctx_primary, tmp_path):
+    _make_tracker(tmp_path, mock_ctx_primary)
+    extra = _write(
+        _pta_dir(tmp_path) / f"{mock_ctx_primary.tol_id}.1.additional_haplotigs.curated.fa"
+    )
+
+    assert find_canonical_haplotigs(mock_ctx_primary, "primary") == extra
+
+
+def test_haplotigs_raise_when_nothing_exists(mock_ctx, tmp_path):
+    _make_tracker(tmp_path, mock_ctx)
+    _pta_dir(tmp_path).mkdir(parents=True)
+
+    with pytest.raises(FileNotFoundError):
+        find_canonical_haplotigs(mock_ctx, "hap1")

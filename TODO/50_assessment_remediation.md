@@ -480,9 +480,13 @@ what counts as finished.
       new curation round runs, from input-vs-output mtime alone, so any
       mtime-preserving copy of the AGP (`cp -p`, `rsync -a`, archive extraction)
       makes grit print "Already done", run nothing, and write no tracker record.
-- [ ] `TEST-07` — `find_canonical_haplotigs` (86 LOC) has zero direct tests and
+- [x] `TEST-07` — `find_canonical_haplotigs` (86 LOC) has zero direct tests and
       is mocked out in all its consumers. Write them; `DOM-06`/`DOM-07` had
-      nothing that could catch them.
+      nothing that could catch them. *Tests:* the `find_canonical_haplotigs`
+      section of `tests/test_helpers_canonical.py` — tracked output, recurate
+      vs rerun in both orders, per-hap recurate step, untracked recurate,
+      re-glob of an unrecorded key, hap-specific / alias / combined /
+      additional-haplotigs fallbacks, and the not-found error.
 - [ ] `CORR-23` — `grit retrack` promotes a run to `success` without checking
       that its recorded outputs still exist (see `DOM-11`).
 - [ ] `CORR-24` (plausible) — `cleanup` keeps the latest run dir per step while
