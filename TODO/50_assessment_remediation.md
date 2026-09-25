@@ -553,8 +553,8 @@ performs no registry writes.
       `--dry-run` example block at `README.md:89-95`. Verified current README
       text matches CLAUDE.md's `--dry-run` description; no further change
       needed.
-- [ ] `.gitignore` covers only `__pycache__` and `.worktrees/`; `.claude/` and
-      `.superpowers/` are not covered.
+- [x] `.gitignore` covers only `__pycache__` and `.worktrees/`; `.claude/` and
+      `.superpowers/` are not covered. — **done**, both added.
 
 ---
 
