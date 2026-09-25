@@ -12,15 +12,20 @@ See [docs/examples.md](docs/examples.md) for a walkthrough of installation, the 
 
 ```bash
 # With uv (recommended) — installs the `grit` command globally as a uv tool
+git clone git@github.com:zilov/grit.git
+cd grit
+uv tool install .
+
+# Or straight from git, no local clone needed
 uv tool install "grit @ git+ssh://git@github.com/zilov/grit.git"
 
 # For local development instead (editable install into a project-local .venv;
 # `grit` is only on PATH after `source .venv/bin/activate` or via `uv run grit`)
 uv sync
-
-# Or with pip
-pip install -e .
 ```
+
+`rename-and-orient` is pinned to a git source via `[tool.uv.sources]`, which plain
+`pip` does not resolve — install with `uv`, not `pip install -e .`.
 
 To pick up a newer version:
 

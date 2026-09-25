@@ -27,10 +27,13 @@
 ## 1. Installation
 
 ```bash
-git clone https://github.com/zilov/grit.git
+git clone git@github.com:zilov/grit.git
 cd grit
 uv tool install .   # don't forget the trailing dot
 ```
+
+See the [README](../README.md#installation) for installing straight from git without
+cloning, and for the local-development (`uv sync`) path.
 
 If `uv` is not available:
 

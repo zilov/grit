@@ -539,8 +539,14 @@ performs no registry writes.
       `pyproject.toml`; regenerated `uv.lock` with `uv lock`.
 - [ ] `PKG-06b` — CI never builds or installs the package, so nothing verifies
       that `grit/config/sanger_template.yaml` ships in the wheel.
-- [ ] `PKG-07` — README and `examples.md` give mutually inconsistent install
-      instructions.
+- [x] `PKG-07` — **done.** README's Installation section offered a `pip install
+      -e .` path that cannot work (PKG-01's git-only dependency source) and a
+      different clone URL scheme than `docs/examples.md`. Removed the broken
+      `pip` instructions with a one-line explanation, and unified both README
+      and `examples.md` on the same `git clone git@github.com:zilov/grit.git &&
+      uv tool install .` flow (matching the repo's actual `origin` remote),
+      with `examples.md` pointing back to README for the from-git and
+      local-dev variants.
 - [ ] `DOC-03` — README mislabels `--print-only` as "Dry run" next to the real
       `--dry-run` flag; `--dry-run` (the strongest onboarding affordance in the
       project) is documented only in `CLAUDE.md`.
