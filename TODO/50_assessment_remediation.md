@@ -611,9 +611,24 @@ Do these whenever a related file is open.
       `test_unsupported_assembly_type_error_is_a_click_exception`,
       `test_build_context_paternal_maternal_yaml_fails_loudly_not_silently`
       (`tests/test_context.py`).
-- [ ] `CORR-20` — `except Exception: pass` swallows every parse error in
+- [x] `CORR-20` — `except Exception: pass` swallows every parse error in
       `result_parsers.py:180-259`; the curator sees an incomplete summary and
       does not know why.
+      Fixed: every `except Exception: pass` in `collect_curation_results` now
+      logs a `log.warning(...)` naming the specific file and the caught
+      exception, and still keeps the summary best-effort (no re-raise). The
+      chromosome-list loop is now per-file (`try` inside the `for csv_path in
+      csv_files` loop) instead of one `try` around the whole aggregation, so a
+      malformed CSV for one haplotype no longer wipes out a successfully
+      parsed sibling — it's logged and skipped, and the first hap that *did*
+      parse still sets `autosomes`/contributes to `allosomes`. Tests:
+      `test_collect_curation_results_chromosome_csv_parse_error_is_logged`,
+      `test_collect_curation_results_pta_log_parse_error_is_logged`,
+      `test_collect_curation_results_micro_log_parse_error_is_logged`,
+      `test_collect_curation_results_sex_matcher_parse_error_is_logged`,
+      `test_collect_curation_results_qv_read_error_is_logged`,
+      `test_collect_curation_results_completeness_read_error_is_logged`
+      (`tests/test_result_parsers.py`).
 - [ ] `CORR-21` — the telomere track's awk program is mis-escaped
       (`add_pretext_view_tracks.py:143`, `92-97`, `62`).
 - [ ] `ARCH-16` — two commands bypass `_run()`, so "all shell commands go
