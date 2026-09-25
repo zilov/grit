@@ -104,6 +104,24 @@ def test_build_context_bsub_ram_override():
 # --- build_context (primary) ---
 
 
+# --- read_type (CORR-16) ---
+
+
+def test_build_context_read_type_defaults_to_hifi_when_pacbio_read_type_missing():
+    """No pacbio_read_type key in the YAML — read_type still defaults to hifi."""
+    yaml_data = {k: v for k, v in TEST_YAML_HAP1.items() if k != "pacbio_read_type"}
+    ctx = CurationContext.from_yaml("RC-1234", yaml_data, TEST_USER_CONFIG)
+    assert ctx.read_type == "hifi"
+
+
+def test_build_context_read_type_respects_non_hifi_pacbio_read_type():
+    """The YAML's pacbio_read_type field must actually take effect, not be
+    collapsed to 'hifi' regardless of its value (CORR-16)."""
+    yaml_data = {**TEST_YAML_HAP1, "pacbio_read_type": "clr"}
+    ctx = CurationContext.from_yaml("RC-1234", yaml_data, TEST_USER_CONFIG)
+    assert ctx.read_type == "clr"
+
+
 def test_build_context_primary_type(mock_ctx_primary):
     assert mock_ctx_primary.assembly_type == "primary"
     assert mock_ctx_primary.hap1_prefix == "primary"

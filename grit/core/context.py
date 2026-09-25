@@ -143,7 +143,7 @@ class CurationContext:
 
         if pacbio_dir_raw:
             long_reads_dir = Path(pacbio_dir_raw)
-            read_type = "hifi" if pacbio_read_type else "hifi"
+            read_type = pacbio_read_type if pacbio_read_type else "hifi"
         elif ont_dir_raw:
             long_reads_dir = Path(ont_dir_raw.replace("fasta", ""))
             read_type = "ont"

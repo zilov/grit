@@ -572,9 +572,20 @@ performs no registry writes.
 
 Do these whenever a related file is open.
 
-- [ ] `CORR-16` — `context.py:146`: `read_type = "hifi" if pacbio_read_type else
+- [x] `CORR-16` — `context.py:146`: `read_type = "hifi" if pacbio_read_type else
       "hifi"`. Tautology; the YAML field is effectively ignored.
-      *Verified directly.*
+      *Verified directly.* Fixed: `read_type = pacbio_read_type if pacbio_read_type
+      else "hifi"` — the field now takes effect, defaulting to `hifi` only when
+      absent/empty. Tests:
+      `test_build_context_read_type_defaults_to_hifi_when_pacbio_read_type_missing`,
+      `test_build_context_read_type_respects_non_hifi_pacbio_read_type`
+      (`tests/test_context.py`). Open question: downstream (`hic_remapping.py`'s
+      `--read_type` to sanger-tol/curationpretext, `microchromosome_second_shot.py`'s
+      `-rt`) and the type annotation (`read_type: str  # 'hifi' | 'ont'`) suggest only
+      `hifi`/`ont` are actually valid values there — every real fixture's
+      `pacbio_read_type` is `hifi`, so what a non-hifi PacBio value (e.g. `clr`)
+      should map to downstream is unclear and needs an author/curator answer;
+      this fix makes the field respected rather than guessing that mapping.
 - [ ] `CORR-14` — `_detect_assembly_type` can never return `paternal`, so every
       `paternal`/`maternal` branch is dead code that *looks* like support for
       those assembly types. Delete or implement.
