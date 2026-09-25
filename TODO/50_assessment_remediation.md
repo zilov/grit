@@ -682,7 +682,16 @@ performs no registry writes.
       personal account via uv-only `[tool.uv.sources]`: unpublishable to PyPI,
       `pip install -e .` broken, and `uv.lock` pins `1.2.0` against a `>=1.2.2`
       constraint.
-- [x] `PKG-05` — **done.** Verified by grep: `pymysql` has zero hits in `grit/`,
+- [ ] `PKG-05` — **reverted: the finding was wrong.** All three deps are
+      needed at runtime by the out-of-repo Jira modules loaded via
+      `gritjiraissue_path` (`GritJiraIssue.py` imports `requests` and `Bio`;
+      a sibling module imports `pymysql`), so dropping them broke every Jira
+      ticket with `ModuleNotFoundError: requests` — caught by
+      `grit-dev --print-only setup -t RC-3290`. Restored with a comment in
+      `pyproject.toml`; they move to `grit-sanger` with `MetadataSource`
+      (`ARCH-17`/`PKG-04`). The same grep blind spot applies to any dep audit
+      here: `sys.path`-loaded code is invisible to it. Original (wrong) note:
+      Verified by grep: `pymysql` has zero hits in `grit/`,
       `tests/` and `grit/scripts/`; `biopython`/`requests` are imported only
       inside the PEP-723 `# /// script` blocks of `grit/scripts/busco_synteny_
       format_and_plot.py` and `fastga_synteny_format_and_plot.py`, which run
