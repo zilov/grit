@@ -530,8 +530,13 @@ performs no registry writes.
       personal account via uv-only `[tool.uv.sources]`: unpublishable to PyPI,
       `pip install -e .` broken, and `uv.lock` pins `1.2.0` against a `>=1.2.2`
       constraint.
-- [ ] `PKG-05` — `pymysql` declared and imported nowhere; two other declared
-      deps unused. Also a hint of a credential surface to audit before a split.
+- [x] `PKG-05` — **done.** Verified by grep: `pymysql` has zero hits in `grit/`,
+      `tests/` and `grit/scripts/`; `biopython`/`requests` are imported only
+      inside the PEP-723 `# /// script` blocks of `grit/scripts/busco_synteny_
+      format_and_plot.py` and `fastga_synteny_format_and_plot.py`, which run
+      under their own `uv run --script` environment, not the installed
+      package's. Removed all three from `[project] dependencies` in
+      `pyproject.toml`; regenerated `uv.lock` with `uv lock`.
 - [ ] `PKG-06b` — CI never builds or installs the package, so nothing verifies
       that `grit/config/sanger_template.yaml` ships in the wheel.
 - [ ] `PKG-07` — README and `examples.md` give mutually inconsistent install
