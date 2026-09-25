@@ -505,9 +505,15 @@ what counts as finished.
 - [ ] `DOM-14` — both `rename_and_orient` and `rename_and_orient_hap2` sit in
       the pool for every haplotype; cross-hap contamination is prevented only by
       their output keys happening to differ, not by any hap check.
-- [ ] `DOM-16` — `_latest_tracked_output` stats candidates unguarded and
+- [x] `DOM-16` — `_latest_tracked_output` stats candidates unguarded and
       `_resolve_canonical_files` catches only `FileNotFoundError`, so a stale
-      NFS handle (`OSError`/ESTALE) crashes the resolver.
+      NFS handle (`OSError`/ESTALE) crashes the resolver. *Fixed:* every
+      existence/mtime check in the pool and the map fallback goes through
+      `_mtime()`, which treats any `OSError` as "not available", and
+      `_resolve_canonical_files` catches `OSError`. *Tests:*
+      `test_a_stale_pool_candidate_is_skipped`,
+      `test_a_stale_map_in_the_filesystem_fallback_is_skipped`,
+      `test_resolve_canonical_files_treats_an_os_error_as_not_found`.
 - [ ] `DOM-08` (plausible) — mtime is compared across files written by different
       clocks (login host vs compute node); a few seconds of negative skew
       reverses pool order. The run-dir ISO timestamps, all from one host, are

@@ -1045,3 +1045,46 @@ def test_find_latest_dir_skips_an_untracked_run(mock_ctx, tmp_path):
     _untracked_pta_run(mock_ctx)
 
     assert find_latest_dir(mock_ctx, "pretext_to_asm") == kept
+
+
+# ---------------------------------------------------------------------------
+# DOM-16: a stale NFS handle is "not available", not a crash
+# ---------------------------------------------------------------------------
+
+
+def _stale_handle_on(monkeypatch, bad_path):
+    """Make every stat() of *bad_path* raise ESTALE, as NFS does after a concurrent delete."""
+    import errno
+    from pathlib import Path
+
+    real_stat = Path.stat
+
+    def fake_stat(self, *args, **kwargs):
+        if str(self) == str(bad_path):
+            raise OSError(errno.ESTALE, "Stale file handle", str(self))
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", fake_stat)
+
+
+def test_a_stale_pool_candidate_is_skipped(mock_ctx, tmp_path, monkeypatch):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_fa, _ = _pta_success(tmp_path, mock_ctx)
+    rao_dir = tmp_path / "rename_and_orient" / "2026-01-02T00_00_00"
+    rao_fa = _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+    tracker.finish("rename_and_orient", rao_dir, "success", outputs={"hap1_fa": str(rao_fa)})
+
+    _stale_handle_on(monkeypatch, rao_fa)
+
+    assert find_canonical_fa(mock_ctx, "hap1") == pta_fa
+
+
+def test_a_stale_map_in_the_filesystem_fallback_is_skipped(mock_ctx, tmp_path, monkeypatch):
+    _make_tracker(tmp_path, mock_ctx)
+    hic = tmp_path / "hic_remapping"
+    old_map = _write_map(hic / "2026-01-01T00_00_00", mock_ctx.tol_id, "hap1")
+    new_map = _write_map(hic / "2026-01-02T00_00_00", mock_ctx.tol_id, "hap1")
+
+    _stale_handle_on(monkeypatch, new_map)
+
+    assert find_canonical_map(mock_ctx, "hap1") == old_map

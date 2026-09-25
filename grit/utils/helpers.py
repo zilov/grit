@@ -495,6 +495,14 @@ def _recurate_step_name(ctx: "CurationContext", hap_prefix: str) -> str:
     return "pretext_to_asm_recurate"
 
 
+def _mtime(path: Path) -> float | None:
+    """*path*'s mtime, or None when it cannot be stat'ed (missing, stale NFS handle, …)."""
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
 def _step_output(
     ctx: "CurationContext", step: str, key_variants: list[str], hap_prefix: str
 ) -> Path | None:
@@ -509,11 +517,11 @@ def _step_output(
     """
     for k in key_variants:
         val = ctx.tracker.get_output(step, k)
-        if val and Path(val).exists():
+        if val and _mtime(Path(val)) is not None:
             return Path(val)
 
     run_dir = ctx.tracker.latest_run_dir(step, include_started=False)
-    if not run_dir or not run_dir.exists():
+    if not run_dir or _mtime(run_dir) is None:
         return None
     if step.startswith("pretext_to_asm_recurate"):
         from grit.steps.post_curation.pretext_to_asm_recurate import _output_specs_for_hap
@@ -528,7 +536,7 @@ def _step_output(
     )
     for k in key_variants:
         val = outputs.get(k)
-        if val and Path(val).exists():
+        if val and _mtime(Path(val)) is not None:
             return Path(val)
     return None
 
@@ -550,8 +558,9 @@ def _latest_tracked_output(
     best: tuple[float, int, Path] | None = None  # (mtime, -priority_index, path)
     for idx, step in enumerate(steps):
         p = _step_output(ctx, step, key_variants, hap_prefix)
-        if p:
-            candidate = (p.stat().st_mtime, -idx, p)
+        mtime = _mtime(p) if p else None
+        if mtime is not None:
+            candidate = (mtime, -idx, p)
             if best is None or candidate[:2] > best[:2]:
                 best = candidate
     return best[2] if best else None
@@ -804,13 +813,18 @@ def find_canonical_map(ctx: "CurationContext", hap_prefix: str) -> Path:
 
     pattern = ctx.workdir / step / "*" / "pretext_maps_processed" / f"{ctx.tol_id}*normal.pretext"
     excluded = _excluded_run_dirs(ctx, step, settled_only=True)
-    matches = [m for m in glob.glob(str(pattern)) if Path(m).parent.parent.name not in excluded]
+    mtimes = {
+        m: _mtime(Path(m))
+        for m in glob.glob(str(pattern))
+        if Path(m).parent.parent.name not in excluded
+    }
+    matches = [m for m, mtime in mtimes.items() if mtime is not None]
     if not matches:
         raise FileNotFoundError(
             f"No remapped Pretext map for {hap_prefix!r} found under "
             f"{ctx.workdir / step}. Run hic-remapping first."
         )
-    return Path(max(matches, key=lambda f: Path(f).stat().st_mtime))
+    return Path(max(matches, key=lambda f: mtimes[f]))
 
 
 def find_hap_agp(ctx: "CurationContext", hap_prefix: str) -> Path:

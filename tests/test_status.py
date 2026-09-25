@@ -396,6 +396,19 @@ def test_resolve_canonical_files_missing_returns_none_per_type(mock_ctx):
         assert by_type == {"fa": None, "haplotigs": None, "chr_list": None, "map": None}
 
 
+def test_resolve_canonical_files_treats_an_os_error_as_not_found(mock_ctx):
+    """A stale NFS handle (ESTALE) in one finder must not take the status table down."""
+    import errno
+
+    def stale(*_args):
+        raise OSError(errno.ESTALE, "Stale file handle")
+
+    with patch("grit.utils.helpers.find_canonical_fa", side_effect=stale):
+        resolved = _resolve_canonical_files(mock_ctx, ["hap1"])
+
+    assert resolved["hap1"]["fa"] is None
+
+
 def test_resolve_canonical_files_finds_curated_fa(tmp_path, mock_ctx):
     mock_ctx.tracker = None
     mock_ctx.workdir = tmp_path
