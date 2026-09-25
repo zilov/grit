@@ -465,7 +465,7 @@ def test_run_hic_remapping_submits_command(mock_find_fa, mock_run, mock_ctx, tmp
 
     hap1_fa = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
     mock_find_fa.return_value = hap1_fa
-    mock_run.return_value = ""
+    mock_run.return_value = "Job <12345> is submitted to queue <oversubscribed>."
 
     run_hic_remapping(mock_ctx)
 
@@ -489,7 +489,7 @@ def test_run_hic_remapping_includes_teloseq(mock_find_fa, mock_run, mock_ctx, tm
     mock_ctx.teloseq = "--teloseq TTAGG"
 
     mock_find_fa.return_value = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
-    mock_run.return_value = ""
+    mock_run.return_value = "Job <12345> is submitted to queue <oversubscribed>."
 
     run_hic_remapping(mock_ctx)
 
@@ -511,7 +511,7 @@ def test_run_hic_remapping_includes_email_when_set(mock_find_fa, mock_run, mock_
     mock_ctx.email = "curator@sanger.ac.uk"
 
     mock_find_fa.return_value = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
-    mock_run.return_value = ""
+    mock_run.return_value = "Job <12345> is submitted to queue <oversubscribed>."
 
     run_hic_remapping(mock_ctx)
 
@@ -533,7 +533,7 @@ def test_run_hic_remapping_omits_email_when_unset(mock_find_fa, mock_run, mock_c
     mock_ctx.email = ""
 
     mock_find_fa.return_value = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
-    mock_run.return_value = ""
+    mock_run.return_value = "Job <12345> is submitted to queue <oversubscribed>."
 
     run_hic_remapping(mock_ctx)
 
@@ -570,7 +570,7 @@ def test_run_hic_remapping_hap2_submits_two_commands(mock_find_fa, mock_run, moc
     hap1_fa = tmp_path / "sDipInt39.1.hap1.primary.curated.fa"
     hap2_fa = tmp_path / "sDipInt39.1.hap2.primary.curated.fa"
     mock_find_fa.side_effect = [hap1_fa, hap2_fa]
-    mock_run.return_value = ""
+    mock_run.return_value = "Job <12345> is submitted to queue <oversubscribed>."
 
     run_hic_remapping(mock_ctx, run_hap2=True)
 
@@ -594,7 +594,7 @@ def test_run_hic_remapping_hap2_exclusive_skips_hap1(mock_find_fa, mock_run, moc
 
     hap2_fa = tmp_path / "sDipInt39.1.hap2.primary.curated.fa"
     mock_find_fa.return_value = hap2_fa
-    mock_run.return_value = ""
+    mock_run.return_value = "Job <12345> is submitted to queue <oversubscribed>."
 
     run_hic_remapping(mock_ctx, run_hap1=False, run_hap2=True)
 
@@ -616,7 +616,7 @@ def test_run_hic_remapping_assembly_override_bypasses_find_canonical(
     mock_ctx.long_reads_dir = Path("/lustre/pacbio")
     mock_ctx.read_type = "hifi"
     mock_ctx.teloseq = ""
-    mock_run.return_value = ""
+    mock_run.return_value = "Job <12345> is submitted to queue <oversubscribed>."
 
     custom_fa = Path("/custom/my_assembly.fa")
     run_hic_remapping(mock_ctx, assembly=custom_fa)
@@ -639,7 +639,7 @@ def test_run_hic_remapping_hic_dir_override(mock_find_fa, mock_run, mock_ctx, tm
     mock_ctx.read_type = "hifi"
     mock_ctx.teloseq = ""
     mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
-    mock_run.return_value = ""
+    mock_run.return_value = "Job <12345> is submitted to queue <oversubscribed>."
 
     override_hic = Path("/custom/hic_dir")
     run_hic_remapping(mock_ctx, hic_dir=override_hic)
@@ -662,7 +662,7 @@ def test_run_hic_remapping_ont_dir_sets_read_type(mock_find_fa, mock_run, mock_c
     mock_ctx.read_type = "hifi"
     mock_ctx.teloseq = ""
     mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
-    mock_run.return_value = ""
+    mock_run.return_value = "Job <12345> is submitted to queue <oversubscribed>."
 
     ont_path = Path("/custom/ont_dir")
     run_hic_remapping(mock_ctx, ont_dir=ont_path)
@@ -685,7 +685,7 @@ def test_run_hic_remapping_hifi_dir_override(mock_find_fa, mock_run, mock_ctx, t
     mock_ctx.read_type = "hifi"
     mock_ctx.teloseq = ""
     mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
-    mock_run.return_value = ""
+    mock_run.return_value = "Job <12345> is submitted to queue <oversubscribed>."
 
     hifi_path = Path("/custom/hifi_dir")
     run_hic_remapping(mock_ctx, hifi_dir=hifi_path)

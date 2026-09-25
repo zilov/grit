@@ -531,3 +531,24 @@ def test_plot_alignments_dropped_in_mapping_table_mode(mock_find_fa, mock_bsub, 
     run_rename_and_orient(mock_ctx, mapping_table=mapping_tsv, plot_alignments=True)
 
     assert "--plot-alignments" not in mock_bsub.call_args[0][0]
+
+
+@patch("grit.utils.helpers._run", return_value="Warning: licence server slow")
+@patch("grit.steps.optional.rename_and_orient.glob.glob")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_unparseable_bsub_output_fails_the_run_without_storing_a_job_id(
+    mock_find_fa, mock_glob, mock_run, mock_ctx, tmp_path
+):
+    from grit.utils.helpers import BsubSubmissionError
+
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.print_only = False
+    mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
+    mock_glob.return_value = [str(tmp_path / "fastga" / "x.FastGA.paf")]
+
+    with pytest.raises(BsubSubmissionError):
+        run_rename_and_orient(mock_ctx)
+
+    history = mock_ctx.tracker.history("rename_and_orient")
+    assert history[-1]["status"] == "failed"
+    assert all(record.get("job_id") is None for record in history)

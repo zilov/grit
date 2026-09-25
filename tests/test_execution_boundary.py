@@ -20,6 +20,7 @@ from click.testing import CliRunner
 from grit.core.click_cli import cli
 from grit.core.registry import RegistryManager
 from grit.utils.helpers import (
+    BsubSubmissionError,
     _run,
     _state_update_epilogue,
     _submit_bsub,
@@ -273,6 +274,26 @@ def test_submit_bsub_expands_unescaped_dollar_vars_at_submit_time(fake_bsub, mon
 def test_submit_bsub_parses_job_id_after_a_preceding_line(fake_bsub, monkeypatch):
     monkeypatch.setenv("FAKE_BSUB_STDOUT", f"Info: using default project\n{BANNER}")
     assert _submit_bsub("true", "-q normal") == "4242"
+
+
+def test_submit_bsub_parses_job_id_after_a_line_with_angle_brackets(fake_bsub, monkeypatch):
+    monkeypatch.setenv("FAKE_BSUB_STDOUT", f"Warning: project <default> assumed\n{BANNER}")
+    assert _submit_bsub("true", "-q normal") == "4242"
+
+
+@pytest.mark.parametrize(
+    "stdout",
+    [
+        "Warning: licence server slow, retrying",
+        "Job <abc> is submitted to queue <normal>.",
+        "",
+    ],
+)
+def test_submit_bsub_raises_when_bsub_prints_no_numeric_job_id(fake_bsub, monkeypatch, stdout):
+    monkeypatch.setenv("FAKE_BSUB_STDOUT", stdout)
+    with pytest.raises(BsubSubmissionError) as excinfo:
+        _submit_bsub("true", "-q normal")
+    assert stdout in str(excinfo.value)
 
 
 def test_submit_bsub_print_only_submits_nothing(fake_bsub):

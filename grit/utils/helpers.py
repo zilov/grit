@@ -118,6 +118,13 @@ def _run(
     return stdout.strip() if capture and stdout else ""
 
 
+_JOB_SUBMITTED_RE = re.compile(r"^Job <(\d+)> is submitted", re.MULTILINE)
+
+
+class BsubSubmissionError(RuntimeError):
+    """bsub returned without a parseable numeric job ID."""
+
+
 def _submit_bsub(
     inner_cmd: str,
     bsub_opts: str,
@@ -126,7 +133,9 @@ def _submit_bsub(
     epilogue_cmd: str | None = None,
 ) -> str:
     """
-    Wrap *inner_cmd* in a bsub call, submit it, and return the job ID string.
+    Wrap *inner_cmd* in a bsub call, submit it, and return the numeric job ID string.
+
+    Returns ``""`` in print_only mode; raises BsubSubmissionError when bsub prints no job ID.
 
     *bsub_opts* is inserted between ``bsub`` and the quoted command, e.g.
     ``'-q oversubscribed -M 1200'``.
@@ -137,12 +146,17 @@ def _submit_bsub(
     epilogue_part = f" -Ep '{epilogue_cmd}'" if epilogue_cmd else ""
     bsub_cmd = f'bsub{epilogue_part} {bsub_opts} "{inner_cmd}"'
     output = _run(bsub_cmd, print_only)
-    # bsub outputs: Job <12345> is submitted to queue ...
-    if output and "Job <" in output:
-        job_id = output.split("<")[1].split(">")[0]
-        log.info("Job ID: %s", job_id)
-        return job_id
-    return output
+    if print_only:
+        return ""
+    match = _JOB_SUBMITTED_RE.search(output)
+    if not match:
+        raise BsubSubmissionError(
+            "bsub exited 0 but printed no job ID, so grit cannot track this job; "
+            f"check bjobs before resubmitting. bsub said: {output!r}"
+        )
+    job_id = match.group(1)
+    log.info("Job ID: %s", job_id)
+    return job_id
 
 
 def _state_update_epilogue(workdir: Path, step: str, run_dir: Path, untracked: bool = False) -> str:

@@ -299,9 +299,25 @@ Batch 4, so do this batch first.
 - [ ] `CORR-11` — `pretext_to_asm_recurate.py:163-172`: the guard that should
       fail loudly on a missing recurate FASTA runs *after* the actions it was
       meant to prevent.
-- [ ] `CORR-25` — when bsub's stdout lacks `Job <`, `_submit_bsub` returns that
-      stdout as the job id; a non-numeric "job_id" then reaches the registry and
-      `bjobs`.
+- [x] `CORR-25` — **done.** `_submit_bsub` matches `^Job <(\d+)> is submitted`
+      on any line and otherwise raises `BsubSubmissionError` (message: bsub's
+      stdout, and "check bjobs before resubmitting", since exit 0 may still mean
+      a job exists). Also fixed on the way: the old `split("<")[1]` took the
+      first `<` anywhere, so a warning line like `project <default>` above the
+      banner yielded `default` as the job id. Callers: the three steps with a
+      try/except (`fastga`, `rename_and_orient`, `hic_remapping`) now record
+      `failed`; `cleanup` counts it as that ticket's error and carries on (it
+      used to treat any truthy stdout as a job id); the four without one are
+      `CORR-09`, still open — they now strand a `started` record with no
+      `job_id` instead of storing garbage. *Tests:*
+      `test_submit_bsub_raises_when_bsub_prints_no_numeric_job_id` (warning
+      text, `Job <abc>`, empty stdout),
+      `test_submit_bsub_parses_job_id_after_a_line_with_angle_brackets`,
+      `test_unparseable_bsub_output_fails_the_run_without_storing_a_job_id`,
+      `test_run_cleanup_counts_an_untrackable_gzip_submission_as_an_error`.
+      Was: when bsub's stdout lacked `Job <`, `_submit_bsub` returned that
+      stdout as the job id; a non-numeric "job_id" then reached the registry
+      and `bjobs`.
 - [ ] `CORR-18` — the epilogue rests on two unguarded assumptions: `sys.argv[0]`
       being a path valid on the compute node (see also Phase 2 / `PORT-02`), and
       `$LSB_JOBEXIT_STAT` being set.
