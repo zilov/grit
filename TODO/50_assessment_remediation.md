@@ -329,10 +329,22 @@ Batch 4, so do this batch first.
       `test_finalize_for_qc_fails_its_run_when_qv_fails`.
 - [x] `CORR-08` — `hic_remapping.py:70-84`: the "already done, skipping" branch
       finalises a run as `success` from the mere existence of an output. Fixed in TODO/52.
-- [ ] `CORR-09` — four steps (`busco_curated.py:153`, `busco_synteny.py:119`,
+- [x] `CORR-09` — four steps (`busco_curated.py:153`, `busco_synteny.py:119`,
       `fastga_synteny.py:108`, `sex_matcher.py:158`) call `_submit_bsub` outside
       any try/except after `tracker.start()`; a submission failure strands the
       record as `started` with no `job_id` and no recovery path but `untrack`.
+      **Fixed:** all four now finish the run `failed` (`untracked=ctx.untracked`)
+      and re-raise, like `fastga`/`rename_and_orient`/`hic_remapping`. A grep
+      found no other step of that shape (`cleanup`'s gzip jobs are untracked
+      and already count a failure per ticket). *Tests:*
+      `test_rejected_submission_finishes_the_run_and_reraises` (each step ×
+      `BsubSubmissionError`/`CommandError` × tracked/untracked);
+      `test_every_submit_bsub_call_passes_an_epilogue` and
+      `test_every_submit_bsub_call_finishes_the_run_when_submission_fails`
+      enumerate every `_submit_bsub` call under `grit/steps/` by AST, so a new
+      step without either fails CI; `test_every_epilogue_step_has_a_completion_criterion`
+      checks each epilogue step has `_OUTPUT_SPECS` or a manifest, without
+      which `CORR-03`'s rule means it can never succeed.
 - [ ] `CORR-11` — `pretext_to_asm_recurate.py:163-172`: the guard that should
       fail loudly on a missing recurate FASTA runs *after* the actions it was
       meant to prevent.
