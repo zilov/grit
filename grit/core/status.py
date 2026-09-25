@@ -617,10 +617,10 @@ def show_ticket_history(
             if status == "started" and job_id and job_id in live_job_statuses:
                 bjobs_status = live_job_statuses[job_id]
                 if bjobs_status in ("DONE", "gone"):
-                    # LSF reports the job itself as finished, but for steps that
-                    # shell out to an external pipeline (e.g. hic_remapping's
-                    # curationpretext.sh) grit never submitted the job itself, so
-                    # no -Ep epilogue was wired up to confirm real completion.
+                    # LSF reports the job itself as finished, but no -Ep epilogue
+                    # confirmed it: either the epilogue did not fire, or the run
+                    # predates one (hic_remapping runs submitted through
+                    # curationpretext.sh, whose own bsub grit never owned).
                     # Check for the expected output files now rather than waiting
                     # for the job to age out of `bjobs` history (which can take
                     # hours) before ever verifying.

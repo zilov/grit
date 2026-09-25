@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.4.3] - 2026-09-25
+
+### Changed
+
+- `hic-remapping` submits the curationpretext nextflow head job itself instead of calling `curationpretext.sh`, with the same resources (`oversubscribed`, 1200 MB) and pipeline arguments, and a `_state-update` epilogue like every other bsub step. The run is now closed by LSF the moment the pipeline ends, on the cluster that ran it, so the new Pretext map becomes canonical without anyone having to run `grit status` first. The job runs `grit/scripts/curationpretext.sh` — the module's wrapper without its `bsub` — which resolves `main.nf` inside the job from the wrapper the `grit` module puts on `PATH`, so pipeline version bumps still happen only in the module. Runs submitted before this change are still reconciled through `bjobs` as before.
+
+### Fixed
+
+- `hic-remapping` no longer marks an in-flight run `success` because its `hr.pretext` already exists (the file can be mid-write and the rest of the pipeline still running). A run whose latest record is `started` is reported as in progress, with its job ID, and neither finished nor resubmitted; only a successful run with a map newer than the canonical FASTA is skipped as already done.
+- `grit status -t` showed, and offered for download, the previous run's Pretext map right after a `hic-remapping` job finished. The job has no bsub epilogue, so its run is closed by `grit status`: on the cluster that submitted it, `bjobs` reports `DONE`, which the registry sweep skipped and only the step-history table resolved — after the canonical files had already been resolved and printed. The sweep now resolves `DONE` like `gone` (success when the outputs are on disk, never failed), before anything reads canonical files. This applies to every bsub step whose epilogue did not fire.
+
 ## [0.4.2] - 2026-09-22
 
 ### Added

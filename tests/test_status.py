@@ -344,11 +344,12 @@ def test_show_ticket_history_skips_microchromosome_tip_once_second_shot_ran(tmp_
 def test_show_ticket_history_resolves_done_job_without_waiting_for_gone(
     tmp_path, monkeypatch, capsys
 ):
-    """hic_remapping has no bsub -Ep epilogue (curationpretext.sh submits its own job),
-    so grit only learns of completion via bjobs polling. Once bjobs reports the job
-    DONE, grit should verify+finish immediately rather than waiting for the job to
-    age out of `bjobs` history (which can take hours) — and the scp tip should show
-    up in that same `grit status` call, not just the next one."""
+    """A hic_remapping run submitted through curationpretext.sh (or whose epilogue
+    never fired) has no -Ep epilogue, so grit only learns of completion via bjobs
+    polling. Once bjobs reports the job DONE, grit should verify+finish immediately
+    rather than waiting for the job to age out of `bjobs` history (which can take
+    hours) — and the scp tip should show up in that same `grit status` call,
+    not just the next one."""
     tol_id = "aEleAbb1"
     reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
 

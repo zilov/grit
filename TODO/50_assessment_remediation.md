@@ -245,8 +245,8 @@ Batch 4, so do this batch first.
 - [ ] `CORR-07` — `qv.py:80-96`: synchronous tracked step records `success` as
       soon as the submitting wrapper returns. No `job_id`, so bjobs recovery can
       never repair it.
-- [ ] `CORR-08` — `hic_remapping.py:70-84`: the "already done, skipping" branch
-      finalises a run as `success` from the mere existence of an output.
+- [x] `CORR-08` — `hic_remapping.py:70-84`: the "already done, skipping" branch
+      finalises a run as `success` from the mere existence of an output. Fixed in TODO/52.
 - [ ] `CORR-09` — four steps (`busco_curated.py:153`, `busco_synteny.py:119`,
       `fastga_synteny.py:108`, `sex_matcher.py:158`) call `_submit_bsub` outside
       any try/except after `tracker.start()`; a submission failure strands the

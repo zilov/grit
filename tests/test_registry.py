@@ -524,3 +524,33 @@ def test_hr_pretext_alone_does_not_complete_the_run(reg, tmp_path, bjobs_says_go
     reg.refresh_statuses()
 
     assert _latest_hic_status(reg, workdir) == "started"
+
+
+@pytest.fixture
+def bjobs_says_done(monkeypatch):
+    monkeypatch.setattr(
+        "grit.utils.helpers._check_bjobs", lambda job_ids: dict.fromkeys(job_ids, "DONE")
+    )
+    monkeypatch.setattr("grit.utils.helpers.lsf_cluster", lambda: "tol22")
+
+
+def test_done_job_with_outputs_succeeds_in_the_sweep(reg, tmp_path, bjobs_says_done):
+    """DONE resolves before `status -t` reads canonical files, not only in its table."""
+    workdir, run_dir = _pending_hic_ticket(reg, tmp_path, cluster="tol22")
+    maps = run_dir / "pretext_maps_processed"
+    maps.mkdir()
+    (maps / "fKreAnd1.hap1_normal.pretext").touch()
+
+    reg.refresh_statuses()
+
+    record = reg.get_steps(workdir, "hic_remapping")[-1]
+    assert record["status"] == "success"
+    assert record["outputs"]["hap1_normal_pretext"].endswith("fKreAnd1.hap1_normal.pretext")
+
+
+def test_done_job_without_outputs_is_not_marked_failed(reg, tmp_path, bjobs_says_done):
+    workdir, _ = _pending_hic_ticket(reg, tmp_path, cluster="tol22")
+
+    reg.refresh_statuses()
+
+    assert _latest_hic_status(reg, workdir) == "started"

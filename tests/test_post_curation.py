@@ -451,7 +451,7 @@ def test_run_haplotig_files_print_only(mock_ctx, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_submits_command(mock_find_fa, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
@@ -476,7 +476,7 @@ def test_run_hic_remapping_submits_command(mock_find_fa, mock_run, mock_ctx, tmp
     assert str(mock_ctx.hic_dir) in cmd
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_includes_teloseq(mock_find_fa, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
@@ -497,7 +497,7 @@ def test_run_hic_remapping_includes_teloseq(mock_find_fa, mock_run, mock_ctx, tm
     assert "--teloseq TTAGG" in cmd
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_includes_email_when_set(mock_find_fa, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
@@ -519,7 +519,7 @@ def test_run_hic_remapping_includes_email_when_set(mock_find_fa, mock_run, mock_
     assert "-N curator@sanger.ac.uk" in cmd
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_omits_email_when_unset(mock_find_fa, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
@@ -541,7 +541,7 @@ def test_run_hic_remapping_omits_email_when_unset(mock_find_fa, mock_run, mock_c
     assert "-N " not in cmd
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_raises_when_no_fasta(mock_find_fa, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
@@ -555,7 +555,7 @@ def test_run_hic_remapping_raises_when_no_fasta(mock_find_fa, mock_run, mock_ctx
         run_hic_remapping(mock_ctx)
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_hap2_submits_two_commands(mock_find_fa, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
@@ -580,7 +580,7 @@ def test_run_hic_remapping_hap2_submits_two_commands(mock_find_fa, mock_run, moc
     assert any(str(hap2_fa) in cmd for cmd in cmds)
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_hap2_exclusive_skips_hap1(mock_find_fa, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
@@ -602,7 +602,7 @@ def test_run_hic_remapping_hap2_exclusive_skips_hap1(mock_find_fa, mock_run, moc
     assert str(hap2_fa) in mock_run.call_args_list[0][0][0]
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_assembly_override_bypasses_find_canonical(
     mock_find_fa, mock_run, mock_ctx, tmp_path
@@ -626,7 +626,7 @@ def test_run_hic_remapping_assembly_override_bypasses_find_canonical(
     assert str(custom_fa) in cmd
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_hic_dir_override(mock_find_fa, mock_run, mock_ctx, tmp_path):
     """--hic-dir replaces ctx.hic_dir in the submitted command."""
@@ -649,7 +649,7 @@ def test_run_hic_remapping_hic_dir_override(mock_find_fa, mock_run, mock_ctx, tm
     assert "/lustre/hic_original" not in cmd
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_ont_dir_sets_read_type(mock_find_fa, mock_run, mock_ctx, tmp_path):
     """--ont-dir overrides long_reads_dir and forces read_type=ont."""
@@ -672,7 +672,7 @@ def test_run_hic_remapping_ont_dir_sets_read_type(mock_find_fa, mock_run, mock_c
     assert "--read_type ont" in cmd
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_hifi_dir_override(mock_find_fa, mock_run, mock_ctx, tmp_path):
     """--hifi-dir replaces long_reads_dir; read_type stays hifi."""
@@ -696,10 +696,205 @@ def test_run_hic_remapping_hifi_dir_override(mock_find_fa, mock_run, mock_ctx, t
     assert "--read_type hifi" in cmd
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+def _hic_ctx_with_tracker(mock_ctx, tmp_path):
+    """Point mock_ctx at tmp_path with a real tracker on an isolated registry."""
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.hic_dir = Path("/lustre/hic")
+    mock_ctx.long_reads_dir = Path("/lustre/pacbio")
+    mock_ctx.read_type = "hifi"
+    mock_ctx.teloseq = "--teloseq TTAGG"
+    mock_ctx.email = "curator@sanger.ac.uk"
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+    return mock_ctx
+
+
+def _seed_hic_run(ctx, tmp_path, status, *, job_id=None, step="hic_remapping"):
+    """Append a hic_remapping record whose run dir already holds an hr.pretext; return run_dir."""
+    run_dir = tmp_path / step / "2026-09-24T10_00_00_hap1"
+    maps = run_dir / "pretext_maps_processed"
+    maps.mkdir(parents=True)
+    (maps / f"{ctx.tol_id}.hap1_hr.pretext").write_text("")
+    ctx.tracker._registry.append_step(
+        tmp_path,
+        {
+            "step": step,
+            "timestamp": "2026-09-24T10_00_00",
+            "status": status,
+            "ticket_id": ctx.ticket_id,
+            "tol_id": ctx.tol_id,
+            "run_dir": str(run_dir),
+            "job_id": job_id,
+        },
+    )
+    return run_dir
+
+
+@patch("grit.utils.helpers._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_submits_nextflow_with_epilogue(
+    mock_find_fa, mock_run, mock_ctx, tmp_path
+):
+    from grit.steps.post_curation.hic_remapping import _CURATIONPRETEXT_SCRIPT
+
+    ctx = _hic_ctx_with_tracker(mock_ctx, tmp_path)
+    input_fa = tmp_path / "sDipInt39.hap1.curated.fa"
+    mock_find_fa.return_value = input_fa
+    mock_run.return_value = "Job <770835> is submitted to queue <oversubscribed>."
+
+    run_hic_remapping(ctx)
+
+    assert mock_run.call_count == 1
+    cmd = mock_run.call_args[0][0]
+    record = ctx.tracker.history("hic_remapping")[-1]
+    run_dir = record["run_dir"]
+
+    head, inner = cmd.split(' "', 1)
+    assert head.startswith("bsub -Ep '")
+    assert "_state-update" in head
+    assert f"--step hic_remapping --run-dir {run_dir} " in head
+    assert "--untracked" not in head
+    assert "-q oversubscribed" in head
+    assert "-M 1200" in head
+    assert f"-o {run_dir}/curationpretext_%J.log" in head
+
+    assert inner.startswith(f"cd {run_dir} && ")
+    assert "module load grit" in inner
+    assert f"bash {_CURATIONPRETEXT_SCRIPT} --map_order unsorted" in inner
+    assert "$" not in inner
+    for arg in (
+        "--map_order unsorted",
+        f"--input {input_fa}",
+        "--sample sDipInt39.hap1",
+        "--cram /lustre/hic",
+        "--reads /lustre/pacbio/fasta",
+        "--read_type hifi",
+        f"--outdir {run_dir}",
+        "--split_telomere true",
+        "--teloseq TTAGG",
+        "-N curator@sanger.ac.uk",
+    ):
+        assert arg in inner
+    assert inner.rstrip('"').endswith("-resume")
+
+    assert record["status"] == "started"
+    assert record["job_id"] == "770835"
+
+
+@patch("grit.utils.helpers._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_hap2_untracked_epilogue(mock_find_fa, mock_run, mock_ctx, tmp_path):
+    ctx = _hic_ctx_with_tracker(mock_ctx, tmp_path)
+    ctx.untracked = True
+    mock_find_fa.return_value = tmp_path / "sDipInt39.hap2.curated.fa"
+    mock_run.return_value = "Job <1> is submitted to queue <oversubscribed>."
+
+    run_hic_remapping(ctx, run_hap1=False, run_hap2=True)
+
+    head = mock_run.call_args[0][0].split(' "', 1)[0]
+    run_dir = ctx.tracker.history("hic_remapping_hap2")[-1]["run_dir"]
+    assert f"--step hic_remapping_hap2 --run-dir {run_dir} " in head
+    assert "--untracked'" in head
+
+
+@patch("grit.utils.helpers._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_in_flight_run_is_not_finished_or_resubmitted(
+    mock_find_fa, mock_run, mock_ctx, tmp_path
+):
+    import os
+
+    ctx = _hic_ctx_with_tracker(mock_ctx, tmp_path)
+    run_dir = _seed_hic_run(ctx, tmp_path, "started", job_id="770835")
+    fa = tmp_path / "old.fa"
+    fa.write_text(">a\nA\n")
+    os.utime(fa, (1, 1))
+    mock_find_fa.return_value = fa
+
+    run_hic_remapping(ctx)
+
+    mock_run.assert_not_called()
+    history = ctx.tracker.history("hic_remapping")
+    assert len(history) == 1
+    assert history[-1]["status"] == "started"
+    assert history[-1]["run_dir"] == str(run_dir)
+
+
+@patch("grit.utils.helpers._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_up_to_date_success_is_skipped(
+    mock_find_fa, mock_run, mock_ctx, tmp_path
+):
+    import os
+
+    ctx = _hic_ctx_with_tracker(mock_ctx, tmp_path)
+    _seed_hic_run(ctx, tmp_path, "success")
+    fa = tmp_path / "old.fa"
+    fa.write_text(">a\nA\n")
+    os.utime(fa, (1, 1))
+    mock_find_fa.return_value = fa
+
+    run_hic_remapping(ctx)
+
+    mock_run.assert_not_called()
+    assert len(ctx.tracker.history("hic_remapping")) == 1
+
+
+@pytest.mark.parametrize("status", ["success", "started"])
+@patch("grit.utils.helpers._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_newer_fasta_resubmits(
+    mock_find_fa, mock_run, status, mock_ctx, tmp_path
+):
+    import os
+    import time
+
+    ctx = _hic_ctx_with_tracker(mock_ctx, tmp_path)
+    run_dir = _seed_hic_run(ctx, tmp_path, status)
+    for f in run_dir.rglob("*.pretext"):
+        os.utime(f, (1, 1))
+    fa = tmp_path / "new.fa"
+    fa.write_text(">a\nA\n")
+    os.utime(fa, (time.time(), time.time()))
+    mock_find_fa.return_value = fa
+    mock_run.return_value = "Job <2> is submitted to queue <oversubscribed>."
+
+    run_hic_remapping(ctx)
+
+    assert mock_run.call_count == 1
+    assert f"--input {fa}" in mock_run.call_args[0][0]
+    assert ctx.tracker.history("hic_remapping")[-1]["job_id"] == "2"
+
+
+@patch("grit.utils.helpers._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_print_only_passes_full_command(
+    mock_find_fa, mock_run, mock_ctx, tmp_path
+):
+    mock_ctx.workdir = tmp_path
+    mock_ctx.print_only = True
+    mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.curated.fa"
+    mock_run.return_value = ""
+
+    run_hic_remapping(mock_ctx)
+
+    cmd, print_only = mock_run.call_args[0]
+    assert print_only is True
+    assert cmd.startswith("bsub -Ep '")
+    assert "curationpretext.sh" in cmd and "--split_telomere true" in cmd
+
+
+@patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_dry_run_hap1_only(mock_find_fa, mock_run, mock_ctx, tmp_path):
-    """dry_run with default run_hap1=True/run_hap2=False must skip curationpretext.sh
+    """dry_run with default run_hap1=True/run_hap2=False must skip the nextflow submission
     entirely and track a fake hap1 pretext map only."""
     from grit.core.registry import RegistryManager
     from grit.core.run_tracker import RunTracker
@@ -722,7 +917,7 @@ def test_run_hic_remapping_dry_run_hap1_only(mock_find_fa, mock_run, mock_ctx, t
     assert mock_ctx.tracker.history("hic_remapping_hap2") == []
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_dry_run_hap2(mock_find_fa, mock_run, mock_ctx, tmp_path):
     """dry_run with run_hap2=True must additionally track a fake hap2 pretext map,
@@ -747,7 +942,7 @@ def test_run_hic_remapping_dry_run_hap2(mock_find_fa, mock_run, mock_ctx, tmp_pa
     assert hap2_pretext is not None and Path(hap2_pretext).exists()
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_dry_run_hap2_exclusive_skips_hap1(
     mock_find_fa, mock_run, mock_ctx, tmp_path
@@ -1561,7 +1756,7 @@ def test_run_busco_curated_dry_run_short_circuits(
 # ---------------------------------------------------------------------------
 
 
-@patch("grit.steps.post_curation.hic_remapping._run")
+@patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.pretext_to_asm._run")
 def test_run_post_curation_dry_run_tracks_every_sub_step(
     mock_pta_run, mock_hic_run, mock_ctx, tmp_path
@@ -1886,3 +2081,57 @@ def test_busco_curated_analyses_the_canonical_hap1_fasta(mock_bsub, mock_ctx, tm
     inner_cmd = mock_bsub.call_args[0][0]
     tokens = inner_cmd.split()
     assert tokens[tokens.index("-i") + 1] == str(hap1_fa)
+
+
+def test_curationpretext_script_runs_main_nf_from_the_loaded_wrapper(tmp_path):
+    """The repo script finds main.nf via the wrapper on PATH and runs nextflow in the foreground."""
+    import subprocess
+
+    from grit.steps.post_curation.hic_remapping import _CURATIONPRETEXT_SCRIPT
+
+    main_nf = tmp_path / "pipeline" / "main.nf"
+    main_nf.parent.mkdir()
+    main_nf.touch()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "curationpretext.sh").write_text(
+        f'nxf_run_command="nextflow run   {main_nf}"\nbsub ... $nxf_run_command\n'
+    )
+    (bin_dir / "curationpretext.sh").chmod(0o755)
+    (bin_dir / "nextflow").write_text('#!/bin/sh\necho "NEXTFLOW $*"\n')
+    (bin_dir / "nextflow").chmod(0o755)
+
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin"}
+    result = subprocess.run(
+        ["bash", str(_CURATIONPRETEXT_SCRIPT), "--sample", "x.hap1", "-resume"],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"NEXTFLOW run {main_nf} -profile sanger,singularity -ansi-log false" in result.stdout
+    assert result.stdout.rstrip().endswith("--sample x.hap1 -resume")
+
+
+def test_curationpretext_script_fails_without_main_nf(tmp_path):
+    import subprocess
+
+    from grit.steps.post_curation.hic_remapping import _CURATIONPRETEXT_SCRIPT
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "curationpretext.sh").write_text("bsub nextflow run nothing\n")
+    (bin_dir / "curationpretext.sh").chmod(0o755)
+
+    result = subprocess.run(
+        ["bash", str(_CURATIONPRETEXT_SCRIPT), "--sample", "x"],
+        capture_output=True,
+        text=True,
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin"},
+        cwd=tmp_path,
+    )
+
+    assert result.returncode != 0
+    assert "cannot locate curationpretext main.nf" in result.stderr

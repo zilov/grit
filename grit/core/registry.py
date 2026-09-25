@@ -307,6 +307,11 @@ class RegistryManager:
 
             if bjobs_status == "EXIT":
                 tracker.finish(step, run_dir, "failed")
+            elif bjobs_status == "DONE":
+                # Resolved here, before `grit status -t` resolves canonical files, so a
+                # finished run's outputs are canonical in the same output. Missing
+                # outputs are left for the curator to check, not marked failed.
+                self._resolve_gone_job(tracker, step, run_dir, tol_id, hap1, hap2)
             elif bjobs_status == "gone":
                 # 'gone' only means *this* cluster has no record of the job. A job
                 # submitted from another cluster reads the same way, so it is
