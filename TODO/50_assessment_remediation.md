@@ -345,9 +345,16 @@ Batch 4, so do this batch first.
       step without either fails CI; `test_every_epilogue_step_has_a_completion_criterion`
       checks each epilogue step has `_OUTPUT_SPECS` or a manifest, without
       which `CORR-03`'s rule means it can never succeed.
-- [ ] `CORR-11` — `pretext_to_asm_recurate.py:163-172`: the guard that should
+- [x] `CORR-11` — `pretext_to_asm_recurate.py:163-172`: the guard that should
       fail loudly on a missing recurate FASTA runs *after* the actions it was
-      meant to prevent.
+      meant to prevent. **Fixed:** `_run_pretext_to_asm_core` takes
+      `required_outputs` (key → message) and raises inside its try, before
+      `finish(..., "success")`, so the run is recorded `failed`; recurate
+      requires `{hap}_fa`. The old post-call check stays only for the "already
+      done" skip path, which writes no record. *Test:*
+      `test_missing_curated_fa_output_raises_instead_of_silent_success` (now
+      asserts history `started, failed`, with a haplotigs output present so
+      the outputs dict is not empty).
 - [x] `CORR-25` — **done.** `_submit_bsub` matches `^Job <(\d+)> is submitted`
       on any line and otherwise raises `BsubSubmissionError` (message: bsub's
       stdout, and "check bjobs before resubmitting", since exit 0 may still mean

@@ -5,7 +5,7 @@ from __future__ import annotations
 import glob
 import logging
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Callable, Mapping, Sequence
 
 import rich_click as click
 
@@ -77,6 +77,7 @@ def _run_pretext_to_asm_core(
     agp_glob: str | None = None,
     output_transform: Callable[[Path], None] | None = None,
     agp_validators: Sequence[Callable[[Path], None]] = (),
+    required_outputs: Mapping[str, str] | None = None,
 ) -> Path:
     """
     Runs pretext-to-asm for one (original_fa, agp) pair under a tracked step.
@@ -86,7 +87,9 @@ def _run_pretext_to_asm_core(
     caller write extra files into run_dir before outputs are collected, and
     records outputs via *output_specs* under *step_name*. Each callable in
     *agp_validators* (plus the always-applied ``primary`` tag check) is handed the
-    resolved AGP before anything is run, and may fail the step. Returns the run_dir
+    resolved AGP before anything is run, and may fail the step. A key of
+    *required_outputs* missing from the collected outputs fails the run with the
+    mapped message instead of recording success. Returns the run_dir
     (which may be a prior run's dir if the step was skipped as already done).
 
     Shared by ``run_pretext_to_asm`` (main assembly), ``run_microchromosome_combine``
@@ -176,6 +179,9 @@ def _run_pretext_to_asm_core(
             outputs = collect_outputs(
                 output_specs, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
             )
+            missing = [k for k in (required_outputs or {}) if k not in outputs]
+            if missing and not ctx.print_only:
+                raise FileNotFoundError(f"{required_outputs[missing[0]]} (run dir: {run_dir})")
             ctx.tracker.finish(
                 step_name, run_dir, "success", outputs=outputs or None, untracked=ctx.untracked
             )
