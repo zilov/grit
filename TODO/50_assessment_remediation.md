@@ -153,13 +153,34 @@ written, because Batches 2-5 need them.
       diagnostic lost. Surface it. This is the single biggest improvement to
       debugging cost in the report.
 - [ ] `CORR-22` — `_run` sets no timeout anywhere.
-- [ ] `TEST-01` — write the missing boundary tests: `_run`'s subprocess branch,
-      `_submit_bsub`, `build_bsub_opts`, `_state_update_epilogue`,
-      `_check_bjobs`. Nothing currently distinguishes a valid `bsub` line from a
-      mis-quoted one. These are the baseline for Batches 2-4.
-- [ ] `TEST-08` — no test of any kind covers `_state_update_epilogue` or the
-      `_state-update` command. The function is pure string-building; the command
-      is invocable via `CliRunner`. (`effort: S`.)
+- [x] `TEST-01` — **done** in `tests/test_execution_boundary.py`, which runs the
+      real shell into a fake `bsub` on `$PATH` (records its argv) instead of
+      mocking `_run`, so quoting is checked by tokenisation, not substrings.
+      *Tests:* `test_run_*` (6, unmocked subprocess branch),
+      `test_build_bsub_opts_*` (5),
+      `test_submit_bsub_passes_opts_then_inner_cmd_as_one_argument`,
+      `test_submit_bsub_passes_the_epilogue_as_one_unexpanded_argument`,
+      `test_submit_bsub_expands_unescaped_dollar_vars_at_submit_time`,
+      `test_submit_bsub_parses_job_id_after_a_preceding_line`. `_check_bjobs`
+      was already covered by `TEST-04`. Mutation-checked: swapping the `-Ep`
+      quotes, dropping the inner-cmd quotes, breaking the job-id split, the
+      `-R` quoting or `-K` each fails at least one test. Was: nothing
+      distinguished a valid `bsub` line from a mis-quoted one.
+- [x] `TEST-08` — **done**, same file. The epilogue bsub received is executed
+      through `sh` with `$LSB_JOBEXIT_STAT` set as LSF would, into a fake `grit`:
+      `test_epilogue_run_by_lsf_calls_state_update_with_the_job_outcome`
+      (success/failed x tracked/untracked, plus unset `$LSB_JOBEXIT_STAT` →
+      `failed`), `test_epilogue_string_shape`, `test_epilogue_appends_untracked_flag`.
+      `_state-update` via `CliRunner`, documenting *current* behaviour:
+      `test_state_update_success_records_outputs_found_on_disk`,
+      `test_state_update_success_with_no_outputs_still_records_success` (the
+      `CORR-03` gap, pinned so its fix shows up as a deliberate test change),
+      `test_state_update_failed_does_not_collect_outputs`,
+      `test_state_update_untracked_keeps_the_marker_and_records_outputs`,
+      `test_state_update_for_an_unregistered_workdir_writes_nothing`,
+      `test_state_update_rejects_an_unknown_status`,
+      `test_state_update_is_hidden_from_help`. Not covered: that each of the
+      steps calling `_submit_bsub` passes an `epilogue_cmd`.
 - [x] `TEST-04` — **done**, alongside `CORR-04`: five tests in
       `tests/test_helpers.py` cover the state column, the per-job "is not found"
       lines on stderr, an unreachable LSF, a missing `bjobs` binary and the
