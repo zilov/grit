@@ -14,8 +14,6 @@ from grit.utils.output import print_done, print_step_header
 
 log = logging.getLogger(__name__)
 
-_QV_OUTPUT_KEYS = ("qv", "completeness_stats")
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -93,7 +91,7 @@ def run_qv(ctx: CurationContext) -> None:
         # the wrapper blocks on its MerquryFK job (bsub -K) but exits 0 even when it fails
         _run(cmd, ctx.print_only)
         outputs = None if ctx.print_only else _find_qv_outputs(ctx)
-        if outputs is not None and set(outputs) != set(_QV_OUTPUT_KEYS):
+        if outputs is not None and set(outputs) != {"qv", "completeness_stats"}:
             raise RuntimeError(
                 "kmer_completeness.bash finished without writing "
                 f"{ctx.tol_id}.qv and {ctx.tol_id}.completeness.stats to "
