@@ -554,3 +554,34 @@ def test_done_job_without_outputs_is_not_marked_failed(reg, tmp_path, bjobs_says
     reg.refresh_statuses()
 
     assert _latest_hic_status(reg, workdir) == "started"
+
+
+@pytest.mark.parametrize("has_output", [True, False])
+def test_gone_job_of_a_step_without_output_specs_is_left_started(
+    reg, tmp_path, bjobs_says_gone, has_output
+):
+    """find_reference has a manifest but no _OUTPUT_SPECS: the sweep never resolves it."""
+    workdir = tmp_path / "work"
+    run_dir = workdir / "find_reference" / "2026-09-22T14_15_05"
+    run_dir.mkdir(parents=True)
+    if has_output:
+        (workdir / "reference").mkdir()
+        (workdir / "reference" / "ref.fa").touch()
+    reg.add_ticket("RC-4949", "fKreAnd1", "Krefftichthys anderssoni", workdir)
+    reg.append_step(
+        workdir,
+        {
+            "step": "find_reference",
+            "timestamp": "2026-09-22T14_15_05",
+            "status": "started",
+            "ticket_id": "RC-4949",
+            "tol_id": "fKreAnd1",
+            "run_dir": str(run_dir),
+            "job_id": "753394",
+            "cluster": "farm22",
+        },
+    )
+
+    reg.refresh_statuses()
+
+    assert reg.get_steps(workdir, "find_reference")[-1]["status"] == "started"
