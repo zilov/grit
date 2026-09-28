@@ -199,7 +199,7 @@ def run_pretext_to_asm_recurate(ctx: CurationContext, hap_prefix: str, step_name
         output_transform=_merge_haplotigs_transform(merged_name, prior_haplotigs),
         agp_validators=(_check_unloc_tags,),
         # without it canonical resolution silently stays on pre-recuration data
-        required_outputs={f"{hap_prefix}_fa": missing_fa_msg},
+        required_output=f"{hap_prefix}_fa",
     )
 
     # a skipped "already done" run was never checked by the core
