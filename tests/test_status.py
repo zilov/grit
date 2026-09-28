@@ -5,6 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from grit.core.context import CurationContext
 from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
@@ -1189,3 +1191,36 @@ def test_show_ticket_history_credits_unrecorded_blast_output_in_its_hap_subdir(
     pta_line = next(line for line in lines if "pretext_to_asm" in line and "success" in line)
     assert "fa(1)" in bc_line
     assert "fa(1)" not in pta_line
+
+
+@pytest.mark.parametrize(
+    "job_cluster, expected",
+    [("tol22", "unknown (job on tol22)"), ("farm22", "unknown (gone)"), (None, "unknown (gone)")],
+)
+def test_show_ticket_history_names_the_cluster_of_a_job_bjobs_cannot_see(
+    tmp_path, monkeypatch, job_cluster, expected
+):
+    tol_id = "aEleAbb1"
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+    if job_cluster:
+        monkeypatch.setenv("LSF_ENVDIR", f"/software/lsf-{job_cluster}/conf")
+    else:
+        monkeypatch.delenv("LSF_ENVDIR", raising=False)
+    run_dir = tracker.start("hic_remapping", "RC-1234", tol_id, suffix="primary")
+    tracker.record_job("hic_remapping", run_dir, "685359")
+    monkeypatch.setenv("LSF_ENVDIR", "/software/lsf-farm22/conf")
+
+    with (
+        patch("grit.utils.helpers._check_bjobs", return_value={"685359": "gone"}),
+        patch("grit.core.status.console") as mock_console,
+    ):
+        show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    cells = [
+        str(c)
+        for call in mock_console.print.call_args_list
+        if call.args and hasattr(call.args[0], "columns")
+        for col in call.args[0].columns
+        for c in col._cells
+    ]
+    assert any(expected in c for c in cells)
