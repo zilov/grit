@@ -29,18 +29,18 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def _untracked_dirs(records: list[dict]) -> set[str]:
-    """Return the set of run_dirs whose most recent record status is 'untracked'.
-
-    Iterating forward means the last status seen for each run_dir wins, which
-    correctly handles undo (a later 'success' re-enables a previously untracked dir).
-    """
-    latest_status: dict[str, str] = {}
+def _latest_statuses(records: list[dict], key=str) -> dict[str, str]:
+    """Map each record's ``key(run_dir)`` to the status of its most recent record."""
+    latest: dict[str, str] = {}
     for r in records:
-        rd = r.get("run_dir")
-        if rd:
-            latest_status[rd] = r.get("status", "")
-    return {rd for rd, st in latest_status.items() if st == "untracked"}
+        if r.get("run_dir"):
+            latest[key(r["run_dir"])] = r.get("status", "")
+    return latest
+
+
+def _untracked_dirs(records: list[dict]) -> set[str]:
+    """Return the set of run_dirs whose most recent record status is 'untracked'."""
+    return {rd for rd, st in _latest_statuses(records).items() if st == "untracked"}
 
 
 class RunTracker:
@@ -207,11 +207,7 @@ class RunTracker:
 
     def run_dir_statuses(self, step: str) -> dict[str, str]:
         """Map each of *step*'s run dir names to the status of its most recent record."""
-        latest: dict[str, str] = {}
-        for r in self.history(step):
-            if r.get("run_dir"):
-                latest[Path(r["run_dir"]).name] = r.get("status", "")
-        return latest
+        return _latest_statuses(self.history(step), key=lambda rd: Path(rd).name)
 
     def get_output(self, step: str, key: str) -> str | None:
         """
