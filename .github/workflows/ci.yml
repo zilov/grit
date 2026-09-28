@@ -44,20 +44,5 @@ jobs:
 
       - name: Verify packaged data files ship in the wheel
         run: |
-          wheel=$(ls dist/*.whl)
-          python3 -c "
-          import sys, zipfile
-          wheel = sys.argv[1]
-          required = ['grit/config/sanger_template.yaml']
-          with zipfile.ZipFile(wheel) as zf:
-              names = set(zf.namelist())
-          missing = [f for f in required if f not in names]
-          if missing:
-              print(f'Missing from {wheel}: {missing}', file=sys.stderr)
-              sys.exit(1)
-          scripts = [n for n in names if n.startswith('grit/scripts/')]
-          if not scripts:
-              print(f'No grit/scripts/* files found in {wheel}', file=sys.stderr)
-              sys.exit(1)
-          print(f'OK: {wheel} contains {required} and {len(scripts)} scripts/ files')
-          " "$wheel"
+          unzip -l dist/*.whl | grep -q ' grit/config/sanger_template.yaml$'
+          unzip -l dist/*.whl | grep -q ' grit/scripts/'
