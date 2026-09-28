@@ -560,18 +560,17 @@ def test_done_job_without_outputs_is_not_marked_failed(reg, tmp_path, bjobs_says
 def test_gone_job_of_a_step_without_output_specs_is_left_started(
     reg, tmp_path, bjobs_says_gone, has_output
 ):
-    """find_reference has a manifest but no _OUTPUT_SPECS: the sweep never resolves it."""
+    """haplotig_files has a manifest but no _OUTPUT_SPECS: the sweep never resolves it."""
     workdir = tmp_path / "work"
-    run_dir = workdir / "find_reference" / "2026-09-22T14_15_05"
+    run_dir = workdir / "haplotig_files" / "2026-09-22T14_15_05"
     run_dir.mkdir(parents=True)
     if has_output:
-        (workdir / "reference").mkdir()
-        (workdir / "reference" / "ref.fa").touch()
+        (run_dir / "fKreAnd1.1.haplotigs.fa").touch()
     reg.add_ticket("RC-4949", "fKreAnd1", "Krefftichthys anderssoni", workdir)
     reg.append_step(
         workdir,
         {
-            "step": "find_reference",
+            "step": "haplotig_files",
             "timestamp": "2026-09-22T14_15_05",
             "status": "started",
             "ticket_id": "RC-4949",
@@ -584,4 +583,4 @@ def test_gone_job_of_a_step_without_output_specs_is_left_started(
 
     reg.refresh_statuses()
 
-    assert reg.get_steps(workdir, "find_reference")[-1]["status"] == "started"
+    assert reg.get_steps(workdir, "haplotig_files")[-1]["status"] == "started"

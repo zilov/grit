@@ -172,3 +172,27 @@ def test_dry_run_short_circuits_and_writes_placeholder(mock_run, mock_ctx, tmp_p
     assert history[-1]["status"] == "success"
     placeholder = Path(history[-1]["run_dir"]) / f"{mock_ctx.tol_id}_reheader.fna"
     assert placeholder.exists()
+    assert history[-1]["outputs"] == {"ref": str(placeholder)}
+
+
+def test_local_reference_success_records_reheadered_fasta(mock_ctx, tmp_path):
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.print_only = False
+    registry = RegistryManager(registry_dir=tmp_path / "registry")
+    registry.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, mock_ctx.workdir)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=registry)
+    local_ref = tmp_path / "GCA_123.fa"
+    local_ref.write_text(">chr1\nACGT\n")
+
+    def fake_reheader(cmd, print_only):
+        Path(cmd.split("> ")[-1]).write_text(">chr1\nACGT\n")
+
+    with patch("grit.steps.pre_curation.find_reference._run", side_effect=fake_reheader):
+        find_closest_reference(mock_ctx, local_path=str(local_ref))
+
+    last = mock_ctx.tracker.history("find_reference")[-1]
+    assert last["status"] == "success"
+    assert last["outputs"] == {"ref": str(Path(last["run_dir"]) / "GCA_123_reheader.fna")}

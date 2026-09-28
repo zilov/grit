@@ -21,10 +21,10 @@ STEP_MANIFESTS: dict[str, dict] = {
         "dir": "workdir",
         "files": ["Best_match*.txt"],
     },
-    # script cd-s to workdir/reference, output stays there
+    # reheadered reference(s) land in the tracked run_dir
     "find_reference": {
-        "dir": "workdir",
-        "files": ["reference/*.fa"],
+        "dir": "run_dir",
+        "files": ["*_reheader.fna"],
     },
     "pretext_to_asm": {
         "dir": "run_dir",

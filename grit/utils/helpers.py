@@ -1149,6 +1149,7 @@ def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
         "busco_curated": ("grit.steps.optional.busco_curated", "_OUTPUT_SPECS"),
         "busco_synteny": ("grit.steps.optional.busco_synteny", "_OUTPUT_SPECS"),
         "fastga_synteny": ("grit.steps.optional.fastga_synteny", "_OUTPUT_SPECS"),
+        "find_reference": ("grit.steps.pre_curation.find_reference", "_OUTPUT_SPECS"),
         "microchromosome_second_shot": (
             "grit.steps.pre_curation.microchromosome_second_shot",
             "_OUTPUT_SPECS",

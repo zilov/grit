@@ -8,7 +8,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import _clean_species_name, _run
+from grit.utils.helpers import _clean_species_name, _run, collect_outputs
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
     print_done,
@@ -23,6 +23,8 @@ log = logging.getLogger(__name__)
 
 
 _GET_NEAREST_COMPARATOR = "/software/grit/projects/vgp_curation_scripts/get_nearest_comparator.rb"
+
+_OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [("ref", "*_reheader.fna", [])]
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +150,13 @@ def find_closest_reference(
         )
         placeholder = run_dir / f"{ctx.tol_id}_reheader.fna"
         placeholder.write_text(">fake\nACGT\n")
-        ctx.tracker.finish("find_reference", run_dir, "success", untracked=ctx.untracked)
+        ctx.tracker.finish(
+            "find_reference",
+            run_dir,
+            "success",
+            outputs=collect_outputs(_OUTPUT_SPECS, run_dir, ctx.tol_id),
+            untracked=ctx.untracked,
+        )
         print_done(f"[dry-run] Reference prepared in {run_dir}")
         return
 
@@ -174,7 +182,13 @@ def find_closest_reference(
                 raise FileNotFoundError(f"Local reference not found: {local}")
             _prep_local_reference(ctx, local, run_dir)
             if ctx.tracker and run_dir:
-                ctx.tracker.finish("find_reference", run_dir, "success", untracked=ctx.untracked)
+                ctx.tracker.finish(
+                    "find_reference",
+                    run_dir,
+                    "success",
+                    outputs=collect_outputs(_OUTPUT_SPECS, run_dir, ctx.tol_id),
+                    untracked=ctx.untracked,
+                )
         except Exception:
             if ctx.tracker and run_dir:
                 ctx.tracker.finish("find_reference", run_dir, "failed", untracked=ctx.untracked)
@@ -195,7 +209,13 @@ def find_closest_reference(
         _run(cmd, ctx.print_only)
         _reheader_downloaded_references(ctx, run_dir)
         if ctx.tracker and run_dir:
-            ctx.tracker.finish("find_reference", run_dir, "success", untracked=ctx.untracked)
+            ctx.tracker.finish(
+                "find_reference",
+                run_dir,
+                "success",
+                outputs=collect_outputs(_OUTPUT_SPECS, run_dir, ctx.tol_id),
+                untracked=ctx.untracked,
+            )
     except Exception:
         if ctx.tracker and run_dir:
             ctx.tracker.finish("find_reference", run_dir, "failed", untracked=ctx.untracked)
