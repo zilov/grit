@@ -96,7 +96,7 @@ def test_setup_curation_initial_hap1hap2(
 
     # mkdir and zcat should have been called
     calls = [str(c) for c in mock_run.call_args_list]
-    assert any("mkdir" in c for c in calls)
+    assert any("mkdir" in c and str(mock_ctx.recurate_dir) in c for c in calls)
     assert any("zcat" in c and "hap1" in c and "hap2" in c for c in calls)
 
 
@@ -402,6 +402,7 @@ def test_run_setup_dry_run_creates_workdir_and_placeholder_fa(mock_ctx, tmp_path
     run_setup(mock_ctx)
 
     assert mock_ctx.workdir.is_dir()
+    assert mock_ctx.recurate_dir.is_dir()
     assert (mock_ctx.workdir / "original.fa").exists()
 
 

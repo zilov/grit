@@ -171,7 +171,7 @@ def run_pretext_to_asm_recurate(ctx: CurationContext, hap_prefix: str, step_name
         prior_haplotigs = None
 
     original_fa = find_canonical_fa(ctx, hap_prefix)
-    agp_search_dir = ctx.workdir / "recurate"
+    agp_search_dir = ctx.recurate_dir
     if not ctx.print_only:
         agp_search_dir.mkdir(parents=True, exist_ok=True)
     print_tip(
