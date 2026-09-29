@@ -122,6 +122,13 @@ def _read(title: str, why: str) -> Lesson:
     )
 
 
+_QC_PASSED_LESSON = _read(
+    "Send the genome to QC",
+    "After finalize-qc you send the genome to QC. Say no comments come back "
+    "(if only it were like that every time!) — then you can safely run pp.",
+)
+
+
 _TUTORIAL_0 = Scenario(
     key="overview",
     title="0 — Overview",
@@ -312,6 +319,7 @@ _TUTORIAL_1 = Scenario(
             task="Build the release directory and the QC report.",
             command="finalize-qc",
         ),
+        _QC_PASSED_LESSON,
         Lesson(
             title="status — the global view",
             why=(
@@ -500,6 +508,7 @@ _TUTORIAL_2 = Scenario(
                 "ran qv for you, since it hadn't run on this ticket yet."
             ),
         ),
+        _QC_PASSED_LESSON,
         Lesson(
             title="pp",
             why=(
@@ -521,6 +530,21 @@ _TUTORIAL_3 = Scenario(
     ticket="T-3",
     difficulty="hard",
     lessons=[
+        _read(
+            "Why grit tracks canonical files",
+            "Some steps change the assembly FASTA, and some the chromosome list too. "
+            "grit has to track which version is current, so that the right files go "
+            "to submission.\n\n"
+            "After pretext-to-asm, these steps change the genome:\n"
+            "  • microchromosome-combine: FASTA and chromosome list\n"
+            "  • blast-contaminants: FASTA\n"
+            "  • rename-and-orient: FASTA and chromosome list\n"
+            "  • pretext-to-asm-recurate: FASTA and chromosome list\n\n"
+            "Each time you run one of them, its output becomes the canonical FASTA "
+            "(and chromosome list, if it writes one), and every later step uses it.\n\n"
+            "No step outranks another: canonical is simply the output of whichever of "
+            "these steps ran last. You'll watch it move in `grit status` as you go.",
+        ),
         Lesson(
             title="setup",
             why="Same first step as always.",
@@ -587,13 +611,13 @@ _TUTORIAL_3 = Scenario(
                 "rather than whatever NCBI's automatic search would pick. --local skips "
                 "the download and preps that file directly."
             ),
-            task="Prep the collaborator's reference instead of searching NCBI.",
+            task="Prep the collaborator's reference, reference.fa, instead of searching NCBI.",
             command="find-reference",
-            args=["--local", "/nfs/scratch/shared/collaborator_reference.fa"],
+            args=["--local", "reference.fa"],
             flag_hints={
                 "--local": (
-                    "find-reference --local <path> preps a reference FASTA you already "
-                    "have instead of downloading one from NCBI."
+                    "find-reference --local reference.fa preps the reference FASTA you "
+                    "already have instead of downloading one from NCBI."
                 )
             },
         ),
@@ -651,6 +675,7 @@ _TUTORIAL_3 = Scenario(
             task="Build the release directory and the QC report.",
             command="finalize-qc",
         ),
+        _QC_PASSED_LESSON,
         Lesson(
             title="pp",
             why=(
@@ -727,6 +752,7 @@ _TUTORIAL_4 = Scenario(
             task="Build the release directory and the QC report.",
             command="finalize-qc",
         ),
+        _QC_PASSED_LESSON,
         Lesson(
             title="pp",
             why=(
@@ -904,6 +930,7 @@ _TUTORIAL_5 = Scenario(
             task="Build the release directory and the QC report.",
             command="finalize-qc",
         ),
+        _QC_PASSED_LESSON,
         Lesson(
             title="pp",
             why=(

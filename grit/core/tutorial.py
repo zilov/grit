@@ -1,5 +1,6 @@
 """Interactive `grit tutorial` — a guided --dry-run walkthrough of a curation."""
 
+import functools
 import logging
 import shlex
 import shutil
@@ -20,8 +21,6 @@ from grit.utils.output import console
 
 # Short options the learner may type, and the long name they normalise to.
 _ALIASES = {"-t": "--ticket", "-s": "--step", "-u": "--untracked"}
-# Options that consume a following value and whose value is part of the answer.
-_VALUE_OPTS = {"--ticket", "--step", "--bsub-ram", "--lineage"}
 # Plumbing the tutorial supplies itself — consumed and ignored when matching.
 _IGNORED_VALUE_OPTS = {"--config", "--yaml", "--logging-level"}
 
@@ -33,6 +32,21 @@ class Parsed:
     subcommand: str | None
     ticket: str | None
     flags: frozenset[str]
+
+
+@functools.cache
+def _value_opts() -> frozenset[str]:
+    """Every grit option that consumes a following value, read from the CLI itself."""
+    from grit.core.click_cli import cli
+
+    return frozenset(
+        name
+        for command in [cli, *cli.commands.values()]
+        for param in command.params
+        if isinstance(param, click.Option) and not param.is_flag
+        for name in param.opts
+        if name.startswith("--")
+    )
 
 
 def parse_command(tokens: list[str]) -> Parsed:
@@ -51,7 +65,7 @@ def parse_command(tokens: list[str]) -> Parsed:
         if tok.startswith("-"):
             name, eq, inline = tok.partition("=")
             name = _ALIASES.get(name, name)
-            if name in _VALUE_OPTS or name in _IGNORED_VALUE_OPTS:
+            if name in _IGNORED_VALUE_OPTS or name in _value_opts():
                 if eq:
                     value = inline
                 else:
@@ -108,6 +122,12 @@ def hint_for(got: Parsed, lesson: Lesson, ticket: str, known: set[str]) -> str:
             f"{got.subcommand!r} is another grit command, but this lesson is "
             f"about {want.subcommand!r}."
         )
+    for flag in sorted(got.flags):
+        name, _, value = flag.partition("=")
+        if value.startswith("-") or (flag != name and not value):
+            wanted = next((f for f in want.flags if _flag_name(f) == name), "")
+            example = f": {name} {wanted.partition('=')[2]}" if wanted else ""
+            return f"{name} takes a value right after it{example}."
     if not lesson.needs_ticket:
         if got.ticket is not None:
             return "This one is the global view: drop -t so status lists every ticket."

@@ -150,7 +150,7 @@ dataclass field doesn't distinguish them, only the callable's body does.
 
 The learner **types** each command; the lesson advances only on a match.
 `parse_command()` normalises both sides to `(subcommand, ticket, flags)` — short
-aliases expanded, `--dry-run` ignored, `--step` keeping its value — and
+aliases expanded, `--dry-run` ignored, every option that takes a value (read from the click commands by `_value_opts()`, so a new one never needs listing) keeping it — and
 `hint_for()` names the actual fault. Both are pure string logic and are
 unit-tested in `tests/test_tutorial.py`, which also asserts that every typed
 lesson names a registered command and explains every flag it demands.

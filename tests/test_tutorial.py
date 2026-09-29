@@ -308,3 +308,18 @@ def test_drop_step_headers_keeps_results_and_other_panels():
         "╭────╮\n│ keep me │\n╰────╯"
     )
     assert _drop_step_headers(captured) == "Done: Curated FASTA\n╭────╮\n│ keep me │\n╰────╯"
+
+
+def test_a_value_option_swallows_its_value_not_the_ticket():
+    got = parse_command(["grit", "find-reference", "--local", "-t", "T-3"])
+    assert got.ticket is None and "--local=-t" in got.flags
+    got = parse_command(["grit", "find-reference", "-t", "T-3", "--local", "reference.fa"])
+    assert got.ticket == "T-3" and got.flags == {"--local=reference.fa"}
+
+
+def test_a_value_option_missing_its_value_is_named():
+    lesson = Lesson(title="", why="", task="", command="find-reference", args=["--local", "r.fa"])
+    got = parse_command(["grit", "find-reference", "--local", "-t", TICKET])
+    assert hint_for(got, lesson, TICKET, {"find-reference"}) == (
+        "--local takes a value right after it: --local r.fa."
+    )

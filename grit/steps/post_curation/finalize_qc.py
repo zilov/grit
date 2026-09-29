@@ -211,6 +211,7 @@ def finalize_for_qc(
                 untracked=ctx.untracked,
             )
         print_done(f"[dry-run] Curated dir → {dest_dir}")
+        _print_submission_reminder(ctx, dest_dir)
         return
 
     if not ctx.print_only:
@@ -324,10 +325,6 @@ def finalize_for_qc(
         )
     else:
         print_done("All files copied to curated directory")
-    console.print(
-        "\n[bold yellow]⚠  Please don't forget about Submission Text and attaching "
-        "latest savestate to the ticket, curation summary:[/bold yellow]"
-    )
 
     if ctx.tracker and run_dir:
         ctx.tracker.finish(
@@ -338,8 +335,18 @@ def finalize_for_qc(
             untracked=ctx.untracked,
         )
 
+    if not ctx.print_only:
+        _print_submission_reminder(ctx, dest_dir)
+
+
+def _print_submission_reminder(ctx: CurationContext, dest_dir: Path) -> None:
+    """Print the submission reminder with the ticket's curation results, QV included."""
     from grit.utils.output import print_curation_results, print_tip
 
+    console.print(
+        "\n[bold yellow]⚠  Please don't forget about Submission Text and attaching "
+        "latest savestate to the ticket, curation summary:[/bold yellow]"
+    )
     print_curation_results(ctx.tracker, ctx.workdir, ctx.tol_id, curated_dir=dest_dir)
     print_tip("Submission notes: https://gist.github.com/zilov/93b1e6c68a6e2553b7c12770d6a0a3ef")
 
