@@ -47,7 +47,6 @@ _OUTPUT_SPECS: list[tuple[str, str, list[str]] | tuple[str, str, list[str], bool
 # bsub job.
 _OUTPUT_SPECS_STATS: list[tuple[str, str, list[str]]] = [
     ("top1_targets", "*.top1_targets.tsv", []),
-    ("top_targets_summary", "*.top_targets_summary.txt", []),
 ]
 
 
@@ -210,15 +209,13 @@ def run_fastga_stats(ctx: CurationContext) -> None:
         else ctx.workdir / "fastga_stats" / "untracked"
     )
     top1_file = run_dir / f"{prefix}.top1_targets.tsv"
-    summary_file = run_dir / f"{prefix}.top_targets_summary.txt"
 
     if not ctx.print_only:
         run_dir.mkdir(parents=True, exist_ok=True)
 
     cmd = (
         f"{module_cmd('GRIT')} && "
-        f"python3 {_PAF_TOP_TARGETS_SCRIPT} {paf_file} --top1-out {top1_file} "
-        f"--top_longest > {summary_file}"
+        f"python3 {_PAF_TOP_TARGETS_SCRIPT} {paf_file} --top1-out {top1_file}"
     )
     try:
         _run(cmd, ctx.print_only)

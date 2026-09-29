@@ -47,9 +47,7 @@ def test_parse_paf_drops_records_below_min_length(script, tmp_path):
         + _paf_line("SUPER_1", 1000000, 10000, 10500, "+", "chr1", 900000, 10000, 10500)
     )
 
-    query_order, pair_intervals, _pair_alns, target_lengths = script.parse_paf(
-        str(paf_path), min_length=3000
-    )
+    query_order, pair_intervals, target_lengths = script.parse_paf(str(paf_path), min_length=3000)
 
     assert query_order == ["SUPER_1"]
     assert pair_intervals[("SUPER_1", "chr1")] == [(0, 5000)]

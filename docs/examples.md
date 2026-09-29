@@ -175,10 +175,9 @@ For a single ticket this prints, in order:
 - **Step history** table — every step run for the ticket, with run count,
   last-run timestamp, live status, job ID, and an `agp_copied` row showing whether the
   curated `.agp` has landed in the workdir yet.
-- **scp / less tips** — ready-to-paste commands for pulling result files
+- **scp tips** — ready-to-paste commands for pulling result files
   (FastGA plots, BUSCO synteny plots, the canonical remapped Pretext map) down
-  to your local machine, or `less`-ing a summary file directly on the farm, for any
-  step that completed successfully.
+  to your local machine, for any step that completed successfully.
 - **AGP copy command** — the exact `scp` command to copy your locally-saved
   `.agp` from PretextView up to the workdir.
 - **Next-step tip** — one of:

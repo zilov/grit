@@ -421,7 +421,6 @@ def _auto_step_outputs(
 # than the latest run's output. It is offered from `canonical_maps` below.
 _SCP_TIP_STEPS = [
     ("fastga", "FastGA results", None),
-    ("fastga_stats", "fastga-stats results", None),
     ("busco_synteny", "busco-synteny plot", None),
     ("fastga_synteny", "fastga-synteny plot", None),
 ]
@@ -457,27 +456,6 @@ def _print_scp_tips(
         tip = build_scp_tip(
             farm_host, tol_id, [str(path)], f"{hap} pretext map", dest_names=[dest_name]
         )
-        if tip:
-            print_tip(tip)
-
-
-# Steps whose recorded `outputs` hold a specific text file worth reading
-# directly on the farm (via `less`) rather than downloading.
-_LESS_TIP_STEPS = [
-    ("fastga_stats", "top_targets_summary", "top alignment targets"),
-]
-
-
-def _print_less_tips(step_latest: dict[str, dict]) -> None:
-    """Print a `less`-on-the-farm tip for each successful step in `_LESS_TIP_STEPS`."""
-    from grit.utils.helpers import build_less_tip
-
-    for step, output_key, label in _LESS_TIP_STEPS:
-        entry = step_latest.get(step)
-        if not entry or entry.get("status") != "success":
-            continue
-        file = (entry.get("outputs") or {}).get(output_key)
-        tip = build_less_tip(file, label)
         if tip:
             print_tip(tip)
 
@@ -719,7 +697,6 @@ def show_ticket_history(
     farm_host = user_config.get("farm_host", "<farm_host>")
 
     _print_scp_tips(step_latest, farm_host, tol_id, canonical_maps=canonical_maps)
-    _print_less_tips(step_latest)
 
     print_tip(
         f"To copy AGP from your local machine:\n"

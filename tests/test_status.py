@@ -13,7 +13,6 @@ from grit.core.run_tracker import RunTracker
 from grit.core.status import (
     _canonical_haps,
     _canonical_mark,
-    _print_less_tips,
     _print_reference,
     _print_scp_tips,
     _resolve_canonical_files,
@@ -66,26 +65,6 @@ def test_print_scp_tips_splits_multi_value_output_into_separate_files(mock_print
 
 
 @patch("grit.core.status.print_tip")
-def test_print_scp_tips_offers_fastga_stats_outputs(mock_print_tip):
-    step_latest = {
-        "fastga_stats": {
-            "status": "success",
-            "outputs": {
-                "top1_targets": "/lustre/foo/Rf_vs_Qu.top1_targets.tsv",
-                "top_targets_summary": "/lustre/foo/Rf_vs_Qu.top_targets_summary.txt",
-            },
-        },
-    }
-
-    _print_scp_tips(step_latest, "farm22", "sDipInt39")
-
-    mock_print_tip.assert_called_once()
-    tip = mock_print_tip.call_args[0][0]
-    assert "scp farm22:/lustre/foo/Rf_vs_Qu.top1_targets.tsv" in tip
-    assert "scp farm22:/lustre/foo/Rf_vs_Qu.top_targets_summary.txt" in tip
-
-
-@patch("grit.core.status.print_tip")
 def test_print_scp_tips_skips_step_without_outputs(mock_print_tip):
     step_latest = {"fastga": {"status": "success", "outputs": {}}}
 
@@ -113,55 +92,6 @@ def test_print_scp_tips_skips_step_not_in_history(mock_print_tip):
     _print_scp_tips({}, "farm22", "sDipInt39")
 
     mock_print_tip.assert_not_called()
-
-
-@patch("grit.core.status.print_tip")
-def test_print_less_tips_prints_for_successful_fastga_stats(mock_print_tip):
-    step_latest = {
-        "fastga_stats": {
-            "status": "success",
-            "outputs": {
-                "top1_targets": "/lustre/foo/Rf_vs_Qu.top1_targets.tsv",
-                "top_targets_summary": "/lustre/foo/Rf_vs_Qu.top_targets_summary.txt",
-            },
-        },
-    }
-
-    _print_less_tips(step_latest)
-
-    mock_print_tip.assert_called_once()
-    tip = mock_print_tip.call_args[0][0]
-    assert "less /lustre/foo/Rf_vs_Qu.top_targets_summary.txt" in tip
-
-
-@patch("grit.core.status.print_tip")
-def test_print_less_tips_skips_step_missing_summary_output(mock_print_tip):
-    step_latest = {
-        "fastga_stats": {"status": "success", "outputs": {"top1_targets": "/lustre/foo/x.tsv"}}
-    }
-
-    _print_less_tips(step_latest)
-
-    mock_print_tip.assert_not_called()
-
-
-@patch("grit.core.status.print_tip")
-def test_print_less_tips_skips_failed_step(mock_print_tip):
-    step_latest = {
-        "fastga_stats": {
-            "status": "failed",
-            "outputs": {"top_targets_summary": "/lustre/foo/x.top_targets_summary.txt"},
-        },
-    }
-
-    _print_less_tips(step_latest)
-
-    mock_print_tip.assert_not_called()
-
-
-@patch("grit.core.status.print_tip")
-def test_print_less_tips_skips_step_not_in_history(mock_print_tip):
-    _print_less_tips({})
 
     mock_print_tip.assert_not_called()
 
