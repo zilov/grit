@@ -351,7 +351,7 @@ assert_canonical "$canon" hap2 "assembly FA" "rename_and_orient_hap2/" "[S5] can
 run_tutorial_scenario recurate
 recur=$(final_canonical_table "$tutorial_output")
 assert_canonical "$recur" hap1 "assembly FA" "pretext_to_asm_recurate/" "[S5] recurate ends with hap1 canonical = pretext_to_asm_recurate"
-assert_canonical "$recur" hap2 "assembly FA" "pretext_to_asm_recurate_hap2/" "[S5] recurate ends with hap2 canonical = pretext_to_asm_recurate_hap2"
+assert_canonical "$recur" hap2 "assembly FA" "pretext_to_asm/" "[S5] recurate ends with hap2 canonical = pretext_to_asm (only hap1 is recurated)"
 
 run_tutorial_scenario other
 other_out=$(final_canonical_table "$tutorial_output")

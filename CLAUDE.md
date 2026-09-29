@@ -121,7 +121,7 @@ Six scenarios, in `SCENARIOS` (`grit/core/tutorial_lessons.py`), selected with
   `microchromosome-combine`, `blast-contaminants`, `find-reference --local`,
   `rename-and-orient`.
 - `recurate` (medium) — tutorial 4: `post-curation` then
-  `post-curation-recurate` per haplotype.
+  `post-curation-recurate` for hap1 (hap2 recuration is not supported yet).
 - `other` (medium) — tutorial 5: `sex-matcher`, `blast-contaminants --untracked`,
   a `rename-and-orient` run that comes out wrong, `grit untrack` to back it out,
   then a corrected `rename-and-orient --mapping-table` redo.

@@ -44,11 +44,11 @@ class Scenario:
     outro: str = ""  # extra tips for the "Scenario finished" panel
 
 
-def _write_placeholder_agp(ticket: str, *, x_tagged: bool) -> None:
+def _write_placeholder_agp(ticket: str, *, x_tagged: bool, name: str = "") -> None:
     """Write a ten-SUPER placeholder AGP, with SUPER_7 painted X when *x_tagged*."""
     from grit.core.registry import dry_run_root
 
-    agp_path = dry_run_root() / ticket / f"{_TOL_ID}.pretext.agp_1"
+    agp_path = dry_run_root() / ticket / (name or f"{_TOL_ID}.pretext.agp_1")
     agp_path.parent.mkdir(parents=True, exist_ok=True)
     lines = []
     for n, scaffold in enumerate((4, 1, 7, 2, 9, 3, 12, 5, 6, 15), start=1):
@@ -65,6 +65,11 @@ def _copy_agp_into_workdir(ticket: str) -> None:
 def _copy_untagged_agp_into_workdir(ticket: str) -> None:
     """Same AGP, before the sex chromosome has been named."""
     _write_placeholder_agp(ticket, x_tagged=False)
+
+
+def _copy_recurate_agp_into_workdir(ticket: str) -> None:
+    """Write hap1's recurate AGP into the workdir's recurate/ dir."""
+    _write_placeholder_agp(ticket, x_tagged=True, name=f"recurate/{_TOL_ID}.hap1.recurate.agp")
 
 
 _STATUS_LESSON = Lesson(
@@ -268,8 +273,9 @@ _TUTORIAL_1 = Scenario(
             why=(
                 "Builds a fresh Pretext map from the curated assembly, so you can check "
                 "your edits in PretextView before sending the ticket to QC. It submits "
-                "a curationpretext job to LSF and returns straight away. --hap2 remaps "
-                "both haplotypes; without it grit remaps hap1 only. A haplotype whose map "
+                "a curationpretext job to LSF and returns straight away. Usually you "
+                "remap only hap1, since curation focuses on one haplotype; --hap2 remaps "
+                "both, for when you changed both. A haplotype whose map "
                 "is already newer than its canonical FASTA is skipped, so re-running is "
                 "safe."
             ),
@@ -626,11 +632,9 @@ _TUTORIAL_3 = Scenario(
         ),
         Lesson(
             title="hic-remapping",
-            why="Build the next Pretext maps from whatever is canonical now.",
-            task="Remap the HiC reads for both haplotypes.",
+            why="Build the next Pretext map from whatever is canonical now.",
+            task="Remap the HiC reads for hap1.",
             command="hic-remapping",
-            args=["--hap2"],
-            flag_hints={"--hap2": ("--hap2 runs both haplotypes; without it grit runs hap1 only.")},
         ),
         Lesson(
             title="finalize-qc",
@@ -669,6 +673,7 @@ _TUTORIAL_4 = Scenario(
             task="Set the ticket up.",
             command="setup",
         ),
+        _AGP_MANUAL_LESSON,
         Lesson(
             title="post-curation — the first full round",
             why=(
@@ -678,34 +683,51 @@ _TUTORIAL_4 = Scenario(
             ),
             task="Run the first post-curation round.",
             command="post-curation",
+            check=(
+                "hap1's remapped map in Canonical files, and the scp tip to download it. "
+                "That map is what you curate in the second round"
+            ),
+        ),
+        _read(
+            "How recuration works",
+            "Instead of going back to the original map, you can take the map from the "
+            "first round of hic-remapping and make your changes directly in it. Then "
+            "copy the new AGP into workdir/recurate/ and run post-curation-recurate "
+            "(or pretext-to-asm-recurate, then hic-remapping) to build the updated "
+            "assembly and its remapped map. These steps use the current canonical FASTA "
+            "as original.fa, and their output becomes canonical.\n\n"
+            "Try not to use this often: part of the record of what changed relative to "
+            "the original draft genome is lost. But some cases can't be done without "
+            "it, when re-curating the original map would take too long.\n\n"
+            "General advice: use it after you get QC feedback. Otherwise it's easy to "
+            "get lost in genome versions.",
+        ),
+        Lesson(
+            title="Copy the recurate AGP into workdir/recurate/",
+            why=(
+                "Curate hap1's remapped map in PretextView, export the AGP, and scp it "
+                "into the ticket's recurate/ dir, which setup created:\n"
+                "  scp ~/curations/work/<tol_id>/<tol_id>.hap1*.agp* "
+                "<farm host>:<workdir>/recurate/\n"
+                "Any name matching <tol_id>*hap1*.agp* works.\n"
+                "Press Enter and the tutorial puts a placeholder AGP into the sandbox's "
+                "recurate/ dir for you."
+            ),
+            task="",
+            command="",
+            manual_action=_copy_recurate_agp_into_workdir,
         ),
         Lesson(
             title="post-curation-recurate — curate the remapped map again",
             why=(
-                "Same idea as pretext-to-asm, but it consumes the map hic-remapping just "
-                "made and applies new edits on top of the already-curated assembly, then "
-                "remaps again — a shortcut for pretext-to-asm-recurate + hic-remapping. "
-                "Each haplotype is recurated from its own AGP, so you run it once per "
-                "haplotype: plain for hap1, with --hap2 for hap2."
+                "Applies the recurate AGP on top of the current canonical FASTA, then "
+                "remaps again — a shortcut for pretext-to-asm-recurate + hic-remapping."
             ),
-            task="Recurate the first haplotype's remapped map.",
+            task="Recurate hap1's remapped map.",
             command="post-curation-recurate",
-        ),
-        Lesson(
-            title="post-curation-recurate — second haplotype",
-            why="Same command, with --hap2 this time to recurate hap2.",
-            task="And the second haplotype.",
-            command="post-curation-recurate",
-            args=["--hap2"],
-            flag_hints={
-                "--hap2": (
-                    "post-curation-recurate --hap2 recurates hap2 from its own AGP; "
-                    "hap1 was the previous lesson."
-                )
-            },
             check=(
-                "the two haplotypes are tracked separately — hap1 is "
-                "pretext_to_asm_recurate/, hap2 is pretext_to_asm_recurate_hap2/"
+                "hap1's assembly FA and chr list in Canonical files now point into "
+                "pretext_to_asm_recurate/, and its map into a new hic_remapping/ run"
             ),
         ),
         Lesson(
