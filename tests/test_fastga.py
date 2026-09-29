@@ -67,8 +67,7 @@ def test_fastga_stats_output_specs_include_top_targets():
     from grit.steps.optional.fastga import _OUTPUT_SPECS_STATS
 
     keys = [spec[0] for spec in _OUTPUT_SPECS_STATS]
-    assert "top1_targets" in keys
-    assert "top_targets_summary" in keys
+    assert keys == ["top1_targets"]
 
 
 def test_is_super():

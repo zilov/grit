@@ -356,26 +356,6 @@ def build_scp_tip(
     return f"Download {label}:\n[bold cyan]{cmds}[/bold cyan]"
 
 
-def build_less_tip(file: str | None, label: str) -> str | None:
-    """
-    Build a print_tip string suggesting the curator read *file* on the farm
-    with ``less``, or None if *file* is falsy.
-
-    Args:
-        file:  Absolute remote file path to inspect, or None/empty if not
-               yet available.
-        label: Short description of what's in the file, e.g.
-               ``"top alignment targets"``.
-
-    Returns:
-        A ``"Check {label}:\\n[bold cyan]less ...[/bold cyan]"`` string, or
-        None if *file* is falsy (nothing to print a tip for).
-    """
-    if not file:
-        return None
-    return f"Check {label}:\n[bold cyan]less {file}[/bold cyan]"
-
-
 def inputs_newer_than_curated_fa(
     workdir: Path,
     tol_id: str,
