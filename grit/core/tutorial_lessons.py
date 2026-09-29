@@ -1,7 +1,7 @@
 """Lesson and scenario text for `grit tutorial` — data only, no engine logic."""
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 _CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
@@ -44,16 +44,27 @@ class Scenario:
     outro: str = ""  # extra tips for the "Scenario finished" panel
 
 
-def _copy_agp_into_workdir(ticket: str) -> None:
-    """Write a placeholder AGP where pretext-to-asm's dry-run sandbox expects one."""
+def _write_placeholder_agp(ticket: str, *, x_tagged: bool) -> None:
+    """Write a ten-SUPER placeholder AGP, with SUPER_7 painted X when *x_tagged*."""
     from grit.core.registry import dry_run_root
 
     agp_path = dry_run_root() / ticket / f"{_TOL_ID}.pretext.agp_1"
     agp_path.parent.mkdir(parents=True, exist_ok=True)
-    agp_path.write_text(
-        "SUPER_1\t1\t1000\t1\tW\tSCAFFOLD_1\t1\t1000\t+\n"
-        "SUPER_2\t1\t800\t1\tW\tSCAFFOLD_2\t1\t800\t+\n"
-    )
+    lines = []
+    for n, scaffold in enumerate((4, 1, 7, 2, 9, 3, 12, 5, 6, 15), start=1):
+        tag = "\tPainted\tX" if x_tagged and n == 7 else ""
+        lines.append(f"SUPER_{n}\t1\t1000\t1\tW\tHAP1_SCAFFOLD_{scaffold}\t1\t1000\t+{tag}\n")
+    agp_path.write_text("".join(lines))
+
+
+def _copy_agp_into_workdir(ticket: str) -> None:
+    """Write the placeholder AGP a curator would have scp'd in, X already named."""
+    _write_placeholder_agp(ticket, x_tagged=True)
+
+
+def _copy_untagged_agp_into_workdir(ticket: str) -> None:
+    """Same AGP, before the sex chromosome has been named."""
+    _write_placeholder_agp(ticket, x_tagged=False)
 
 
 _STATUS_LESSON = Lesson(
@@ -75,6 +86,10 @@ _STATUS_LESSON = Lesson(
     command="status",
 )
 
+_PRESS_ENTER_FOR_AGP = (
+    "Press Enter and the tutorial puts a placeholder AGP into the sandbox workdir for you."
+)
+
 _AGP_MANUAL_LESSON = Lesson(
     title="Copy the curated AGP into the workdir",
     why=(
@@ -84,12 +99,15 @@ _AGP_MANUAL_LESSON = Lesson(
         "pretext-to-asm can find it:\n"
         "  scp ~/curations/work/<tol_id>/<tol_id>*.agp* "
         "<farm host>:<workdir>/\n"
-        "Press Enter and the tutorial puts a placeholder AGP into the sandbox "
-        "workdir for you."
+        f"{_PRESS_ENTER_FOR_AGP}"
     ),
     task="",
     command="",
     manual_action=_copy_agp_into_workdir,
+)
+
+_AGP_MANUAL_LESSON_UNTAGGED = replace(
+    _AGP_MANUAL_LESSON, manual_action=_copy_untagged_agp_into_workdir
 )
 
 
@@ -349,15 +367,13 @@ _TUTORIAL_2 = Scenario(
             title="find-reference — get something to compare against",
             why=(
                 "Downloads the closest reference genome on NCBI for this species and "
-                "preps it for the synteny/alignment steps below. If the automatic match "
-                "picks the wrong species — it goes by name distance, not genome quality — "
-                "pass --local /path/to/reference.fa to use a reference you already have "
-                "instead of the NCBI search."
+                "preps it for the synteny/alignment steps below. If the reference it "
+                "picks doesn't suit you, pass --local /path/to/reference.fa to use your own."
             ),
             task="Find the closest reference genome for this species.",
             command="find-reference",
         ),
-        _AGP_MANUAL_LESSON,
+        _AGP_MANUAL_LESSON_UNTAGGED,
         Lesson(
             title="pretext-to-asm",
             why=(
@@ -389,15 +405,19 @@ _TUTORIAL_2 = Scenario(
                     "value from the YAML: vertebrata_odb10."
                 )
             },
+            check=(
+                "the scp line under 'Download busco-synteny plot' — run it on your laptop "
+                "to see a real example plot (reference chromosomes on one side, curated "
+                "ones on the other)."
+            ),
         ),
         Lesson(
             title="fastga — a second, alignment-based comparison",
             why=(
-                "Runs a whole-genome dot-plot alignment (FastGA) of the curated assembly "
-                "against the same reference — a different, complementary view from "
-                "BUSCO synteny's gene-order one. Its PAF output is also what "
-                "rename-and-orient reads later. --reference is optional here too, for "
-                "the same reason: find-reference already ran."
+                "Runs a whole-genome alignment (FastGA) of the curated assembly against "
+                "the same reference — a different, complementary view from BUSCO "
+                "synteny's gene-order one. --reference is optional here too, for the "
+                "same reason: find-reference already ran."
             ),
             task="Run FastGA against the reference.",
             command="fastga",
@@ -408,7 +428,7 @@ _TUTORIAL_2 = Scenario(
                 "Turns fastga's PAF into a plain table: for each curated scaffold, its "
                 "best-matching reference chromosome and how much of it is covered. This "
                 "is what you actually read to decide chromosome numbering, rather than "
-                "eyeballing the dot plot."
+                "the raw PAF."
             ),
             task="Summarise the FastGA alignment as a table.",
             command="fastga-stats",
@@ -418,8 +438,7 @@ _TUTORIAL_2 = Scenario(
             why=(
                 "After curation a chromosome (SUPER_n) can be made of more than one "
                 "original scaffold. This reports the single largest scaffold within "
-                "each SUPER and what fraction of it that scaffold makes up — the "
-                "scaffold whose alignment you should trust when naming that chromosome."
+                "each SUPER and what fraction of it that scaffold makes up."
             ),
             task="Report the largest scaffold within each curated chromosome.",
             shows=(
@@ -432,13 +451,15 @@ _TUTORIAL_2 = Scenario(
         Lesson(
             title="Rename the sex chromosomes by hand, then re-curate",
             why=(
-                "BUSCO synteny and FastGA showed you which curated chromosome "
-                "corresponds to the reference's sex chromosome(s) — but that renaming "
+                "Look back at the fastga-stats table: SUPER_7 has no sex-chromosome "
+                "label yet, but it aligns to the reference's chrX — that is how synteny "
+                "with a reference finds a sex chromosome. The renaming "
                 "happens back in PretextView, by hand: relabel the scaffold, re-export "
                 "the AGP, and copy the new one in exactly like before. `grit status` "
                 "would tell you when a fresh AGP is expected and where."
+                "\n" + _PRESS_ENTER_FOR_AGP
             ),
-            task="Copy the new AGP in.",
+            task="",
             command="",
             manual_action=_copy_agp_into_workdir,
         ),
@@ -459,16 +480,32 @@ _TUTORIAL_2 = Scenario(
                     "hap2 as well as hap1, both in the same run."
                 )
             },
+            check=(
+                "the Step history now lists every step you have run on this ticket, and "
+                "in Canonical files the assembly now points into a newer pretext_to_asm/ "
+                "run dir than after your first pretext-to-asm: canonical moved to this "
+                "re-curation, where SUPER_7 is already renamed to X. Below it there is also "
+                "a new tip "
+                "to download the FastGA results, in case you want to view the alignment "
+                "in D-GENIES or another dot-plot tool."
+            ),
         ),
         Lesson(
             title="finalize-qc",
             why="Ships whatever is canonical right now into the release directory.",
             task="Build the release directory and the QC report.",
             command="finalize-qc",
+            check=(
+                "the QV and Completeness tables under the curation results: finalize-qc "
+                "ran qv for you, since it hadn't run on this ticket yet."
+            ),
         ),
         Lesson(
             title="pp",
-            why="Contamination screen and submission prep over the finalized release.",
+            why=(
+                "Adds the MT assembly and prepares the submission files for ENA, then "
+                "marks the ticket done."
+            ),
             task="Run post-processing.",
             command="pp",
         ),
@@ -616,7 +653,10 @@ _TUTORIAL_3 = Scenario(
         ),
         Lesson(
             title="pp",
-            why="Contamination screen and submission prep over the finalized release.",
+            why=(
+                "Adds the MT assembly and prepares the submission files for ENA, then "
+                "marks the ticket done."
+            ),
             task="Run post-processing.",
             command="pp",
         ),
@@ -689,7 +729,10 @@ _TUTORIAL_4 = Scenario(
         ),
         Lesson(
             title="pp",
-            why="Contamination screen and submission prep over the finalized release.",
+            why=(
+                "Adds the MT assembly and prepares the submission files for ENA, then "
+                "marks the ticket done."
+            ),
             task="Run post-processing.",
             command="pp",
         ),
@@ -767,8 +810,9 @@ _TUTORIAL_5 = Scenario(
                 "Having seen what blast-contaminants flagged, you delete that scaffold "
                 "in PretextView yourself, re-export, and copy the new AGP in — the same "
                 "action as always."
+                "\n" + _PRESS_ENTER_FOR_AGP
             ),
-            task="Copy the new AGP in.",
+            task="",
             command="",
             manual_action=_copy_agp_into_workdir,
         ),
@@ -862,7 +906,10 @@ _TUTORIAL_5 = Scenario(
         ),
         Lesson(
             title="pp",
-            why="Contamination screen and submission prep over the finalized release.",
+            why=(
+                "Adds the MT assembly and prepares the submission files for ENA, then "
+                "marks the ticket done."
+            ),
             task="Run post-processing.",
             command="pp",
         ),

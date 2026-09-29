@@ -186,7 +186,18 @@ already swallows any exception. The capture is already-rendered ANSI, so it is
 re-printed via `Text.from_ansi()`, never as a markup string (that mangles the
 escape codes). It is shown only when it contains a printed `Command`;
 otherwise it falls back to the lesson's own `shows` string, or skips the
-heading silently if that is also empty. The preview runs only for
+heading silently if that is also empty. When a preview was shown,
+`_run_lesson_command()` runs the real dry-run pass with INFO logging muted and
+its output captured, drops the `print_step_header` panels (`_drop_step_headers`)
+and its `Done:` lines, and prints what is left (e.g. the fastga-stats and
+super-to-scaffold tables) — otherwise every header and log line appears twice.
+
+The placeholder AGP the tutorial writes has ten SUPERs, and pretext-to-asm's
+dry-run builds its chromosome list from the sandbox's latest AGP, naming a SUPER
+by the painted tag after its `+` column. Tutorial 2's first AGP
+(`_AGP_MANUAL_LESSON_UNTAGGED`) has no tag, so `grit status` shows 10 autosomes;
+the re-curation AGP paints SUPER_7 as X (9 autosomes, XX), matching the
+fastga-stats and super-to-scaffold example tables. The preview runs only for
 `GritCommand` steps: plain `@cli.command`s (`status`, `untrack`, `retrack`)
 ignore `--print-only` and would write the registry. Three lessons need
 `shows`: `untrack` (a direct registry edit, no shell command), `super-to-scaffold` (runs locally,

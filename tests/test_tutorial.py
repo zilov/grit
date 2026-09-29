@@ -3,6 +3,7 @@
 import pytest
 
 from grit.core.tutorial import (
+    _drop_step_headers,
     _print_only_base,
     _safe_to_run,
     expected_line,
@@ -111,6 +112,9 @@ class TestHints:
 
     def test_ticket_on_a_global_lesson_says_drop_it(self):
         assert "drop -t" in self._hint(["grit", "status", "-t", TICKET], GLOBAL)
+
+    def test_status_for_another_ticket_names_the_sandbox_one(self):
+        assert f"status -t {TICKET}" in self._hint(["grit", "status", "-t", "T-1"])
 
     def test_wrong_ticket_names_the_sandbox_one(self):
         assert TICKET in self._hint(["grit", "pretext-to-asm", "-t", "RC-9"])
@@ -295,3 +299,12 @@ class TestPrintOnlyBase:
         result = _print_only_base(base)
         assert "--config" in result and "/x.yaml" in result
         assert "--yaml" in result and "/y.yaml" in result
+
+
+def test_drop_step_headers_keeps_results_and_other_panels():
+    captured = (
+        "╭────╮\n│ T-2 | xxTutDemo1 | Step: Pretext to ASM │\n╰────╯\n"
+        "Done: Curated FASTA\n"
+        "╭────╮\n│ keep me │\n╰────╯"
+    )
+    assert _drop_step_headers(captured) == "Done: Curated FASTA\n╭────╮\n│ keep me │\n╰────╯"

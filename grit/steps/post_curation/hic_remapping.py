@@ -212,14 +212,13 @@ def run_hic_remapping(
     print_step_header(ctx.ticket_id, ctx.tol_id, "HiC remapping")
 
     if ctx.dry_run:
-        outputs: dict[str, str] = {}
         if run_hap1:
-            outputs.update(_dry_run_hic_remapping_for_hap(ctx, "hic_remapping"))
+            outputs = _dry_run_hic_remapping_for_hap(ctx, "hic_remapping")
+            print_done(f"[dry-run] Remapped pretext map → {outputs['hap1_normal_pretext']}")
         if run_hap2:
             print_step_header(ctx.ticket_id, ctx.tol_id, f"HiC remapping ({ctx.hap2_prefix})")
-            outputs.update(_dry_run_hic_remapping_for_hap(ctx, "hic_remapping_hap2"))
-        placeholder = outputs.get("hap1_pretext") or outputs.get("hap2_pretext") or ctx.workdir
-        print_done(f"[dry-run] Remapped pretext map → {placeholder}")
+            outputs = _dry_run_hic_remapping_for_hap(ctx, "hic_remapping_hap2")
+            print_done(f"[dry-run] Remapped pretext map → {outputs['hap2_normal_pretext']}")
         return
 
     if run_hap1:

@@ -101,6 +101,8 @@ def hint_for(got: Parsed, lesson: Lesson, ticket: str, known: set[str]) -> str:
         return "That has no command in it — start with `grit`, then the step name."
     if got.subcommand not in known:
         return f"grit has no command called {got.subcommand!r}. `grit --help` lists them all."
+    if got.subcommand == "status" != want.subcommand:
+        return f"status only runs for this scenario's ticket here: grit status -t {ticket}."
     if got.subcommand != want.subcommand:
         return (
             f"{got.subcommand!r} is another grit command, but this lesson is "
@@ -162,7 +164,7 @@ def _print_only_base(base: list[str]) -> list[str]:
     return [*base, "--print-only"]
 
 
-def _show_farm_preview(lesson: Lesson, base: list[str], command_tokens: list[str]) -> None:
+def _show_farm_preview(lesson: Lesson, base: list[str], command_tokens: list[str]) -> bool:
     """Print what the command runs on the farm via a muted --print-only pass, else lesson.shows."""
     from grit.core.base_command import GritCommand
     from grit.core.click_cli import cli
@@ -183,10 +185,48 @@ def _show_farm_preview(lesson: Lesson, base: list[str], command_tokens: list[str
     elif lesson.shows.strip():
         text = lesson.shows.strip()
     else:
-        return
+        return False
 
     console.print("\n[bold]What this runs on the farm:[/bold]")
     console.print(text)
+    return True
+
+
+def _drop_step_headers(captured: str) -> str:
+    """Remove print_step_header panels, which the farm preview has already shown."""
+    kept: list[str] = []
+    panel: list[str] = []
+    for line in captured.splitlines():
+        plain = Text.from_ansi(line).plain
+        if panel or plain.startswith("╭"):
+            panel.append(line)
+            if plain.startswith("╰"):
+                if "| Step: " not in "".join(Text.from_ansi(p).plain for p in panel):
+                    kept.extend(panel)
+                panel = []
+            continue
+        kept.append(line)
+    return "\n".join(kept + panel)
+
+
+def _run_lesson_command(lesson: Lesson, base: list[str], command_tokens: list[str]) -> bool:
+    """Preview *command_tokens* on the farm, then run them in the sandbox; True on success."""
+    if not _show_farm_preview(lesson, base, command_tokens):
+        return _run_grit([*base, *command_tokens])
+    # the preview already showed headers and logs; keep only what the step prints
+    # beyond its "Done:" lines (fastga-stats and super-to-scaffold tables, errors)
+    logging.disable(logging.INFO)
+    try:
+        with console.capture() as cap:
+            ok = _run_grit([*base, *command_tokens])
+    finally:
+        logging.disable(logging.NOTSET)
+    paragraphs = _drop_step_headers(cap.get()).split("\n\n")
+    kept = [p for p in paragraphs if not Text.from_ansi(p).plain.strip().startswith("Done:")]
+    results = "\n\n".join(kept).strip()
+    if results:
+        console.print(Text.from_ansi(results))
+    return ok
 
 
 def _reset_sandbox(ticket: str) -> None:
@@ -349,8 +389,7 @@ def _run_lesson(lesson: Lesson, scenario: Scenario, base: list[str], n: int, tot
             )
             continue
 
-        _show_farm_preview(lesson, base, tokens)
-        if not _run_grit([*base, *tokens]):
+        if not _run_lesson_command(lesson, base, tokens):
             console.print(
                 "[bold red]That step failed.[/bold red] Quit with q and re-run the "
                 "scenario to start clean."
@@ -372,8 +411,7 @@ def _run_scenario_auto(scenario: Scenario, base: list[str]) -> None:
         line = expected_line(lesson, scenario.ticket)
         console.print(f"\n  [bold green]$[/bold green] [bold]{line}[/bold]\n")
         command_tokens = _answer_tokens(lesson, scenario.ticket)
-        _show_farm_preview(lesson, base, command_tokens)
-        _run_grit([*base, *command_tokens])
+        _run_lesson_command(lesson, base, command_tokens)
         if lesson.check:
             console.print(f"\n[dim]$ grit status -t {scenario.ticket}[/dim]")
             _run_grit([*base, "status", "-t", scenario.ticket])

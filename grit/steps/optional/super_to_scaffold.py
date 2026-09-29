@@ -12,7 +12,7 @@ from rich.table import Table
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import find_hap_agp, is_single_hap, write_fake_outputs
+from grit.utils.helpers import find_hap_agp, is_single_hap
 from grit.utils.output import console, print_done, print_step_header
 
 log = logging.getLogger(__name__)
@@ -95,6 +95,24 @@ def _parse_agp_supers(path: Path) -> list[dict]:
     return rows
 
 
+# Tutorial example: the same ten chromosomes as fastga-stats' dry-run table.
+_DRY_RUN_ROWS = [
+    dict(zip(("super", "scaffold", "length", "num_pieces", "pct_of_super"), row))
+    for row in [
+        ("SUPER_1", "HAP1_SCAFFOLD_4", 43381220, 2, 93.2),
+        ("SUPER_2", "HAP1_SCAFFOLD_1", 39750118, 1, 99.1),
+        ("SUPER_3", "HAP1_SCAFFOLD_7", 36072445, 3, 81.6),
+        ("SUPER_4", "HAP1_SCAFFOLD_2", 34886004, 1, 98.7),
+        ("SUPER_5", "HAP1_SCAFFOLD_9", 30851761, 2, 90.4),
+        ("SUPER_6", "HAP1_SCAFFOLD_3", 28570312, 1, 99.4),
+        ("SUPER_7", "HAP1_SCAFFOLD_12", 27381900, 2, 84.5),
+        ("SUPER_8", "HAP1_SCAFFOLD_5", 22724887, 1, 97.8),
+        ("SUPER_9", "HAP1_SCAFFOLD_6", 19560213, 1, 98.9),
+        ("SUPER_10", "HAP1_SCAFFOLD_15", 16471055, 2, 88.0),
+    ]
+]
+
+
 def _natural_super_key(super_name: str) -> tuple:
     """Sort key so 'SUPER_2' sorts before 'SUPER_10'."""
     m = re.search(r"(\d+)", super_name)
@@ -127,11 +145,17 @@ def run_super_to_scaffold(ctx: CurationContext) -> None:
         run_dir = ctx.tracker.start(
             "super_to_scaffold", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
         )
-        outputs = write_fake_outputs("super_to_scaffold", run_dir, ctx.tol_id)
+        rows = [{"hap": ctx.hap1_prefix, **row} for row in _DRY_RUN_ROWS]
+        _print_table(rows)
+        csv_path = _write_csv(rows, run_dir / f"{ctx.tol_id}.super_to_scaffold.csv")
         ctx.tracker.finish(
-            "super_to_scaffold", run_dir, "success", outputs=outputs, untracked=ctx.untracked
+            "super_to_scaffold",
+            run_dir,
+            "success",
+            outputs={"table_csv": str(csv_path)},
+            untracked=ctx.untracked,
         )
-        print_done(f"[dry-run] Table saved → {outputs.get('table_csv', run_dir)}")
+        print_done(f"[dry-run] Table saved → {csv_path}")
         return
 
     haps_to_process = (
@@ -181,14 +205,7 @@ def run_super_to_scaffold(ctx: CurationContext) -> None:
 
         _print_table(all_rows)
 
-        csv_path = run_dir / f"{ctx.tol_id}.super_to_scaffold.csv"
-        with csv_path.open("w", newline="") as fh:
-            writer = csv.DictWriter(
-                fh,
-                fieldnames=["hap", "super", "scaffold", "length", "num_pieces", "pct_of_super"],
-            )
-            writer.writeheader()
-            writer.writerows(all_rows)
+        csv_path = _write_csv(all_rows, run_dir / f"{ctx.tol_id}.super_to_scaffold.csv")
 
         if ctx.tracker:
             ctx.tracker.finish(
@@ -204,6 +221,18 @@ def run_super_to_scaffold(ctx: CurationContext) -> None:
         raise
 
     print_done(f"Table saved → {csv_path}")
+
+
+def _write_csv(rows: list[dict], csv_path: Path) -> Path:
+    """Write *rows* to *csv_path* and return it."""
+    with csv_path.open("w", newline="") as fh:
+        writer = csv.DictWriter(
+            fh,
+            fieldnames=["hap", "super", "scaffold", "length", "num_pieces", "pct_of_super"],
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+    return csv_path
 
 
 def _print_table(rows: list[dict]) -> None:

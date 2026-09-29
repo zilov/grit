@@ -317,7 +317,8 @@ def test_run_fastga_stats_dry_run_top1_targets_content_is_parseable(mock_ctx, tm
     top1_path = Path(mock_ctx.tracker.get_output("fastga_stats", "top1_targets"))
     rows = _read_top1_table(top1_path)
 
-    assert rows == [("SUPER_1", "chr1", "1000000", "100.00")]
+    assert len(rows) == 10
+    assert ("SUPER_7", "chrX") in {row[:2] for row in rows}
     assert all(_is_super(row[0]) for row in rows)
     assert "SUPER_1" in capsys.readouterr().out
 

@@ -196,6 +196,18 @@ def _run_pretext_to_asm_core(
     return run_dir
 
 
+def _dry_run_chr_list(ctx: CurationContext) -> bytes:
+    """Build a chromosome list from the sandbox AGP's SUPERs; a painted tag names the chromosome."""
+    agps = sorted(ctx.workdir.glob(f"{ctx.tol_id}*.agp*"), key=lambda p: p.stat().st_mtime)
+    rows: dict[str, str] = {}
+    for line in agps[-1].read_text().splitlines() if agps else []:
+        parts = line.split("\t")
+        if parts[0].startswith("SUPER_") and parts[0] not in rows:
+            tag = parts[10] if len(parts) > 10 else parts[0].removeprefix("SUPER_")
+            rows[parts[0]] = f"SUPER_{tag},{tag},yes\n"
+    return "".join(rows.values()).encode() or b"SUPER_1,1,yes\n"
+
+
 def run_pretext_to_asm(ctx: CurationContext) -> None:
     """
     Converts the curated AGP + original.fa into a curated FASTA via pretext-to-asm.
@@ -226,6 +238,7 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
         run_dir = ctx.tracker.start(
             "pretext_to_asm", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
         )
+        chr_list = _dry_run_chr_list(ctx)
         outputs = write_fake_outputs(
             "pretext_to_asm",
             run_dir,
@@ -235,8 +248,8 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
             content={
                 "hap1_fa": b">SCAFFOLD_1\nACGTACGTACGT\n>SCAFFOLD_2\nACGTACGTACGT\n",
                 "hap2_fa": b">HAP_SCAFFOLD_1\nACGTACGTACGT\n",
-                "hap1_chr_list": b"SUPER_1,1,yes\nSUPER_2,2,yes\nSUPER_3,3,yes\nSUPER_X,X,yes\n",
-                "hap2_chr_list": b"SUPER_1,1,yes\nSUPER_2,2,yes\nSUPER_3,3,yes\nSUPER_Y,Y,yes\n",
+                "hap1_chr_list": chr_list,
+                "hap2_chr_list": chr_list,
             },
         )
         (run_dir / f"{ctx.tol_id}.1.log").write_text(
