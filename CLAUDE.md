@@ -190,6 +190,14 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   hand back hap1's file as `alternate`'s — and `refuse_hap2_on_single_hap()`
   makes `hic-remapping --hap2` / `rename-and-orient --hap2` a `UsageError`
   before anything is started or submitted.
+- **`--hap2` means hap1 *and* hap2** on `hic-remapping`, `post-curation` and
+  `rename-and-orient` (without it, hap1 only). The recurate commands
+  (`pretext-to-asm-recurate`, `post-curation-recurate`) are the exception: there
+  `--hap2` means hap2 *instead of* hap1, since each haplotype is recurated from its
+  own AGP. `hic_remapping._skip_hap()` skips a haplotype (real and dry-run paths
+  alike) whose latest run is still `started` — unless that run's map already
+  predates the canonical FASTA — or whose `find_canonical_map()` is newer than its
+  `find_canonical_fa()`, so `--hap2` after a hap2-only change remaps only hap2.
 - **`require_workdir(ctx)`** — guards steps that need an existing workdir; skipped in print_only mode
 - **`log.*` not `print()`** — use Python `logging`; `RichHandler` formats output
 - **Minimal docstrings** — one line stating what the function returns/does, only

@@ -15,6 +15,7 @@ from grit.utils.helpers import (
     _submit_bsub,
     build_bsub_opts,
     find_canonical_fa,
+    find_canonical_map,
     refuse_hap2_on_single_hap,
     write_fake_outputs,
 )
@@ -41,6 +42,59 @@ _OUTPUT_SPECS_HAP2: list[tuple[str, str, list[str]]] = [
 # ---------------------------------------------------------------------------
 
 
+def _in_flight_run(ctx: CurationContext, step_name: str) -> tuple[Path, str | None] | None:
+    """Return (run_dir, job_id) of *step_name*'s newest run if its latest record is ``started``."""
+    runs = [r for r in ctx.tracker.history(step_name) if r.get("run_dir")]
+    started = [r for r in runs if r.get("status") == "started"]
+    if not started:
+        return None
+    run_dir = started[-1]["run_dir"]
+    records = [r for r in runs if r["run_dir"] == run_dir]
+    if records[-1].get("status") != "started":
+        return None
+    return Path(run_dir), next((r["job_id"] for r in records if r.get("job_id")), None)
+
+
+def _fasta_newer(ctx: CurationContext, hap_prefix: str, pretext: Path) -> bool:
+    """True when *hap_prefix*'s canonical FASTA is newer than *pretext* (False if there is none)."""
+    try:
+        return find_canonical_fa(ctx, hap_prefix).stat().st_mtime > pretext.stat().st_mtime
+    except FileNotFoundError:
+        return False
+
+
+def _up_to_date_map(ctx: CurationContext, hap_prefix: str) -> Path | None:
+    """Return *hap_prefix*'s canonical remapped map if it is newer than its canonical FASTA."""
+    try:
+        pretext = find_canonical_map(ctx, hap_prefix)
+        fasta = find_canonical_fa(ctx, hap_prefix)
+    except FileNotFoundError:
+        return None
+    return pretext if pretext.stat().st_mtime > fasta.stat().st_mtime else None
+
+
+def _skip_hap(ctx: CurationContext, hap_prefix: str, step_name: str) -> bool:
+    """Report and return True when *hap_prefix*'s remap is in flight or already up to date."""
+    if ctx.tracker and (in_flight := _in_flight_run(ctx, step_name)):
+        run_dir, job_id = in_flight
+        # an in-flight run whose map already predates the canonical FASTA is remapping stale input
+        maps = list(run_dir.glob(f"pretext_maps_processed/{ctx.tol_id}*.pretext"))
+        if maps and _fasta_newer(ctx, hap_prefix, min(maps, key=lambda m: m.stat().st_mtime)):
+            log.info("Canonical FASTA is newer than in-flight %s's map — resubmitting", step_name)
+            return False
+        print_tip(
+            f"HiC remapping for [bold]{hap_prefix}[/bold] is still in progress"
+            f"{f' (job {job_id})' if job_id else ''} — not resubmitting:\n  {run_dir}"
+        )
+        return True
+    pretext = _up_to_date_map(ctx, hap_prefix)
+    if pretext:
+        log.info("HiC map for %s is newer than its canonical FASTA — skipping", hap_prefix)
+        print_done(f"{hap_prefix} Hi-C map is up to date with the canonical FASTA → {pretext}")
+        return True
+    return False
+
+
 def _submit_hic_remapping(
     ctx: CurationContext,
     hap_prefix: str,
@@ -50,46 +104,8 @@ def _submit_hic_remapping(
 ) -> None:
     """Submit one curationpretext run for *hap_prefix*, tracked under *step_name*."""
 
-    # Skip when the latest run is in flight or done with a map newer than the canonical FASTA
-    if ctx.tracker:
-        prev_dir = ctx.tracker.latest_run_dir(step_name)
-        hr_pretexts = (
-            list(prev_dir.glob(f"pretext_maps_processed/{ctx.tol_id}*hr.pretext"))
-            if prev_dir
-            else []
-        )
-        if hr_pretexts:
-            pretext_mtime = min(f.stat().st_mtime for f in hr_pretexts)
-            fa_newer = False
-            try:
-                canonical_fa = find_canonical_fa(ctx, hap_prefix)
-                fa_newer = canonical_fa.stat().st_mtime > pretext_mtime
-            except FileNotFoundError:
-                pass
-            prev_records = [
-                r for r in ctx.tracker.history(step_name) if r.get("run_dir") == str(prev_dir)
-            ]
-            prev_status = prev_records[-1].get("status") if prev_records else None
-            if fa_newer:
-                log.info("Curated FASTA is newer than remapped pretext — re-running %s", step_name)
-            elif prev_status == "started":
-                job_id = next((r["job_id"] for r in prev_records if r.get("job_id")), None)
-                print_tip(
-                    f"HiC remapping for [bold]{hap_prefix}[/bold] is still in progress"
-                    f"{f' (job {job_id})' if job_id else ''} — not resubmitting:\n  {prev_dir}"
-                )
-                return
-            elif prev_status == "success":
-                if ctx.print_only:
-                    print_tip(
-                        f"Remapped pretext map already exists for [bold]{hap_prefix}[/bold] "
-                        f"and is up to date — will be skipped on actual run:\n"
-                        f"  {hr_pretexts[0]}"
-                    )
-                else:
-                    log.info("HiC remapping already done — skipping: %s", prev_dir)
-                    print_done(f"Already done → {prev_dir}")
-                return
+    if _skip_hap(ctx, hap_prefix, step_name):
+        return
 
     run_dir = (
         ctx.tracker.start(
@@ -149,8 +165,12 @@ def _submit_hic_remapping(
     console.print(f"  [green]{scp_cmd}[/green]")
 
 
-def _dry_run_hic_remapping_for_hap(ctx: CurationContext, step_name: str) -> dict[str, str]:
+def _dry_run_hic_remapping_for_hap(
+    ctx: CurationContext, hap_prefix: str, step_name: str
+) -> dict[str, str]:
     """Write a placeholder remapped pretext map directly into this hap's tracked run_dir."""
+    if _skip_hap(ctx, hap_prefix, step_name):
+        return {}
     run_dir = ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
     outputs = write_fake_outputs(
         step_name, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
@@ -177,9 +197,10 @@ def run_hic_remapping(
     """
     Runs the HiC remapping pipeline (sanger-tol/curationpretext).
 
-    Submits hap1 when ``run_hap1=True`` (default) and/or hap2 when
-    ``run_hap2=True`` (tracked separately as ``hic_remapping_hap2``). Pass
-    ``run_hap1=False, run_hap2=True`` to submit hap2 only.
+    Submits hap1 when ``run_hap1=True`` (default) and hap2 too when
+    ``run_hap2=True`` (tracked separately as ``hic_remapping_hap2``). A
+    haplotype is skipped while its run is in flight or when its canonical map
+    is newer than its canonical FASTA.
 
     ``hic_dir``, ``hifi_dir``, ``ont_dir`` override the values from the ticket
     YAML. If ``ont_dir`` is supplied, ``--read_type ont`` is used automatically.
@@ -208,10 +229,12 @@ def run_hic_remapping(
     if ctx.dry_run:
         outputs: dict[str, str] = {}
         if run_hap1:
-            outputs.update(_dry_run_hic_remapping_for_hap(ctx, "hic_remapping"))
+            outputs.update(_dry_run_hic_remapping_for_hap(ctx, ctx.hap1_prefix, "hic_remapping"))
         if run_hap2:
             print_step_header(ctx.ticket_id, ctx.tol_id, f"HiC remapping ({ctx.hap2_prefix})")
-            outputs.update(_dry_run_hic_remapping_for_hap(ctx, "hic_remapping_hap2"))
+            outputs.update(
+                _dry_run_hic_remapping_for_hap(ctx, ctx.hap2_prefix, "hic_remapping_hap2")
+            )
         placeholder = outputs.get("hap1_pretext") or outputs.get("hap2_pretext") or ctx.workdir
         print_done(f"[dry-run] Remapped pretext map → {placeholder}")
         return
@@ -235,7 +258,7 @@ def run_hic_remapping(
     "run_hap2",
     is_flag=True,
     default=False,
-    help="Submit HiC remapping for hap2 instead of hap1.",
+    help="Run hap2 as well as hap1 (hap1 is skipped if its map is newer than its canonical FASTA).",
 )
 @click.option(
     "--hic-dir",
@@ -275,7 +298,6 @@ def hic_remapping_cmd(ctx, run_hap2, hic_dir, hifi_dir, ont_dir, assembly):
     try:
         run_hic_remapping(
             curation_ctx,
-            run_hap1=not run_hap2,
             run_hap2=run_hap2,
             hic_dir=Path(hic_dir) if hic_dir else None,
             hifi_dir=Path(hifi_dir) if hifi_dir else None,

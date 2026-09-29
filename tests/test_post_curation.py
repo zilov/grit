@@ -716,12 +716,14 @@ def _hic_ctx_with_tracker(mock_ctx, tmp_path):
     return mock_ctx
 
 
-def _seed_hic_run(ctx, tmp_path, status, *, job_id=None, step="hic_remapping"):
-    """Append a hic_remapping record whose run dir already holds an hr.pretext; return run_dir."""
+def _seed_hic_run(ctx, tmp_path, status, *, job_id=None, step="hic_remapping", maps=True):
+    """Append a hic_remapping record whose run dir holds hr + normal maps; return run_dir."""
     run_dir = tmp_path / step / "2026-09-24T10_00_00_hap1"
-    maps = run_dir / "pretext_maps_processed"
-    maps.mkdir(parents=True)
-    (maps / f"{ctx.tol_id}.hap1_hr.pretext").write_text("")
+    maps_dir = run_dir / "pretext_maps_processed"
+    maps_dir.mkdir(parents=True)
+    if maps:
+        (maps_dir / f"{ctx.tol_id}.hap1_hr.pretext").write_text("")
+        (maps_dir / f"{ctx.tol_id}.hap1_normal.pretext").write_text("")
     ctx.tracker._registry.append_step(
         tmp_path,
         {
@@ -872,6 +874,101 @@ def test_run_hic_remapping_newer_fasta_resubmits(
     assert mock_run.call_count == 1
     assert f"--input {fa}" in mock_run.call_args[0][0]
     assert ctx.tracker.history("hic_remapping")[-1]["job_id"] == "2"
+
+
+def _submitted_samples(mock_run):
+    return [c[0][0].split("--sample ")[1].split()[0] for c in mock_run.call_args_list]
+
+
+@patch("grit.utils.helpers._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_hap2_skips_hap1_with_up_to_date_map(
+    mock_find_fa, mock_run, mock_ctx, tmp_path
+):
+    import os
+
+    ctx = _hic_ctx_with_tracker(mock_ctx, tmp_path)
+    _seed_hic_run(ctx, tmp_path, "success")
+    fa = tmp_path / "old.fa"
+    fa.write_text(">a\nA\n")
+    os.utime(fa, (1, 1))
+    mock_find_fa.return_value = fa
+    mock_run.return_value = "Job <3> is submitted to queue <oversubscribed>."
+
+    run_hic_remapping(ctx, run_hap2=True)
+
+    assert _submitted_samples(mock_run) == ["sDipInt39.hap2"]
+    assert len(ctx.tracker.history("hic_remapping")) == 1
+
+
+@patch("grit.utils.helpers._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_hap2_reruns_hap1_with_stale_map(
+    mock_find_fa, mock_run, mock_ctx, tmp_path
+):
+    import os
+
+    ctx = _hic_ctx_with_tracker(mock_ctx, tmp_path)
+    run_dir = _seed_hic_run(ctx, tmp_path, "success")
+    for f in run_dir.rglob("*.pretext"):
+        os.utime(f, (1, 1))
+    fa = tmp_path / "new.fa"
+    fa.write_text(">a\nA\n")
+    mock_find_fa.return_value = fa
+    mock_run.return_value = "Job <3> is submitted to queue <oversubscribed>."
+
+    run_hic_remapping(ctx, run_hap2=True)
+
+    assert _submitted_samples(mock_run) == ["sDipInt39.hap1", "sDipInt39.hap2"]
+
+
+@patch("grit.utils.helpers._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_hap2_does_not_resubmit_in_flight_hap1(
+    mock_find_fa, mock_run, mock_ctx, tmp_path
+):
+    """A just-submitted hap1 run (no map yet) is in flight even though no map is up to date."""
+    ctx = _hic_ctx_with_tracker(mock_ctx, tmp_path)
+    run_dir = _seed_hic_run(ctx, tmp_path, "started", job_id="770835", maps=False)
+    fa = tmp_path / "new.fa"
+    fa.write_text(">a\nA\n")
+    mock_find_fa.return_value = fa
+    mock_run.return_value = "Job <3> is submitted to queue <oversubscribed>."
+
+    run_hic_remapping(ctx, run_hap2=True)
+
+    assert _submitted_samples(mock_run) == ["sDipInt39.hap2"]
+    history = ctx.tracker.history("hic_remapping")
+    assert [r["run_dir"] for r in history] == [str(run_dir)]
+    assert history[-1]["status"] == "started"
+
+
+def test_cli_hic_remapping_hap2_runs_both_and_skips_up_to_date_hap1_in_dry_run(
+    tmp_path, monkeypatch
+):
+    """`hic-remapping --hap2` remaps both haps; a second run skips both (maps newer than FASTA)."""
+    from grit.core.click_cli import cli
+
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+    fixtures_dir = Path(__file__).parent / "fixtures"
+    common_args = [
+        "--config",
+        str(fixtures_dir / "test_config.yaml"),
+        "--yaml",
+        str(fixtures_dir / "uoEpiScra1_hap1_hap2.yaml"),
+        "--dry-run",
+    ]
+    runner = CliRunner()
+    assert runner.invoke(cli, [*common_args, "pretext-to-asm"]).exit_code == 0
+
+    for _ in range(2):
+        result = runner.invoke(cli, [*common_args, "hic-remapping", "--hap2"])
+        assert result.exit_code == 0, result.output
+
+    workdir = tmp_path / "uoEpiScra1_hap1_hap2"
+    assert len(list((workdir / "hic_remapping").iterdir())) == 1
+    assert len(list((workdir / "hic_remapping_hap2").iterdir())) == 1
+    assert "up to date with the canonical FASTA" in result.output
 
 
 @patch("grit.utils.helpers._run")
