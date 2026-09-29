@@ -111,6 +111,11 @@ class CurationContext:
         """Example: sDipInt39.1"""
         return f"{self.tol_id}.{self.release_version}"
 
+    @property
+    def recurate_dir(self) -> Path:
+        """Where the curator drops re-curated AGPs for pretext-to-asm-recurate."""
+        return self.workdir / "recurate"
+
     # ------------------------------------------------------------------
     # Constructors
     # ------------------------------------------------------------------
