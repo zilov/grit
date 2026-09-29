@@ -100,6 +100,17 @@ def _grit(*argv: str) -> Callable[[str], None]:
     return action
 
 
+def _read(title: str, why: str) -> Lesson:
+    """Return a text-only lesson that just waits for Enter."""
+    return Lesson(
+        title=title,
+        why=why,
+        task="Press Enter to continue.",
+        command="",
+        manual_action=lambda _ticket: None,
+    )
+
+
 _TUTORIAL_0 = Scenario(
     key="overview",
     title="0 — Overview",
@@ -108,81 +119,80 @@ _TUTORIAL_0 = Scenario(
     ticket="T-0",
     is_overview=True,
     lessons=[
-        Lesson(
-            title="What grit is",
-            why=(
-                "A curation ticket in Jira carries an assembly YAML — draft FASTA "
-                "paths, HiC reads, the species' BUSCO lineage, and so on. `grit setup "
-                "-t <ticket>` reads that YAML and builds a workdir for it on the farm; "
-                "every later step reads and writes there. Every run of every step is "
-                "recorded in a registry under ~/.grit/ — that's what `grit status` "
-                "reads, and it's the only record of what has actually happened to a "
-                "ticket.\n"
-                "Most tickets carry two haplotypes (hap1/hap2). Some — primary/"
-                "paternal assemblies — are single-hap: those tickets simply have no "
-                "hap2 flags to pass; nothing is missing."
+        _read(
+            "Before curation",
+            (
+                "The Tree of Life Assembly team (ToLA) builds the assembly. Before it "
+                "reaches a curator, a few pipelines have already run on it:\n\n"
+                "  • ASCC — contamination screening\n"
+                "    https://github.com/sanger-tol/ascc\n"
+                "  • TreeVal — quality metrics (N50, L50, QV, completeness, BUSCO) and "
+                "the gaps, repeats, coverage and telomere tracks you see in PretextView\n"
+                "    https://github.com/sanger-tol/treeval\n"
+                "  • BlobToolKit — a manual contamination check, for some assemblies\n"
+                "    https://blobtoolkit.genomehubs.org\n"
+                "  • curationpretext — builds the Hi-C map you curate in PretextView\n"
+                "    https://github.com/sanger-tol/curationpretext\n\n"
+                "PretextView itself:\n"
+                "    https://github.com/sanger-tol/PretextView"
             ),
-            task="Press Enter to continue.",
-            command="",
-            manual_action=lambda _ticket: None,
         ),
-        Lesson(
-            title="Canonical: decided by recency, not by a fixed order",
-            why=(
-                "At any moment, each haplotype has exactly one FASTA grit considers "
-                "current — its canonical assembly. There is no fixed step order that "
-                "decides this: whichever tracked step last produced a successful "
-                "output for that haplotype is canonical, full stop. Run "
-                "blast-contaminants after rename-and-orient and canonical moves to "
-                "blast-contaminants; run rename-and-orient again after that and it "
-                "moves back. `grit status -t <ticket>` is the only honest answer to "
-                "'which file is current?' — the canonical-files table at the top, and "
-                "the Canonical column in the step history below it."
+        _read(
+            "Assembly types and where the data lives",
+            (
+                "Most assemblies are one of two types: hap1/hap2, when the assembler "
+                "could phase the genome with Hi-C data, or primary/alt, when it "
+                "couldn't. Most of the tickets we get carry both haplotypes in one map "
+                "(combine_for_curation in Jira). A YAML file in the species directory "
+                "records where the reads, the assembly files and the other metadata "
+                "are, and the Jira ticket carries a copy of it."
             ),
-            task="Press Enter to continue.",
-            command="",
-            manual_action=lambda _ticket: None,
         ),
-        Lesson(
-            title="--dry-run, --print-only, --untracked",
-            why=(
-                "Three flags every step understands, doing three different things:\n"
-                "  • --print-only prints the real command grit would run — the "
-                "actual bsub/tool invocation — without executing it;\n"
-                "  • --dry-run runs the real sequencing/tracking/canonical logic but "
-                "writes placeholder outputs instead of real ones, into an isolated "
-                "sandbox under ~/.grit/dry_run/ — this whole tutorial runs under it, "
-                "against fictional tickets, so nothing here touches Jira, LSF, "
-                "lustre or your real registry;\n"
-                "  • --untracked (-u) runs a step for real but keeps its output out "
-                "of the canonical pool, no matter how fresh — for looking at a "
-                "result without committing to it. `grit untrack`/`grit retrack` do "
-                "the same after the fact, for a run you already let become canonical."
+        _read(
+            "What a curator does",
+            (
+                "You take an assembly, read its Hi-C map and fix what's wrong: false "
+                "inversions, misplaced contigs and shrapnel to put in the right place, "
+                "false duplicates to remove, sex chromosomes to name, and more. Then "
+                "you build a new Hi-C map to check the result, and finally submit the "
+                "genome to ENA. The map isn't the only evidence you use: extra analyses "
+                "run on the farm, our HPC cluster.\n\n"
+                "A standard curation goes like this:\n"
+                "  1. pick up a ticket in Jira and curate the map in PretextView;\n"
+                "  2. export the AGP and build the curated FASTA with pretext-to-asm\n"
+                "     https://github.com/sanger-tol/agp-tpf-utils\n"
+                "  3. run any optional steps the assembly needs to reach standard;\n"
+                "  4. build a new Hi-C map with curationpretext;\n"
+                "  5. compute QV and completeness;\n"
+                "  6. copy the assembly into the curated dir and send it to QC;\n"
+                "  7. fix whatever the QC feedback asks for, then submit to ENA.\n"
+                "The [bold]GRIT Curation SOP[/bold] covers each step in detail (if you "
+                "don't have the link, ask any curator or email dz11@sanger.ac.uk)."
             ),
-            task="Press Enter to continue.",
-            command="",
-            manual_action=lambda _ticket: None,
         ),
-        Lesson(
-            title="grit --help — every command, for real",
-            why=(
-                "Not a sandboxed copy — this runs the actual `grit --help` you'd get "
-                "in your own terminal, so what you see now is what's really there."
+        _read(
+            "What grit is",
+            (
+                "grit is a CLI that takes the file handling and job submission out of "
+                "those steps. Each core and optional step is one command, the same "
+                "shape every time: `grit <step> -t <ticket>`."
             ),
-            task="Press Enter to run it.",
-            command="",
-            manual_action=_grit("--help"),
         ),
-        Lesson(
-            title="grit status — your real queue, for real",
-            why=(
-                "And this is the real `grit status` with no -t — every ticket "
-                "currently active in your actual registry, not a tutorial fixture. "
-                "If you have no active tickets yet, that's exactly what it will say."
+        _read(
+            "How grit works",
+            (
+                "grit takes everything it needs from the ticket's YAML: assembly files, "
+                "reads, assembly type. So the ticket ID is all you ever pass it. A "
+                "curation starts like this:\n\n"
+                "  grit setup -t RC-1234           creates the ticket's workdir on the farm\n"
+                "  grit pretext-to-asm -t RC-1234  builds the curated FASTA from your AGP\n"
+                "  grit hic-remapping -t RC-1234   submits the Hi-C remapping job\n\n"
+                "Most steps submit an LSF job and return straight away. grit records "
+                "every run of every step (started, success or failed), and you can "
+                "check where a ticket stands at any time with:\n\n"
+                "  grit status -t RC-1234\n\n"
+                "Every command also takes --help to list its options."
             ),
-            task="Press Enter to run it.",
-            command="",
-            manual_action=_grit("status"),
         ),
     ],
 )
@@ -589,7 +599,10 @@ _TUTORIAL_3 = Scenario(
 _TUTORIAL_4 = Scenario(
     key="recurate",
     title="4 — Curating an already-curated map",
-    blurb="A second curation round on an assembly that has already been through finalize-qc once.",
+    blurb=(
+        "A second curation round on a map that has already been curated once "
+        "and remapped with hic-remapping."
+    ),
     yaml_path=DEMO_YAML_HAPS,
     ticket="T-4",
     difficulty="medium",

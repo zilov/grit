@@ -106,28 +106,22 @@ Six scenarios, in `SCENARIOS` (`grit/core/tutorial_lessons.py`), selected with
 
 #### Tutorial 0 — the one non-sandboxed scenario
 
-Tutorial 0 has no ticket and nothing to type: it explains what grit is, what
-canonical means, and what `--dry-run`/`--print-only`/`--untracked` do, then
-runs the real, unsandboxed `grit --help` and `grit status` (no `-t`) so the
-learner sees the actual tool and their actual queue — not a fixture. This is
-genuinely different from every other scenario (no ticket, no sandbox to
-reset, no `--dry-run` in its base args), so `Scenario` carries one more field
+Tutorial 0 has no ticket and nothing to type: five text screens (built with
+`_read()` in `tutorial_lessons.py`, each a `manual_action` that just waits for
+Enter) covering what happens to an assembly before curation, assembly types,
+what a curator does, what grit is, and how it works. It has no sandbox to
+reset and no `--dry-run` in its base args, so `Scenario` carries one more field
 for it: `is_overview: bool = False`. `run_scenario()` checks it to skip the
-usual `_reset_sandbox()` + `--dry-run` base setup. Every one of tutorial 0's `Lesson`s uses
-`manual_action` (see below) rather than a typed command — three are pure
-text that just wait for Enter, and two (`_grit("--help")`, `_grit("status")`
-in `tutorial_lessons.py`) call `_run_grit()` directly, deliberately bypassing
-`--config`/`--yaml`/`--dry-run` entirely. The overview ends with a closing
-panel generated from `SCENARIOS` listing the `--scenario` flag for each.
+usual `_reset_sandbox()` + `--dry-run` base setup. The overview ends with a
+closing panel generated from `SCENARIOS` listing the `--scenario` flag for each.
 
-Tutorial 1 ends the same way logically (`grit status` with no ticket, "the
-global view") but stays inside the sandbox: its lesson is also a
-`manual_action` (`_grit("--dry-run", "status")`) — real command, but pinned to the
-tutorial's own isolated registry rather than the caller's `--config`/`--yaml`.
-Both of these reuse `manual_action` for "the tutorial runs something and shows
-you the result" rather than its other use below ("you press Enter once you've
-done a real-world action") — the dataclass field doesn't distinguish the two,
-only the callable's body does.
+Tutorial 1 ends with `grit status` with no ticket ("the global view"), inside
+the sandbox: its lesson is a `manual_action` (`_grit("--dry-run", "status")`) —
+real command, but pinned to the tutorial's own isolated registry rather than
+the caller's `--config`/`--yaml`. So `manual_action` has three uses — a text
+screen, "the tutorial runs something and shows you the result", and "you press
+Enter once you've done a real-world action" — the dataclass field doesn't
+distinguish them, only the callable's body does.
 
 #### Typed lessons (tutorials 1-5)
 
@@ -177,7 +171,7 @@ nothing.
 A `Lesson` with `manual_action` set (a `Callable[[str], None]` taking the
 ticket ID) has no command to type. Most uses are a real-world action with no
 grit command — `_copy_agp_into_workdir` writes the placeholder AGP a curator
-would have `scp`'d in — but tutorial 0 and tutorial 1's closing lesson reuse
+would have `scp`'d in — but tutorial 0's text screens and tutorial 1's closing lesson reuse
 the same field for "the tutorial runs something and shows you the result" (see
 above). `_run_lesson()` handles these in the same loop: it explains the
 action, waits for a bare Enter via the shared `_ask()` idiom,

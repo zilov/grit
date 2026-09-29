@@ -251,9 +251,8 @@ class TestLessonAndScenarioFields:
     def test_manual_actions_do_not_crash(self, monkeypatch, tmp_path):
         """Every manual_action in the curriculum runs cleanly given a ticket string.
 
-        The two overview actions drive the real CLI (`grit --help` / `grit status`
-        with no ticket) — patch cli.main so this stays hermetic and never touches
-        a real registry or terminal output.
+        Some actions drive the real CLI (tutorial 1's `grit --dry-run status`) —
+        patch cli.main so this stays hermetic and never touches a real registry.
         """
         import grit.core.registry as registry_mod
         from grit.core.click_cli import cli

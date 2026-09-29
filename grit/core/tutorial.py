@@ -437,10 +437,10 @@ def _choose_scenario() -> Scenario | None:
             style="bold cyan",
         )
     )
-    for i, scenario in enumerate(SCENARIOS, start=1):
+    for scenario in SCENARIOS:
         difficulty = f"  [dim]({scenario.difficulty})[/dim]" if scenario.difficulty else ""
         console.print(
-            f"  [bold]{i}[/bold]  {scenario.title}{difficulty}\n     [dim]{scenario.blurb}[/dim]"
+            f"  [bold]{scenario.title}[/bold]{difficulty}\n     [dim]{scenario.blurb}[/dim]"
         )
     console.print("  [bold]q[/bold]  quit\n")
 
@@ -448,9 +448,9 @@ def _choose_scenario() -> Scenario | None:
         raw = _ask("Pick a scenario")
         if raw.lower() == "q":
             return None
-        if raw.isdigit() and 1 <= int(raw) <= len(SCENARIOS):
-            return SCENARIOS[int(raw) - 1]
-        console.print(f"[yellow]Enter 1-{len(SCENARIOS)}, or q.[/yellow]")
+        if raw.isdigit() and int(raw) < len(SCENARIOS):
+            return SCENARIOS[int(raw)]
+        console.print(f"[yellow]Enter 0-{len(SCENARIOS) - 1}, or q.[/yellow]")
 
 
 @click.command("tutorial")

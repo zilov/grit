@@ -300,13 +300,8 @@ assert_canonical "$s4" hap1 "assembly FA" "blast_contaminants/" "[S4] hap1 canon
 #   longer exists, or a "run status and find X" claim that stopped being true
 #   shows up here rather than in front of a new curator. Each scenario is run
 #   on its own so the assertion sees only that scenario's final canonical table.
-#   Exception: `overview` has no ticket and no --dry-run sandbox — its two
-#   "real" lessons run the actual, unsandboxed `grit --help` / `grit status`
-#   (no -t) against whatever registry exists on the machine running this
-#   script, same as the plain `grit --help` smoke-tested at the very top of
-#   this file. Read-only in practice; at most it lets status's own
-#   self-correcting `refresh_statuses()` write, exactly as an ordinary
-#   `grit status` call already can.
+#   Exception: `overview` has no ticket and no --dry-run sandbox — it is
+#   text screens only and runs no grit command at all.
 # ---------------------------------------------------------------------------
 echo ""
 echo "--- Scenario 5: grit tutorial --auto ---"
@@ -326,9 +321,8 @@ $tutorial_output"
     ok "[S5] tutorial scenario '$key' ran every lesson"
 }
 
-# Tutorial 0 has no ticket and no --dry-run sandbox — its two "real" lessons
-# run the actual, unsandboxed `grit --help` / `grit status` (no -t), so there
-# is no canonical table to assert on. Just confirm it runs end to end and
+# Tutorial 0 is text screens only, with no ticket, so there is no canonical
+# table to assert on. Just confirm it runs end to end and
 # reaches its closing list of the five scenarios.
 run_tutorial_scenario overview
 echo "$tutorial_output" | grep -q "grit tutorial --scenario basic" \
