@@ -112,20 +112,17 @@ runs the real, unsandboxed `grit --help` and `grit status` (no `-t`) so the
 learner sees the actual tool and their actual queue — not a fixture. This is
 genuinely different from every other scenario (no ticket, no sandbox to
 reset, no `--dry-run` in its base args), so `Scenario` carries one more field
-for it: `is_overview: bool = False`. `run_scenario()` checks it first and
-dispatches to `_run_overview()` instead of the usual `_reset_sandbox()` +
-`--dry-run` base setup. Every one of tutorial 0's `Lesson`s uses
+for it: `is_overview: bool = False`. `run_scenario()` checks it to skip the
+usual `_reset_sandbox()` + `--dry-run` base setup. Every one of tutorial 0's `Lesson`s uses
 `manual_action` (see below) rather than a typed command — three are pure
-text that just wait for Enter, and two (`_show_grit_help`, `_show_real_status`
-in `tutorial_lessons.py`) call `_run_grit(["--help"])` /
-`_run_grit(["status"])` directly, deliberately bypassing `--config`/`--yaml`/
-`--dry-run` entirely. `_run_overview()` ends with a closing panel listing all
-five numbered scenarios and the `--scenario` flag to start each.
+text that just wait for Enter, and two (`_grit("--help")`, `_grit("status")`
+in `tutorial_lessons.py`) call `_run_grit()` directly, deliberately bypassing
+`--config`/`--yaml`/`--dry-run` entirely. The overview ends with a closing
+panel generated from `SCENARIOS` listing the `--scenario` flag for each.
 
 Tutorial 1 ends the same way logically (`grit status` with no ticket, "the
 global view") but stays inside the sandbox: its lesson is also a
-`manual_action` (`_show_sandbox_status`), which calls
-`_run_grit(["--dry-run", "status"])` — real command, but pinned to the
+`manual_action` (`_grit("--dry-run", "status")`) — real command, but pinned to the
 tutorial's own isolated registry rather than the caller's `--config`/`--yaml`.
 Both of these reuse `manual_action` for "the tutorial runs something and shows
 you the result" rather than its other use below ("you press Enter once you've
@@ -163,9 +160,9 @@ Before running a matched lesson's command for real under `--dry-run`,
 `_show_farm_preview()` first runs the identical command in-process with
 `--print-only` swapped in (`_print_only_base()`), captures only what it prints
 via `console.capture()`, and shows it under a "What this runs on the farm:"
-heading — the one thing a learner otherwise never sees. This is wrapped in a
-broad `except Exception` and logging is muted for its duration
-(`_muted_logging()`): a step's validation logic (e.g. resolving the canonical
+heading — the one thing a learner otherwise never sees. Logging is muted for
+its duration (`logging.disable`), and `_run_grit()` already swallows any
+exception: a step's validation logic (e.g. resolving the canonical
 FASTA) can run, and legitimately fail loudly via `log.exception()`, before any
 command-printing `_run()` call is reached, since `--print-only` forces
 `ctx.dry_run = False` and the step then resolves real (non-sandbox) farm
@@ -182,8 +179,8 @@ ticket ID) has no command to type. Most uses are a real-world action with no
 grit command — `_copy_agp_into_workdir` writes the placeholder AGP a curator
 would have `scp`'d in — but tutorial 0 and tutorial 1's closing lesson reuse
 the same field for "the tutorial runs something and shows you the result" (see
-above). `_run_lesson()` dispatches these to `_run_manual_lesson()`, which
-explains the action, waits for a bare Enter via the shared `_ask()` idiom,
+above). `_run_lesson()` handles these in the same loop: it explains the
+action, waits for a bare Enter via the shared `_ask()` idiom,
 then calls `manual_action(ticket)` before moving on — there is no
 typed-command matching/hint machinery for these. `_run_scenario_auto()` runs
 the action unprompted, matching how it runs a normal lesson's command.

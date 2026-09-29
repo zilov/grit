@@ -3,7 +3,6 @@
 import logging
 import shlex
 import shutil
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -57,11 +56,9 @@ def parse_command(tokens: list[str]) -> Parsed:
                 else:
                     value = toks[i + 1] if i + 1 < len(toks) else ""
                     i += 1
-                if name in _IGNORED_VALUE_OPTS:
-                    pass
-                elif name == "--ticket":
+                if name == "--ticket":
                     ticket = value
-                else:
+                elif name not in _IGNORED_VALUE_OPTS:
                     flags.add(f"{name}={value}")
             elif name != "--dry-run":
                 # --dry-run is supplied by the tutorial, so typing it is neither
@@ -74,14 +71,19 @@ def parse_command(tokens: list[str]) -> Parsed:
     return Parsed(subcommand, ticket, frozenset(flags))
 
 
+def _answer_tokens(lesson: Lesson, ticket: str) -> list[str]:
+    """Return the grit arguments *lesson* is asking for."""
+    return [lesson.command, "-t", ticket, *lesson.args]
+
+
 def expected_command(lesson: Lesson, ticket: str) -> Parsed:
     """Return the Parsed form of the command *lesson* is asking for."""
-    return parse_command([lesson.command, "-t", ticket, *lesson.args])
+    return parse_command(_answer_tokens(lesson, ticket))
 
 
 def expected_line(lesson: Lesson, ticket: str) -> str:
     """Return the answer as a command line, for `??`."""
-    return " ".join(["grit", lesson.command, "-t", ticket, *lesson.args])
+    return " ".join(["grit", *_answer_tokens(lesson, ticket)])
 
 
 def _flag_name(flag: str) -> str:
@@ -155,43 +157,16 @@ def _print_only_base(base: list[str]) -> list[str]:
     return [tok for tok in base if tok != "--dry-run"] + ["--print-only"]
 
 
-@contextmanager
-def _muted_logging():
-    """Raise the root logger's level to silence a step's `log.exception()` noise.
-
-    Used only around the speculative --print-only preview pass, where a step's
-    validation logic can legitimately raise against real (non-sandbox) paths
-    before printing anything — that failure is expected to fail silently.
-    """
-    root = logging.getLogger()
-    previous = root.level
-    root.setLevel(logging.CRITICAL + 1)
-    try:
-        yield
-    finally:
-        root.setLevel(previous)
-
-
 def _show_farm_preview(lesson: Lesson, base: list[str], command_tokens: list[str]) -> None:
-    """Print what the lesson's command actually runs, via a --print-only pass.
-
-    Falls back to lesson.shows when the preview raises or captures nothing;
-    prints no heading at all when both are empty. Some steps' validation logic
-    (e.g. resolving the canonical FASTA) runs before any command-printing
-    `_run()` call and can raise or log a traceback against real (non-sandbox)
-    paths that don't exist here — logging is muted for the duration so that
-    speculative failure stays invisible rather than looking like a real error.
-    """
-    text = ""
+    """Print what the command runs on the farm via a muted --print-only pass, else lesson.shows."""
+    logging.disable(logging.CRITICAL)
     try:
-        with console.capture() as cap, _muted_logging():
+        with console.capture() as cap:
             _run_grit([*_print_only_base(base), *command_tokens])
-        text = cap.get().strip()
-    except Exception:
-        text = ""
+    finally:
+        logging.disable(logging.NOTSET)
 
-    if not text:
-        text = lesson.shows.strip()
+    text = cap.get().strip() or lesson.shows.strip()
     if not text:
         return
 
@@ -215,43 +190,21 @@ def _ask(prompt: str = "") -> str:
     return click.prompt(prompt, default="", show_default=False, prompt_suffix="> ").strip()
 
 
-def _explain(lesson: Lesson, n: int, total: int) -> None:
+def _header(lesson: Lesson, n: int, total: int) -> None:
     console.print(Panel(f"  {n}/{total}  {lesson.title}  ", style="bold magenta"))
     console.print(lesson.why)
+
+
+def _explain(lesson: Lesson, n: int, total: int) -> None:
+    _header(lesson, n, total)
     console.print(f"\n[bold]Your turn:[/bold] {lesson.task}")
+    if lesson.manual_action is not None:
+        console.print("[dim]There is no grit command here. r=re-read  s=skip  q=quit[/dim]")
+        return
     console.print(
         "[dim]Type the command. Other grit commands work too and won't skip ahead. "
         "?=hint  ??=answer  r=re-read  s=skip  q=quit[/dim]"
     )
-
-
-def _explain_manual(lesson: Lesson, n: int, total: int) -> None:
-    console.print(Panel(f"  {n}/{total}  {lesson.title}  ", style="bold magenta"))
-    console.print(lesson.why)
-    console.print(f"\n[bold]Your turn:[/bold] {lesson.task}")
-    console.print("[dim]There is no grit command here. r=re-read  s=skip  q=quit[/dim]")
-
-
-def _run_manual_lesson(lesson: Lesson, scenario: Scenario, n: int, total: int) -> str:
-    """Drive a manual (no grit command) lesson; returns 'next' or 'quit'."""
-    _explain_manual(lesson, n, total)
-    while True:
-        raw = _ask()
-        low = raw.lower()
-        if low == "q":
-            return "quit"
-        if low == "s":
-            console.print("[dim]skipped[/dim]")
-            return "next"
-        if low == "r":
-            _explain_manual(lesson, n, total)
-            continue
-        if low in {"?", "??"}:
-            console.print("[dim]Nothing to type — press Enter once you've done it.[/dim]")
-            continue
-        if not raw:
-            lesson.manual_action(scenario.ticket)
-            return "next"
 
 
 def _check_phase(lesson: Lesson, base: list[str], ticket: str) -> str:
@@ -264,9 +217,7 @@ def _check_phase(lesson: Lesson, base: list[str], ticket: str) -> str:
         raw = _ask()
         if raw.lower() == "q":
             return "quit"
-        if not raw:
-            return "next"
-        if raw.lower() in {"s", "?", "??", "r"}:
+        if not raw or raw.lower() in {"s", "?", "??", "r"}:
             return "next"
         tokens = _safe_tokens(raw)
         if tokens is None:
@@ -286,14 +237,7 @@ def _is_help(tokens: list[str]) -> bool:
 
 
 def _safe_to_run(got: Parsed, lesson: Lesson, ticket: str, tokens: list[str]) -> bool:
-    """True when a command that isn't the lesson's answer should still be executed.
-
-    Only the read-only ones: `--help`, and `grit status` for this scenario's own
-    ticket. Running another *step* would be allowed by the sandbox but would
-    quietly invalidate the "run status and find X" line the next lesson makes —
-    and a missing --ticket is worse still, since the tutorial's own --yaml makes
-    grit derive one from the filename instead of failing.
-    """
+    """True when a non-answer command is read-only: `--help`, or status for this ticket."""
     if _is_help(tokens):
         return True
     return got.subcommand == "status" and got.ticket == ticket
@@ -323,9 +267,6 @@ def _safe_tokens(raw: str) -> list[str] | None:
 
 def _run_lesson(lesson: Lesson, scenario: Scenario, base: list[str], n: int, total: int) -> str:
     """Drive one lesson to completion; returns 'next' or 'quit'."""
-    if lesson.manual_action is not None:
-        return _run_manual_lesson(lesson, scenario, n, total)
-
     _explain(lesson, n, total)
     known = _known_commands()
     last: Parsed | None = None
@@ -342,6 +283,12 @@ def _run_lesson(lesson: Lesson, scenario: Scenario, base: list[str], n: int, tot
         if low == "r":
             _explain(lesson, n, total)
             continue
+        if lesson.manual_action is not None:
+            if raw:
+                console.print("[dim]Nothing to type — press Enter once you've done it.[/dim]")
+                continue
+            lesson.manual_action(scenario.ticket)
+            return "next"
         if low == "??":
             console.print(f"  [bold green]{expected_line(lesson, scenario.ticket)}[/bold green]")
             continue
@@ -399,9 +346,7 @@ def _run_lesson(lesson: Lesson, scenario: Scenario, base: list[str], n: int, tot
 def _run_scenario_auto(scenario: Scenario, base: list[str]) -> None:
     """Run every lesson's expected command unprompted (used by --auto and the smoke test)."""
     for n, lesson in enumerate(scenario.lessons, start=1):
-        header = f"  {n}/{len(scenario.lessons)}  {lesson.title}  "
-        console.print(Panel(header, style="bold magenta"))
-        console.print(lesson.why)
+        _header(lesson, n, len(scenario.lessons))
 
         if lesson.manual_action is not None:
             console.print(f"\n[bold]Your turn:[/bold] {lesson.task}")
@@ -410,7 +355,7 @@ def _run_scenario_auto(scenario: Scenario, base: list[str]) -> None:
 
         line = expected_line(lesson, scenario.ticket)
         console.print(f"\n  [bold green]$[/bold green] [bold]{line}[/bold]\n")
-        command_tokens = [lesson.command, "-t", scenario.ticket, *lesson.args]
+        command_tokens = _answer_tokens(lesson, scenario.ticket)
         _show_farm_preview(lesson, base, command_tokens)
         _run_grit([*base, *command_tokens])
         if lesson.check:
@@ -419,78 +364,51 @@ def _run_scenario_auto(scenario: Scenario, base: list[str]) -> None:
             console.print(f"\n[bold yellow]Check it:[/bold yellow] {lesson.check}")
 
 
-def _run_overview(scenario: Scenario, auto: bool) -> None:
-    """Walk tutorial 0's lessons — no ticket, no sandbox, no --dry-run.
+def run_scenario(scenario: Scenario, config_path: Path, auto: bool) -> None:
+    """Reset the scenario's sandbox (unless it's the overview) and walk its lessons."""
+    if scenario.is_overview:
+        base: list[str] = []
+        console.print(
+            Panel(f"[bold]{scenario.title}[/bold]\n\n{scenario.blurb}", style="bold cyan")
+        )
+    else:
+        _reset_sandbox(scenario.ticket)
+        base = ["--config", str(config_path), "--yaml", str(scenario.yaml_path), "--dry-run"]
+        console.print(
+            Panel(
+                f"[bold]{scenario.title}[/bold]\n\n{scenario.blurb}\n\n"
+                f"Sandbox ticket: [bold]{scenario.ticket}[/bold] — every command runs for "
+                "real but under --dry-run, so nothing reaches Jira, LSF, lustre or your real "
+                f"registry. Outputs are placeholders under ~/.grit/dry_run/{scenario.ticket}/.",
+                style="bold cyan",
+            )
+        )
 
-    Every lesson here is a manual_action (grit/core/tutorial_lessons.py): most
-    just wait for Enter, and two actually drive the real, unsandboxed CLI
-    (`grit --help`, `grit status` with no ticket) so the overview shows the
-    genuine tool rather than a fixture. There is nothing to reset and no base
-    flags to inject, so this does not go through run_scenario()'s sandbox setup.
-    """
-    console.print(Panel(f"[bold]{scenario.title}[/bold]\n\n{scenario.blurb}", style="bold cyan"))
-
-    base: list[str] = []
     if auto:
         _run_scenario_auto(scenario, base)
     else:
         total = len(scenario.lessons)
         for n, lesson in enumerate(scenario.lessons, start=1):
             if _run_lesson(lesson, scenario, base, n, total) == "quit":
-                console.print("\nStopped. Re-run `grit tutorial` any time.")
+                console.print("\nStopped. Re-run `grit tutorial` any time — it starts clean.")
                 return
 
-    console.print(
-        Panel(
-            "That's the shape of it. Five scenarios put it into practice, easiest first:\n\n"
-            "  grit tutorial --scenario basic             1 — Basic curation (easy)\n"
-            "  grit tutorial --scenario references        2 — Working with references "
-            "(medium)\n"
-            "  grit tutorial --scenario canonical-changes  3 — Steps that change the "
-            "canonical FASTA (hard)\n"
-            "  grit tutorial --scenario recurate           4 — Curating an already-curated "
-            "map (medium)\n"
-            "  grit tutorial --scenario other              5 — Other commands (medium)\n\n"
-            "Or run `grit tutorial` with no flags for the menu.",
-            style="bold cyan",
-        )
-    )
-
-
-def run_scenario(scenario: Scenario, config_path: Path, auto: bool) -> None:
-    """Reset the scenario's sandbox and walk its lessons."""
     if scenario.is_overview:
-        _run_overview(scenario, auto)
-        return
-
-    _reset_sandbox(scenario.ticket)
-    base = [
-        "--config",
-        str(config_path),
-        "--yaml",
-        str(scenario.yaml_path),
-        "--dry-run",
-    ]
-
-    console.print(
-        Panel(
-            f"[bold]{scenario.title}[/bold]\n\n{scenario.blurb}\n\n"
-            f"Sandbox ticket: [bold]{scenario.ticket}[/bold] — every command runs for "
-            "real but under --dry-run, so nothing reaches Jira, LSF, lustre or your real "
-            f"registry. Outputs are placeholders under ~/.grit/dry_run/{scenario.ticket}/.",
-            style="bold cyan",
+        rows = "\n".join(
+            f"  grit tutorial --scenario {s.key:<18} {s.title} ({s.difficulty})"
+            for s in SCENARIOS
+            if not s.is_overview
         )
-    )
-
-    if auto:
-        _run_scenario_auto(scenario, base)
+        console.print(
+            Panel(
+                "That's the shape of it. Five scenarios put it into practice, easiest first:\n\n"
+                f"{rows}\n\nOr run `grit tutorial` with no flags for the menu.",
+                style="bold cyan",
+            )
+        )
         return
-
-    total = len(scenario.lessons)
-    for n, lesson in enumerate(scenario.lessons, start=1):
-        if _run_lesson(lesson, scenario, base, n, total) == "quit":
-            console.print("\nStopped. Re-run `grit tutorial` any time — it starts clean.")
-            return
+    if auto:
+        return
 
     console.print(
         Panel(

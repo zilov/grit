@@ -39,20 +39,11 @@ class Scenario:
     ticket: str
     lessons: list[Lesson]
     difficulty: str = ""
-    # True only for tutorial 0: no ticket, no --dry-run sandbox to reset, and its
-    # two "demo" lessons drive the real, unsandboxed CLI. See run_overview() in
-    # grit/core/tutorial.py.
-    is_overview: bool = False
+    is_overview: bool = False  # tutorial 0: no sandbox, runs the real CLI
 
 
 def _copy_agp_into_workdir(ticket: str) -> None:
-    """Write a placeholder AGP where pretext-to-asm's dry-run sandbox expects one.
-
-    The real step globs ``{workdir}/{tol_id}*.agp*`` — this writes a small,
-    obviously-fake AGP at that exact path. The tutorial's dry-run branch fakes
-    pretext-to-asm's output unconditionally either way; this is purely so the
-    learner types (and sees) the real curator action, not a working shortcut.
-    """
+    """Write a placeholder AGP where pretext-to-asm's dry-run sandbox expects one."""
     from grit.core.registry import dry_run_root
 
     agp_path = dry_run_root() / ticket / f"{_TOL_ID}.agp"
@@ -98,35 +89,15 @@ _AGP_MANUAL_LESSON = Lesson(
 )
 
 
-def _show_grit_help(_ticket: str) -> None:
-    """Run the real, unsandboxed `grit --help` — the actual command list."""
-    from grit.core.tutorial import _run_grit
+def _grit(*argv: str) -> Callable[[str], None]:
+    """Return a manual_action that runs `grit *argv` in-process, ignoring the ticket."""
 
-    _run_grit(["--help"])
+    def action(_ticket: str) -> None:
+        from grit.core.tutorial import _run_grit
 
+        _run_grit(list(argv))
 
-def _show_sandbox_status(_ticket: str) -> None:
-    """Run `grit status` (no ticket) against the --dry-run sandbox registry.
-
-    Used at the end of tutorial 1 — lists tutorial tickets, not the learner's
-    real queue. See _show_real_status for the unsandboxed version tutorial 0
-    uses, where there is no sandbox to read.
-    """
-    from grit.core.tutorial import _run_grit
-
-    _run_grit(["--dry-run", "status"])
-
-
-def _show_real_status(_ticket: str) -> None:
-    """Run the real, unsandboxed `grit status` (no ticket) against the live registry.
-
-    Unlike every other tutorial command, this one is deliberately not run under
-    --dry-run — there is no scenario ticket to fake, and the point is to show the
-    learner their actual queue, not a sandboxed one.
-    """
-    from grit.core.tutorial import _run_grit
-
-    _run_grit(["status"])
+    return action
 
 
 _TUTORIAL_0 = Scenario(
@@ -200,7 +171,7 @@ _TUTORIAL_0 = Scenario(
             ),
             task="Press Enter to run it.",
             command="",
-            manual_action=_show_grit_help,
+            manual_action=_grit("--help"),
         ),
         Lesson(
             title="grit status — your real queue, for real",
@@ -211,7 +182,7 @@ _TUTORIAL_0 = Scenario(
             ),
             task="Press Enter to run it.",
             command="",
-            manual_action=_show_real_status,
+            manual_action=_grit("status"),
         ),
     ],
 )
@@ -319,7 +290,7 @@ _TUTORIAL_1 = Scenario(
             ),
             task="Press Enter to see it.",
             command="",
-            manual_action=_show_sandbox_status,
+            manual_action=_grit("--dry-run", "status"),
         ),
     ],
 )

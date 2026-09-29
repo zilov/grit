@@ -1,11 +1,9 @@
 """Unit tests for the tutorial's command matcher and hint generator (pure string logic)."""
 
-import logging
 
 import pytest
 
 from grit.core.tutorial import (
-    _muted_logging,
     _print_only_base,
     _safe_to_run,
     expected_line,
@@ -291,20 +289,3 @@ class TestPrintOnlyBase:
         result = _print_only_base(base)
         assert "--config" in result and "/x.yaml" in result
         assert "--yaml" in result and "/y.yaml" in result
-
-
-class TestMutedLogging:
-    def test_silences_the_root_logger_only_inside_the_block(self):
-        root = logging.getLogger()
-        before = root.level
-        with _muted_logging():
-            assert root.level > logging.CRITICAL
-        assert root.level == before
-
-    def test_restores_the_level_even_if_the_block_raises(self):
-        root = logging.getLogger()
-        before = root.level
-        with pytest.raises(ValueError):
-            with _muted_logging():
-                raise ValueError("boom")
-        assert root.level == before
