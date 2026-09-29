@@ -1,6 +1,6 @@
 """Tests for grit/utils/helpers.py generic helpers."""
 
-import time
+import os
 from pathlib import Path
 
 from grit.utils.helpers import (
@@ -39,8 +39,10 @@ def test_build_scp_tip_multiple_files_joined_with_and():
 # ---------------------------------------------------------------------------
 
 
-def _touch(path, content="x"):
+def _touch(path, mtime, content="x"):
+    """Write *path* and pin its mtime, so ordering never depends on timestamp granularity."""
     path.write_text(content)
+    os.utime(path, (mtime, mtime))
     return path
 
 
@@ -56,9 +58,8 @@ def test_inputs_newer_than_curated_fa_true_when_agp_newer(tmp_path):
     workdir.mkdir()
     pta_dir.mkdir()
 
-    _touch(pta_dir / "sDipInt39.curated.fa")
-    time.sleep(0.01)
-    _touch(workdir / "sDipInt39.pretext.agp_1")
+    _touch(pta_dir / "sDipInt39.curated.fa", 1000)
+    _touch(workdir / "sDipInt39.pretext.agp_1", 2000)
 
     assert inputs_newer_than_curated_fa(workdir, "sDipInt39", pta_dir) is True
 
@@ -70,10 +71,9 @@ def test_inputs_newer_than_curated_fa_true_when_extra_input_newer(tmp_path):
     workdir.mkdir()
     pta_dir.mkdir()
 
-    _touch(workdir / "sDipInt39.pretext.agp_1")
-    _touch(pta_dir / "sDipInt39.curated.fa")
-    time.sleep(0.01)
-    original_fa = _touch(workdir / "original.fa")
+    _touch(workdir / "sDipInt39.pretext.agp_1", 1000)
+    _touch(pta_dir / "sDipInt39.curated.fa", 2000)
+    original_fa = _touch(workdir / "original.fa", 3000)
 
     assert (
         inputs_newer_than_curated_fa(workdir, "sDipInt39", pta_dir, extra_inputs=[original_fa])
@@ -87,10 +87,9 @@ def test_inputs_newer_than_curated_fa_false_when_all_inputs_older(tmp_path):
     workdir.mkdir()
     pta_dir.mkdir()
 
-    _touch(workdir / "sDipInt39.pretext.agp_1")
-    original_fa = _touch(workdir / "original.fa")
-    time.sleep(0.01)
-    _touch(pta_dir / "sDipInt39.curated.fa")
+    _touch(workdir / "sDipInt39.pretext.agp_1", 1000)
+    original_fa = _touch(workdir / "original.fa", 1000)
+    _touch(pta_dir / "sDipInt39.curated.fa", 2000)
 
     assert (
         inputs_newer_than_curated_fa(workdir, "sDipInt39", pta_dir, extra_inputs=[original_fa])

@@ -77,6 +77,7 @@ def _run_pretext_to_asm_core(
     agp_glob: str | None = None,
     output_transform: Callable[[Path], None] | None = None,
     agp_validators: Sequence[Callable[[Path], None]] = (),
+    required_output: str | None = None,
 ) -> Path:
     """
     Runs pretext-to-asm for one (original_fa, agp) pair under a tracked step.
@@ -86,7 +87,9 @@ def _run_pretext_to_asm_core(
     caller write extra files into run_dir before outputs are collected, and
     records outputs via *output_specs* under *step_name*. Each callable in
     *agp_validators* (plus the always-applied ``primary`` tag check) is handed the
-    resolved AGP before anything is run, and may fail the step. Returns the run_dir
+    resolved AGP before anything is run, and may fail the step. A
+    *required_output* key missing from the collected outputs fails the run
+    instead of recording success. Returns the run_dir
     (which may be a prior run's dir if the step was skipped as already done).
 
     Shared by ``run_pretext_to_asm`` (main assembly), ``run_microchromosome_combine``
@@ -176,6 +179,11 @@ def _run_pretext_to_asm_core(
             outputs = collect_outputs(
                 output_specs, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
             )
+            if required_output and required_output not in outputs and not ctx.print_only:
+                raise FileNotFoundError(
+                    f"{step_name} produced no curated FASTA ({required_output!r}) in {run_dir} "
+                    "— canonical file resolution would silently fall back to older output."
+                )
             ctx.tracker.finish(
                 step_name, run_dir, "success", outputs=outputs or None, untracked=ctx.untracked
             )

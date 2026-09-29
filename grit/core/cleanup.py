@@ -11,7 +11,7 @@ from rich.table import Table
 
 from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
-from grit.utils.helpers import _submit_bsub, build_bsub_opts
+from grit.utils.helpers import BsubSubmissionError, _submit_bsub, build_bsub_opts
 from grit.utils.output import console, shorten_path
 
 log = logging.getLogger(__name__)
@@ -285,14 +285,15 @@ def run_cleanup(dry_run: bool = True, include_cleaned: bool = False) -> None:
                 error="gzip_fa.err",
                 run_dir=parent,
             )
-            job_id = _submit_bsub(inner_cmd, bsub_opts, dry_run)
-            if job_id:
-                log.info("Submitted gzip job %s for %s", job_id, parent)
-                gzip_submitted += 1
-            else:
-                log.warning("Failed to submit gzip job for %s", parent)
+            try:
+                job_id = _submit_bsub(inner_cmd, bsub_opts, dry_run)
+            except BsubSubmissionError as exc:
+                log.warning("Failed to submit gzip job for %s: %s", parent, exc)
                 errors += 1
                 ticket_error_counts[ticket_id] += 1
+                continue
+            log.info("Submitted gzip job %s for %s", job_id, parent)
+            gzip_submitted += 1
         else:  # pragma: no cover - defensive
             log.warning("Unknown cleanup action kind %r for %s", kind, path)
 

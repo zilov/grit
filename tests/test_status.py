@@ -1,8 +1,11 @@
 """Tests for grit/core/status.py."""
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
 
 from grit.core.context import CurationContext
 from grit.core.registry import RegistryManager
@@ -361,10 +364,13 @@ def test_show_ticket_history_resolves_done_job_without_waiting_for_gone(
     (maps_dir / f"{tol_id}.hap1_hr.pretext").write_text("")
     (maps_dir / f"{tol_id}.hap1_normal.pretext").write_text("")
 
+    # `grit status` sweeps pending jobs before rendering; a run still `started`
+    # is in flight and never canonical, so the tip depends on the sweep.
     with (
         patch("grit.utils.helpers._check_bjobs", return_value={"685359": "DONE"}),
         patch("grit.core.status.print_tip") as mock_print_tip,
     ):
+        reg.refresh_statuses()
         show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
 
     out = capsys.readouterr().out
@@ -391,6 +397,19 @@ def test_resolve_canonical_files_missing_returns_none_per_type(mock_ctx):
     assert set(resolved.keys()) == {"hap1", "hap2"}
     for by_type in resolved.values():
         assert by_type == {"fa": None, "haplotigs": None, "chr_list": None, "map": None}
+
+
+def test_resolve_canonical_files_treats_an_os_error_as_not_found(mock_ctx):
+    """A stale NFS handle (ESTALE) in one finder must not take the status table down."""
+    import errno
+
+    def stale(*_args):
+        raise OSError(errno.ESTALE, "Stale file handle")
+
+    with patch("grit.utils.helpers.find_canonical_fa", side_effect=stale):
+        resolved = _resolve_canonical_files(mock_ctx, ["hap1"])
+
+    assert resolved["hap1"]["fa"] is None
 
 
 def test_resolve_canonical_files_finds_curated_fa(tmp_path, mock_ctx):
@@ -1141,3 +1160,67 @@ def test_show_ticket_history_marks_the_row_holding_the_canonical_map(tmp_path, m
         line for line in out.splitlines() if "hic_remapping" in line and "success" in line
     )
     assert "map(1)" in hic_line
+
+
+def test_show_ticket_history_credits_unrecorded_blast_output_in_its_hap_subdir(
+    tmp_path, monkeypatch, capsys
+):
+    """DOM-12: blast-contaminants writes into {run_dir}/{hap}/ and may record no
+    outputs. The re-globbed decontaminated FASTA is canonical, and its row must say so."""
+    monkeypatch.setattr(console, "width", 200)
+    tol_id = "sDipInt39"
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+
+    pta_dir = tracker.start("pretext_to_asm", "RC-1234", tol_id)
+    pta_fa = pta_dir / f"{tol_id}.hap1.1.curated.fa"
+    pta_fa.write_text(">s\n")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_fa": str(pta_fa)})
+
+    bc_dir = tracker.start("blast_contaminants", "RC-1234", tol_id, suffix="b")
+    bc_fa = bc_dir / "hap1" / f"{tol_id}.hap1.1.decontaminated.fa"
+    bc_fa.parent.mkdir()
+    bc_fa.write_text(">s\n")
+    os.utime(pta_fa, (1000, 1000))
+    os.utime(bc_fa, (2000, 2000))
+    tracker.finish("blast_contaminants", bc_dir, "success", outputs=None)
+
+    show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    lines = capsys.readouterr().out.splitlines()
+    bc_line = next(line for line in lines if "blast_contaminants" in line and "success" in line)
+    pta_line = next(line for line in lines if "pretext_to_asm" in line and "success" in line)
+    assert "fa(1)" in bc_line
+    assert "fa(1)" not in pta_line
+
+
+@pytest.mark.parametrize(
+    "job_cluster, expected",
+    [("tol22", "unknown (job on tol22)"), ("farm22", "unknown (gone)"), (None, "unknown (gone)")],
+)
+def test_show_ticket_history_names_the_cluster_of_a_job_bjobs_cannot_see(
+    tmp_path, monkeypatch, job_cluster, expected
+):
+    tol_id = "aEleAbb1"
+    reg, tracker = _make_ticket_with_ctx(tmp_path, monkeypatch, tol_id)
+    if job_cluster:
+        monkeypatch.setenv("LSF_ENVDIR", f"/software/lsf-{job_cluster}/conf")
+    else:
+        monkeypatch.delenv("LSF_ENVDIR", raising=False)
+    run_dir = tracker.start("hic_remapping", "RC-1234", tol_id, suffix="primary")
+    tracker.record_job("hic_remapping", run_dir, "685359")
+    monkeypatch.setenv("LSF_ENVDIR", "/software/lsf-farm22/conf")
+
+    with (
+        patch("grit.utils.helpers._check_bjobs", return_value={"685359": "gone"}),
+        patch("grit.core.status.console") as mock_console,
+    ):
+        show_ticket_history(reg, "RC-1234", TEST_USER_CONFIG)
+
+    cells = [
+        str(c)
+        for call in mock_console.print.call_args_list
+        if call.args and hasattr(call.args[0], "columns")
+        for col in call.args[0].columns
+        for c in col._cells
+    ]
+    assert any(expected in c for c in cells)

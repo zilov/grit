@@ -171,7 +171,7 @@ def _resolve_canonical_files(ctx, haps: list[str]) -> dict[str, dict[str, Path |
     """
     Resolve the canonical fa/haplotigs/chr_list/map path per haplotype, keyed by
     hap then by "fa"/"haplotigs"/"chr_list"/"map". A value is None when the
-    corresponding finder raised FileNotFoundError (nothing resolved yet).
+    corresponding finder found nothing, or hit an unreadable path (e.g. ESTALE).
     """
     from grit.utils.helpers import (
         find_canonical_chr_list,
@@ -193,7 +193,7 @@ def _resolve_canonical_files(ctx, haps: list[str]) -> dict[str, dict[str, Path |
         for key, finder in finders.items():
             try:
                 resolved[hap][key] = finder(ctx, hap)
-            except FileNotFoundError:
+            except OSError:  # FileNotFoundError, or a stale NFS handle
                 resolved[hap][key] = None
     return resolved
 
@@ -496,7 +496,7 @@ def show_ticket_history(
     for a synthetic dry-run ticket that has no real Jira issue to look up.
     """
     from grit.core.run_tracker import RunTracker
-    from grit.utils.helpers import _check_bjobs
+    from grit.utils.helpers import _check_bjobs, lsf_cluster
 
     ticket = registry.find_ticket(ticket_id)
     if ticket is None:
@@ -637,7 +637,13 @@ def show_ticket_history(
                         entry["status"] = "success"
                         status = "success"
                     else:
-                        status = "done (check)" if bjobs_status == "DONE" else "unknown (gone)"
+                        job_cluster = entry.get("cluster")
+                        if bjobs_status == "DONE":
+                            status = "done (check)"
+                        elif job_cluster and job_cluster != lsf_cluster():
+                            status = f"unknown (job on {job_cluster})"
+                        else:
+                            status = "unknown (gone)"
                 elif bjobs_status == "EXIT":
                     status = "failed (job exited)"
                 elif bjobs_status in ("RUN", "PEND"):

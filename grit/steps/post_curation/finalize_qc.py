@@ -311,7 +311,12 @@ def finalize_for_qc(
     if not qv_dir.exists():
         from grit.steps.post_curation.qv import run_qv
 
-        run_qv(ctx)
+        try:
+            run_qv(ctx)
+        except Exception:
+            if ctx.tracker and run_dir:
+                ctx.tracker.finish("finalize_qc", run_dir, "failed", untracked=ctx.untracked)
+            raise
 
     if ctx.print_only:
         console.print(

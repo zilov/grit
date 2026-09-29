@@ -345,23 +345,17 @@ class RegistryManager:
         unconditionally. Their absence proves nothing unless LSF was asked about
         the cluster the job was submitted to, so failure needs *authoritative*.
         """
-        from grit.utils.helpers import _get_step_specs, collect_outputs
+        from grit.utils.helpers import _get_step_specs, finished_run_outputs
 
-        specs = _get_step_specs(step)
-        if specs:
-            outputs = collect_outputs(specs, run_dir, tol_id, hap1=hap1, hap2=hap2)
-            verdict = tracker.verify_outputs(step, tol_id, run_dir)
-            complete = verdict in ("ok", "no_files") or (verdict == "not_tracked" and bool(outputs))
-            if complete:
-                tracker.finish(step, run_dir, "success", outputs=outputs or None)
-            elif authoritative and not outputs:
-                tracker.finish(step, run_dir, "failed")
-        elif step == "sex_matcher":
-            if run_dir.exists() and any(run_dir.glob("Best_match*")):
-                tracker.finish(step, run_dir, "success")
-            elif authoritative:
-                tracker.finish(step, run_dir, "failed")
-        # other bsub steps: leave as-is until epilogue fix propagates
+        if step != "sex_matcher" and not _get_step_specs(step):
+            return  # other bsub steps: leave as-is until epilogue fix propagates
+        complete, outputs = finished_run_outputs(
+            tracker, step, run_dir, tol_id, hap1=hap1, hap2=hap2
+        )
+        if complete:
+            tracker.finish(step, run_dir, "success", outputs=outputs or None)
+        elif authoritative and not outputs:
+            tracker.finish(step, run_dir, "failed")
 
     def _load(self) -> list[dict]:
         """Return the registry document; raise RegistryError if it exists but is unreadable."""

@@ -13,7 +13,6 @@ from grit.steps.post_curation.microchromosome_combine import (
 )
 from grit.steps.post_curation.pretext_to_asm import run_pretext_to_asm as run_pretext_to_asm
 from grit.steps.post_curation.qv import run_qv as run_qv
-from grit.steps.post_curation.validate_files import run_validate_files as run_validate_files
 from grit.steps.pre_curation.add_pretext_view_tracks import (
     add_bedgraph_track as add_bedgraph_track,
 )

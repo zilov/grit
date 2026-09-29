@@ -116,9 +116,14 @@ def run_busco_synteny(
         if run_dir
         else None
     )
-    job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
-    if ctx.tracker and run_dir and job_id:
-        ctx.tracker.record_job("busco_synteny", run_dir, job_id)
+    try:
+        job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
+        if ctx.tracker and run_dir and job_id:
+            ctx.tracker.record_job("busco_synteny", run_dir, job_id)
+    except Exception:
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("busco_synteny", run_dir, "failed", untracked=ctx.untracked)
+        raise
 
     print_done("BUSCO synteny submitted.")
 
