@@ -13,6 +13,7 @@ except ImportError:
 
 import rich_click as click
 from rich.panel import Panel
+from rich.text import Text
 
 from grit.core.tutorial_lessons import SCENARIOS, Lesson, Scenario, find_scenario
 from grit.utils.output import console
@@ -73,7 +74,8 @@ def parse_command(tokens: list[str]) -> Parsed:
 
 def _answer_tokens(lesson: Lesson, ticket: str) -> list[str]:
     """Return the grit arguments *lesson* is asking for."""
-    return [lesson.command, "-t", ticket, *lesson.args]
+    ticket_args = ["-t", ticket] if lesson.needs_ticket else []
+    return [lesson.command, *ticket_args, *lesson.args]
 
 
 def expected_command(lesson: Lesson, ticket: str) -> Parsed:
@@ -104,9 +106,12 @@ def hint_for(got: Parsed, lesson: Lesson, ticket: str, known: set[str]) -> str:
             f"{got.subcommand!r} is another grit command, but this lesson is "
             f"about {want.subcommand!r}."
         )
-    if got.ticket is None:
+    if not lesson.needs_ticket:
+        if got.ticket is not None:
+            return "This one is the global view: drop -t so status lists every ticket."
+    elif got.ticket is None:
         return f"Every grit step needs to know which ticket it is working on: add -t {ticket}."
-    if got.ticket != ticket:
+    elif got.ticket != ticket:
         return f"The sandbox ticket for this scenario is {ticket}, not {got.ticket!r}."
 
     for flag in sorted(want.flags - got.flags):
@@ -153,21 +158,31 @@ def _run_grit(argv: list[str]) -> bool:
 
 
 def _print_only_base(base: list[str]) -> list[str]:
-    """Return *base* with --dry-run swapped for --print-only, same --config/--yaml."""
-    return [tok for tok in base if tok != "--dry-run"] + ["--print-only"]
+    """Return *base* plus --print-only: real commands printed against the sandbox's state."""
+    return [*base, "--print-only"]
 
 
 def _show_farm_preview(lesson: Lesson, base: list[str], command_tokens: list[str]) -> None:
     """Print what the command runs on the farm via a muted --print-only pass, else lesson.shows."""
-    logging.disable(logging.CRITICAL)
-    try:
-        with console.capture() as cap:
-            _run_grit([*_print_only_base(base), *command_tokens])
-    finally:
-        logging.disable(logging.NOTSET)
+    from grit.core.base_command import GritCommand
+    from grit.core.click_cli import cli
 
-    text = cap.get().strip() or lesson.shows.strip()
-    if not text:
+    captured = ""
+    # only steps honour --print-only; status/untrack/retrack would write the registry
+    if isinstance(cli.commands.get(lesson.command), GritCommand):
+        logging.disable(logging.CRITICAL)
+        try:
+            with console.capture() as cap:
+                _run_grit([*_print_only_base(base), *command_tokens])
+        finally:
+            logging.disable(logging.NOTSET)
+        captured = cap.get().strip()
+
+    if "Command" in captured:
+        text = Text.from_ansi(captured)  # captured output is already rendered
+    elif lesson.shows.strip():
+        text = lesson.shows.strip()
+    else:
         return
 
     console.print("\n[bold]What this runs on the farm:[/bold]")
@@ -197,9 +212,10 @@ def _header(lesson: Lesson, n: int, total: int) -> None:
 
 def _explain(lesson: Lesson, n: int, total: int) -> None:
     _header(lesson, n, total)
-    console.print(f"\n[bold]Your turn:[/bold] {lesson.task}")
+    if lesson.task:
+        console.print(f"\n[bold]Your turn:[/bold] {lesson.task}")
     if lesson.manual_action is not None:
-        console.print("[dim]There is no grit command here. r=re-read  s=skip  q=quit[/dim]")
+        console.print("\n[dim]Enter=continue  r=re-read  s=skip  q=quit[/dim]")
         return
     console.print(
         "[dim]Type the command. Other grit commands work too and won't skip ahead. "
@@ -294,9 +310,10 @@ def _run_lesson(lesson: Lesson, scenario: Scenario, base: list[str], n: int, tot
             continue
         if low == "?":
             if last is None:
+                ticket_hint = "Don't forget -t." if lesson.needs_ticket else "No -t this time."
                 console.print(
                     f"[bold yellow]Hint:[/bold yellow] the step you want is "
-                    f"[bold]{lesson.command}[/bold]. Don't forget -t."
+                    f"[bold]{lesson.command}[/bold]. {ticket_hint}"
                 )
             else:
                 console.print(
@@ -349,7 +366,6 @@ def _run_scenario_auto(scenario: Scenario, base: list[str]) -> None:
         _header(lesson, n, len(scenario.lessons))
 
         if lesson.manual_action is not None:
-            console.print(f"\n[bold]Your turn:[/bold] {lesson.task}")
             lesson.manual_action(scenario.ticket)
             continue
 
@@ -413,11 +429,8 @@ def run_scenario(scenario: Scenario, config_path: Path, auto: bool) -> None:
     console.print(
         Panel(
             "Scenario finished.\n\n"
-            "  • Canonical is not a fixed step order — the freshest successful tracked "
-            "output wins, per haplotype. `grit status -t <ticket>` is the only honest "
-            "answer to 'which file is current?'.\n"
-            "  • `grit untrack` / `grit retrack` back a step out without deleting anything.\n\n"
-            f"The sandbox is at ~/.grit/dry_run/{scenario.ticket}/ — poke around, then "
+            + (f"{scenario.outro}\n\n" if scenario.outro else "")
+            + f"The sandbox is at ~/.grit/dry_run/{scenario.ticket}/ — poke around, then "
             "`rm -rf ~/.grit/dry_run` to clear it.\n\n"
             "`grit tutorial` again for another scenario; `grit --help` for everything else.",
             style="bold cyan",

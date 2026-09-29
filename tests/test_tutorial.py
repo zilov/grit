@@ -1,6 +1,5 @@
 """Unit tests for the tutorial's command matcher and hint generator (pure string logic)."""
 
-
 import pytest
 
 from grit.core.tutorial import (
@@ -25,6 +24,7 @@ HAP2 = Lesson(
     args=["--hap2"],
     flag_hints={"--hap2": "hic-remapping runs one haplotype per invocation."},
 )
+GLOBAL = Lesson(title="t", why="w", task="do it", command="status", needs_ticket=False)
 STEP = Lesson(
     title="t",
     why="w",
@@ -85,6 +85,11 @@ class TestMatches:
     def test_wrong_ticket_does_not_match(self):
         assert not matches(parse_command(["grit", "pretext-to-asm", "-t", "RC-9"]), PLAIN, TICKET)
 
+    def test_global_lesson_matches_without_ticket(self):
+        assert matches(parse_command(["grit", "status"]), GLOBAL, TICKET)
+        assert not matches(parse_command(["grit", "status", "-t", TICKET]), GLOBAL, TICKET)
+        assert expected_line(GLOBAL, TICKET) == "grit status"
+
     def test_step_value_must_match(self):
         got = parse_command(["grit", "untrack", "-t", TICKET, "-s", "wrong_step"])
         assert not matches(got, STEP, TICKET)
@@ -103,6 +108,9 @@ class TestHints:
 
     def test_missing_ticket_says_so(self):
         assert "-t" in self._hint(["grit", "pretext-to-asm"])
+
+    def test_ticket_on_a_global_lesson_says_drop_it(self):
+        assert "drop -t" in self._hint(["grit", "status", "-t", TICKET], GLOBAL)
 
     def test_wrong_ticket_names_the_sandbox_one(self):
         assert TICKET in self._hint(["grit", "pretext-to-asm", "-t", "RC-9"])
@@ -251,8 +259,7 @@ class TestLessonAndScenarioFields:
     def test_manual_actions_do_not_crash(self, monkeypatch, tmp_path):
         """Every manual_action in the curriculum runs cleanly given a ticket string.
 
-        Some actions drive the real CLI (tutorial 1's `grit --dry-run status`) —
-        patch cli.main so this stays hermetic and never touches a real registry.
+        Patch cli.main so this stays hermetic and never touches a real registry.
         """
         import grit.core.registry as registry_mod
         from grit.core.click_cli import cli
@@ -278,9 +285,9 @@ class TestLessonAndScenarioFields:
 
 
 class TestPrintOnlyBase:
-    def test_swaps_dry_run_for_print_only(self):
+    def test_adds_print_only_and_keeps_dry_run(self):
         base = ["--config", "/x.yaml", "--yaml", "/y.yaml", "--dry-run"]
-        expected = ["--config", "/x.yaml", "--yaml", "/y.yaml", "--print-only"]
+        expected = ["--config", "/x.yaml", "--yaml", "/y.yaml", "--dry-run", "--print-only"]
         assert _print_only_base(base) == expected
 
     def test_leaves_config_and_yaml_untouched(self):

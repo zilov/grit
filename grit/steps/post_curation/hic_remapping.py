@@ -16,7 +16,6 @@ from grit.utils.helpers import (
     build_bsub_opts,
     find_canonical_fa,
     refuse_hap2_on_single_hap,
-    write_fake_outputs,
 )
 from grit.utils.modules import module_cmd
 from grit.utils.output import console, print_done, print_step_header, print_tip
@@ -150,11 +149,18 @@ def _submit_hic_remapping(
 
 
 def _dry_run_hic_remapping_for_hap(ctx: CurationContext, step_name: str) -> dict[str, str]:
-    """Write a placeholder remapped pretext map directly into this hap's tracked run_dir."""
+    """Write placeholder remapped pretext maps, named as curationpretext names them."""
     run_dir = ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
-    outputs = write_fake_outputs(
-        step_name, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
+    key, hap = (
+        ("hap2", ctx.hap2_prefix) if step_name.endswith("_hap2") else ("hap1", ctx.hap1_prefix)
     )
+    maps_dir = run_dir / "pretext_maps_processed"
+    maps_dir.mkdir(parents=True, exist_ok=True)
+    outputs: dict[str, str] = {}
+    for suffix, out_key in (("hr", f"{key}_pretext"), ("normal", f"{key}_normal_pretext")):
+        path = maps_dir / f"{ctx.tol_id}.{hap}_{suffix}.pretext"
+        path.write_bytes(b"fake pretext\n")
+        outputs[out_key] = str(path)
     ctx.tracker.finish(step_name, run_dir, "success", outputs=outputs, untracked=ctx.untracked)
     return outputs
 

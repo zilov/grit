@@ -26,6 +26,7 @@ class Lesson:
     check: str = ""
     shows: str = ""
     manual_action: Callable[[str], None] | None = None
+    needs_ticket: bool = True  # False for a command typed without -t (global `grit status`)
 
 
 @dataclass(frozen=True)
@@ -40,13 +41,14 @@ class Scenario:
     lessons: list[Lesson]
     difficulty: str = ""
     is_overview: bool = False  # tutorial 0: no sandbox, runs the real CLI
+    outro: str = ""  # extra tips for the "Scenario finished" panel
 
 
 def _copy_agp_into_workdir(ticket: str) -> None:
     """Write a placeholder AGP where pretext-to-asm's dry-run sandbox expects one."""
     from grit.core.registry import dry_run_root
 
-    agp_path = dry_run_root() / ticket / f"{_TOL_ID}.agp"
+    agp_path = dry_run_root() / ticket / f"{_TOL_ID}.pretext.agp_1"
     agp_path.parent.mkdir(parents=True, exist_ok=True)
     agp_path.write_text(
         "SUPER_1\t1\t1000\t1\tW\tSCAFFOLD_1\t1\t1000\t+\n"
@@ -58,15 +60,16 @@ _STATUS_LESSON = Lesson(
     title="status — how to read what grit knows",
     why=(
         "Before running anything else, learn to read the one command you will run "
-        "most often. `grit status -t <ticket>` prints three things:\n"
-        "  • Canonical files — for each haplotype, which FASTA, haplotigs file and "
-        "chromosome list grit currently considers *the* current one. This is the "
-        "table that decides what later steps consume and what finalize-qc ships;\n"
-        "  • Reference — the reference genome the ticket YAML names (if any) and "
-        "what find-reference actually resolved;\n"
-        "  • Step history — every run of every step, its status, and a Canonical "
-        "column marking which outputs that particular run still owns.\n"
-        "Right now only setup has run, so the canonical rows are all empty."
+        "most often. `grit status -t <ticket>` shows, top to bottom:\n"
+        "  • the ticket summary: species, assembly type, where the reads and the "
+        "draft assembly are, and the workdir;\n"
+        "  • Canonical files: the current assembly, haplotigs, chromosome list and "
+        "remapped map for each haplotype;\n"
+        "  • Step history: every step you ran, when, and whether it succeeded;\n"
+        "  • curation results, once there are some: chromosome counts, sex "
+        "chromosomes, breaks and joins, QV and completeness;\n"
+        "  • tips: the next step to run and the scp commands for files you need locally.\n"
+        "Right now only setup has run, so most of it is still empty."
     ),
     task="Ask grit what it knows about this ticket.",
     command="status",
@@ -75,29 +78,19 @@ _STATUS_LESSON = Lesson(
 _AGP_MANUAL_LESSON = Lesson(
     title="Copy the curated AGP into the workdir",
     why=(
-        "PretextView doesn't talk to grit directly. When you're done curating, "
-        "PretextView exports an AGP file describing the edits — you save it "
-        "locally, then scp it onto the farm into this ticket's workdir so "
+        "PretextView doesn't talk to grit directly. When you finish curating, you "
+        "export the AGP yourself (Generate AGP in PretextView) and save it on your "
+        "machine, then scp it onto the farm into this ticket's workdir so "
         "pretext-to-asm can find it:\n"
         "  scp ~/curations/work/<tol_id>/<tol_id>*.agp* "
         "<farm host>:<workdir>/\n"
-        "Here the tutorial does that copy for you, into the sandbox workdir."
+        "Press Enter and the tutorial puts a placeholder AGP into the sandbox "
+        "workdir for you."
     ),
-    task="Press Enter once you've copied the AGP in.",
+    task="",
     command="",
     manual_action=_copy_agp_into_workdir,
 )
-
-
-def _grit(*argv: str) -> Callable[[str], None]:
-    """Return a manual_action that runs `grit *argv` in-process, ignoring the ticket."""
-
-    def action(_ticket: str) -> None:
-        from grit.core.tutorial import _run_grit
-
-        _run_grit(list(argv))
-
-    return action
 
 
 def _read(title: str, why: str) -> Lesson:
@@ -105,7 +98,7 @@ def _read(title: str, why: str) -> Lesson:
     return Lesson(
         title=title,
         why=why,
-        task="Press Enter to continue.",
+        task="",
         command="",
         manual_action=lambda _ticket: None,
     )
@@ -205,6 +198,13 @@ _TUTORIAL_1 = Scenario(
     yaml_path=DEMO_YAML_HAPS,
     ticket="T-1",
     difficulty="easy",
+    outro=(
+        "Shortcuts for real tickets:\n"
+        "  • `grit post-curation -t <ticket> --hap2` runs pretext-to-asm and "
+        "hic-remapping in one go, for both haplotypes (drop --hap2 for hap1 only).\n"
+        "  • finalize-qc runs qv itself if it hasn't run yet, so you usually don't "
+        "need to run qv on its own."
+    ),
     lessons=[
         Lesson(
             title="setup — claim the ticket and build the workdir",
@@ -223,25 +223,27 @@ _TUTORIAL_1 = Scenario(
         Lesson(
             title="pretext-to-asm — turn the curated map back into an assembly",
             why=(
-                "After curating in PretextView you have an AGP file describing the "
-                "edits — you just copied it into the workdir. pretext-to-asm takes the "
-                "draft FASTA plus that AGP and writes an updated curated FASTA. Results "
-                "land in workdir/pretext_to_asm/<timestamp>/ — the first step that "
-                "produces a new *canonical* assembly."
+                "pretext-to-asm takes the draft FASTA plus the AGP you just copied in "
+                "and writes the curated FASTA for each haplotype, their chromosome "
+                "lists and a log of the edits. Results land in "
+                "workdir/pretext_to_asm/<timestamp>/."
             ),
             task=(
                 "You have curated the Pretext map and copied the AGP in. Turn it back "
                 "into an assembly. (? if you don't remember the step name.)"
             ),
             command="pretext-to-asm",
-            check="both haplotypes' assembly FA now point into pretext_to_asm/",
+            check=(
+                "the curated files in the Canonical files table, and the chromosome "
+                "counts, sex chromosomes and breaks/joins under it"
+            ),
         ),
         Lesson(
             title="hic-remapping — remap the HiC reads onto the curated assembly",
             why=(
-                "Builds a fresh Pretext map from the curated assembly so you can look at "
-                "it again for a second curation round. It produces a map, not an "
-                "assembly, so it must not take canonical away from pretext-to-asm."
+                "Builds a fresh Pretext map from the curated assembly, so you can check "
+                "your edits in PretextView before sending the ticket to QC. It submits "
+                "a curationpretext job to LSF and returns straight away."
             ),
             task="Remap the HiC reads for the first haplotype.",
             command="hic-remapping",
@@ -263,44 +265,67 @@ _TUTORIAL_1 = Scenario(
                     "second one instead of the first."
                 )
             },
-            check="canonical FA is still pretext_to_asm — remapping never claims it",
+            check=(
+                "the remapped map for each haplotype in the Canonical files table, and "
+                "the scp tip for downloading it. A ticket can collect several maps "
+                "(one per remapping run); the table shows the latest one"
+            ),
+        ),
+        Lesson(
+            title="qv — QV and k-mer completeness",
+            why=(
+                "Runs MerquryFK on the curated assembly: QV measures base-level "
+                "accuracy, k-mer completeness how much of the read k-mers the assembly "
+                "contains. Both numbers go on the QC form, and status shows them once "
+                "the run finishes."
+            ),
+            task="Compute QV and completeness for the curated assembly.",
+            command="qv",
+            check="the QV and Completeness tables at the bottom of the curation results",
         ),
         Lesson(
             title="finalize-qc — assemble the release",
             why=(
-                "Copies the canonical assembly, AGP and chromosome list into the ticket's "
-                "assembly_curated/ release directory and gathers the QC numbers. Whatever "
-                "is canonical at this moment is what ships — which is why the canonical "
-                "table is worth reading before you run this, not after."
+                "Copies the curated assembly, AGP and chromosome list into the ticket's "
+                "assembly_curated/ release directory and the remapped map to the shared "
+                "curated_pretext_maps/ dir, ready for another curator to QC. It uses "
+                "the files in the Canonical files table, so check that table first."
             ),
             task="Build the release directory and the QC report.",
             command="finalize-qc",
-            check="the assembly_curated/ path it printed — that is the release directory",
+        ),
+        Lesson(
+            title="status — the global view",
+            why=(
+                "`grit status` with no -t shows every active ticket, not just this "
+                "one: species, last step, last run time, status. It's how you see "
+                "what's in flight across your whole queue. Note where T-1 is now; "
+                "you'll look again after pp."
+            ),
+            task="Show every active ticket: status, without -t this time.",
+            command="status",
+            needs_ticket=False,
         ),
         Lesson(
             title="pp — post-processing and submission prep",
             why=(
-                "Runs the contamination screen and submission prep pipeline over the "
-                "finalized release directory, then marks the ticket done in the "
-                "registry. `pp` is a short alias for `post-processing` — both run the "
-                "same step."
+                "Once the ticket passes QC, pp runs the post-processing pipeline over "
+                "the release directory: it adds the MT assembly to the final assembly "
+                "and prepares the files for submission to ENA, then marks the ticket "
+                "done in the registry. `pp` is a short alias for `post-processing`."
             ),
             task="Run post-processing on the finalized release.",
             command="pp",
         ),
         Lesson(
-            title="status — the global view",
+            title="status — the global view, after pp",
             why=(
-                "`grit status` with no -t at all shows every active ticket, not just "
-                "this one — species, last step, last run time, status. It's the view "
-                "you'd use to see what's in flight across your whole queue. Because "
-                "this tutorial runs under --dry-run, it reads the sandbox registry, so "
-                "it lists tutorial tickets rather than your real work — the same command "
-                "against your real terminal shows your real queue."
+                "The same `grit status`, now that pp has finished: T-1 has left the "
+                "active list and shows up under Recently completed."
             ),
-            task="Press Enter to see it.",
-            command="",
-            manual_action=_grit("--dry-run", "status"),
+            task="Run the global status again.",
+            command="status",
+            needs_ticket=False,
         ),
     ],
 )
@@ -397,6 +422,11 @@ _TUTORIAL_2 = Scenario(
                 "scaffold whose alignment you should trust when naming that chromosome."
             ),
             task="Report the largest scaffold within each curated chromosome.",
+            shows=(
+                "Nothing is submitted: super-to-scaffold reads the curated AGP from the "
+                "latest pretext-to-asm run, prints the table right here and saves it as "
+                "a CSV."
+            ),
             command="super-to-scaffold",
         ),
         Lesson(
@@ -435,7 +465,6 @@ _TUTORIAL_2 = Scenario(
             why="Ships whatever is canonical right now into the release directory.",
             task="Build the release directory and the QC report.",
             command="finalize-qc",
-            check="the assembly_curated/ path it printed — that is the release directory",
         ),
         Lesson(
             title="pp",
@@ -584,7 +613,6 @@ _TUTORIAL_3 = Scenario(
             why="Ships whatever is canonical right now.",
             task="Build the release directory and the QC report.",
             command="finalize-qc",
-            check="the assembly_curated/ path it printed — that is the release directory",
         ),
         Lesson(
             title="pp",
@@ -658,7 +686,6 @@ _TUTORIAL_4 = Scenario(
             why="Ships whatever is canonical now — the recurated assembly, not the first round.",
             task="Build the release directory and the QC report.",
             command="finalize-qc",
-            check="the assembly_curated/ path it printed — that is the release directory",
         ),
         Lesson(
             title="pp",
@@ -688,9 +715,15 @@ _TUTORIAL_5 = Scenario(
             title="sex-matcher — check for sex chromosomes",
             why=(
                 "Runs a BUSCO-based comparison to spot likely sex chromosomes before you "
-                "curate — mainly useful for insects and nematodes, which is why setup "
-                "printed a tip about it when the ticket's ID matched. Its results show up "
-                "as a Best_match file, and `grit status` will list this run once it's done."
+                "curate. grit only runs it for insects and nematodes, i.e. ToL IDs "
+                "starting ic, il, id or n. Its results show up as a Best_match file, and "
+                "`grit status` will list this run once it's done."
+            ),
+            shows=(
+                "Nothing: on the farm sex-matcher refuses this ticket, because xxTutDemo1 "
+                "doesn't start with an insect or nematode prefix, and it checks that "
+                "before submitting anything. The sandbox run below skips the check so "
+                "you can see what a finished run looks like."
             ),
             task="Run sex-matcher.",
             command="sex-matcher",
@@ -826,7 +859,6 @@ _TUTORIAL_5 = Scenario(
             why="Ships whatever is canonical now — the corrected rename.",
             task="Build the release directory and the QC report.",
             command="finalize-qc",
-            check="the assembly_curated/ path it printed — that is the release directory",
         ),
         Lesson(
             title="pp",

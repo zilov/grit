@@ -235,7 +235,12 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
             content={
                 "hap1_fa": b">SCAFFOLD_1\nACGTACGTACGT\n>SCAFFOLD_2\nACGTACGTACGT\n",
                 "hap2_fa": b">HAP_SCAFFOLD_1\nACGTACGTACGT\n",
+                "hap1_chr_list": b"SUPER_1,1,yes\nSUPER_2,2,yes\nSUPER_3,3,yes\nSUPER_X,X,yes\n",
+                "hap2_chr_list": b"SUPER_1,1,yes\nSUPER_2,2,yes\nSUPER_3,3,yes\nSUPER_Y,Y,yes\n",
             },
+        )
+        (run_dir / f"{ctx.tol_id}.1.log").write_text(
+            "Curation made 2 cuts in contigs, 5 breaks at gaps and 14 joins\n"
         )
         if is_single_hap(ctx):
             # write_fake_outputs writes every _OUTPUT_SPECS entry regardless of

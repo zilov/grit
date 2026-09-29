@@ -69,8 +69,18 @@ def run_qv(ctx: CurationContext) -> None:
         )
         qv_dir = ctx.assembly_curated_dir / "merquryk"
         qv_dir.mkdir(parents=True, exist_ok=True)
-        (qv_dir / f"{ctx.tol_id}.qv").write_text("fake\n")
-        (qv_dir / f"{ctx.tol_id}.completeness.stats").write_text("fake\n")
+        (qv_dir / f"{ctx.tol_id}.qv").write_text(
+            "Assembly\tNo Support\tTotal\tError %\tQV\n"
+            f"{ctx.tol_id}.{ctx.hap1_prefix}\t1204\t412345678\t0.0003\t65.4\n"
+            f"{ctx.tol_id}.{ctx.hap2_prefix}\t1350\t405678123\t0.0003\t64.9\n"
+            "Both\t2554\t818023801\t0.0003\t65.1\n"
+        )
+        (qv_dir / f"{ctx.tol_id}.completeness.stats").write_text(
+            "Assembly\tRegion\tFound\tTotal\t% Covered\n"
+            f"{ctx.tol_id}.{ctx.hap1_prefix}\tall\t402123456\t425678901\t94.47\n"
+            f"{ctx.tol_id}.{ctx.hap2_prefix}\tall\t398765432\t425678901\t93.68\n"
+            "Both\tall\t421234567\t425678901\t98.96\n"
+        )
         if ctx.tracker and run_dir:
             outputs = _find_qv_outputs(ctx) or None
             ctx.tracker.finish("qv", run_dir, "success", outputs=outputs, untracked=ctx.untracked)

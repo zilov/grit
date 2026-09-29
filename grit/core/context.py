@@ -137,8 +137,10 @@ class CurationContext:
         cfg = UserConfig.from_dict(user_config)
 
         # print_only takes precedence over dry_run — resolved once, here, so every
-        # downstream dry_run-conditional branch (below, and in every step's
-        # `if ctx.dry_run:` check) automatically inherits the correct precedence.
+        # step's `if ctx.dry_run:` check inherits it. Paths still follow the
+        # requested dry_run: --dry-run --print-only prints the real commands
+        # against the sandbox's state.
+        sandbox = dry_run
         dry_run = dry_run and not print_only
 
         assembly_type, hap1_prefix, hap2_prefix = _detect_assembly_type(yaml_data)
@@ -174,7 +176,7 @@ class CurationContext:
         from grit.core.registry import RegistryManager, dry_run_root
         from grit.core.run_tracker import RunTracker
 
-        if dry_run:
+        if sandbox:
             # Keyed by ticket_id, not tol_id — two dry-run tickets sharing a
             # YAML fixture (same tol_id) must get independent sandboxes.
             workdir = dry_run_root() / ticket_id

@@ -112,7 +112,8 @@ Six scenarios, in `SCENARIOS` (`grit/core/tutorial_lessons.py`), selected with
 `grit tutorial --scenario <key>`:
 
 - `overview` — tutorial 0, no ticket, no commands to type (see below).
-- `basic` (easy) — tutorial 1: `setup` through `finalize-qc`/`pp` end to end.
+- `basic` (easy) — tutorial 1: `setup`, `pretext-to-asm`, `hic-remapping`, `qv`,
+  `finalize-qc`, then `pp` with a global `grit status` before and after it.
 - `references` (medium) — tutorial 2: `find-reference`, `busco-synteny`,
   `fastga`/`fastga-stats`, `super-to-scaffold`, then a hand re-curation and
   `post-curation`.
@@ -136,13 +137,14 @@ for it: `is_overview: bool = False`. `run_scenario()` checks it to skip the
 usual `_reset_sandbox()` + `--dry-run` base setup. The overview ends with a
 closing panel generated from `SCENARIOS` listing the `--scenario` flag for each.
 
-Tutorial 1 ends with `grit status` with no ticket ("the global view"), inside
-the sandbox: its lesson is a `manual_action` (`_grit("--dry-run", "status")`) —
-real command, but pinned to the tutorial's own isolated registry rather than
-the caller's `--config`/`--yaml`. So `manual_action` has three uses — a text
-screen, "the tutorial runs something and shows you the result", and "you press
-Enter once you've done a real-world action" — the dataclass field doesn't
-distinguish them, only the callable's body does.
+Tutorial 1 has the learner type `grit status` with no ticket ("the global
+view") just before and just after `pp`. Those lessons set
+`needs_ticket=False`, so the expected answer carries no `-t` and `hint_for()`
+says "drop -t" instead of "add -t". With the tutorial's `--yaml` injected,
+plain `status` still shows the global view (only `GritCommand` steps derive a
+ticket from the YAML filename). So `manual_action` has two uses — a text
+screen, and "you press Enter once you've done a real-world action" — the
+dataclass field doesn't distinguish them, only the callable's body does.
 
 #### Typed lessons (tutorials 1-5)
 
@@ -173,32 +175,37 @@ table without a ticket. Design rationale: `TODO/done/53_tutorial_walkthrough.md`
 
 Before running a matched lesson's command for real under `--dry-run`,
 `_show_farm_preview()` first runs the identical command in-process with
-`--print-only` swapped in (`_print_only_base()`), captures only what it prints
+`--print-only` added (`_print_only_base()`), captures only what it prints
 via `console.capture()`, and shows it under a "What this runs on the farm:"
-heading — the one thing a learner otherwise never sees. Logging is muted for
-its duration (`logging.disable`), and `_run_grit()` already swallows any
-exception: a step's validation logic (e.g. resolving the canonical
-FASTA) can run, and legitimately fail loudly via `log.exception()`, before any
-command-printing `_run()` call is reached, since `--print-only` forces
-`ctx.dry_run = False` and the step then resolves real (non-sandbox) farm
-paths that don't exist here. On failure or an empty capture it falls back to
-the lesson's own `shows` string, or skips the heading silently if that is also
-empty. Almost every lesson's live preview produces real output and needs no
-`shows` fallback; the one exception is `untrack` (tutorial 5) — it isn't a
-`grit/steps/` step at all, just a direct `RunTracker`/registry edit with no
-shell command to preview, so its `shows` says exactly that instead of showing
-nothing.
+heading — the one thing a learner otherwise never sees. `--dry-run` stays in,
+so the step prints its real commands but resolves every input against the
+sandbox's state (see `--dry-run` below) — without it, print-only would look up
+the tutorial ticket in the real registry and fail on the first missing input.
+Logging is muted for its duration (`logging.disable`), and `_run_grit()`
+already swallows any exception. The capture is already-rendered ANSI, so it is
+re-printed via `Text.from_ansi()`, never as a markup string (that mangles the
+escape codes). It is shown only when it contains a printed `Command`;
+otherwise it falls back to the lesson's own `shows` string, or skips the
+heading silently if that is also empty. The preview runs only for
+`GritCommand` steps: plain `@cli.command`s (`status`, `untrack`, `retrack`)
+ignore `--print-only` and would write the registry. Three lessons need
+`shows`: `untrack` (a direct registry edit, no shell command), `super-to-scaffold` (runs locally,
+submits nothing) and `sex-matcher` (refuses the tutorial's non-insect ToL ID
+under `--print-only`; its dry-run branch skips that check).
 
 A `Lesson` with `manual_action` set (a `Callable[[str], None]` taking the
 ticket ID) has no command to type. Most uses are a real-world action with no
 grit command — `_copy_agp_into_workdir` writes the placeholder AGP a curator
-would have `scp`'d in — but tutorial 0's text screens and tutorial 1's closing lesson reuse
-the same field for "the tutorial runs something and shows you the result" (see
-above). `_run_lesson()` handles these in the same loop: it explains the
+would have `scp`'d in — but tutorial 0's text screens reuse the same field for a screen that just
+waits for Enter (see above). `_run_lesson()` handles these in the same loop: it explains the
 action, waits for a bare Enter via the shared `_ask()` idiom,
 then calls `manual_action(ticket)` before moving on — there is no
 typed-command matching/hint machinery for these. `_run_scenario_auto()` runs
 the action unprompted, matching how it runs a normal lesson's command.
+
+`Scenario.outro`, when set, adds scenario-specific tips to the closing
+"Scenario finished" panel (tutorial 1 uses it for the `post-curation` and
+finalize-qc-runs-qv shortcuts).
 
 `Scenario.difficulty` is shown in `_choose_scenario()`'s menu next to the
 title when non-empty; tutorials 1-5 carry real easy/medium/hard values per the
@@ -262,7 +269,10 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   takes precedence over `--dry-run` when both are set — resolved once in
   `CurationContext.from_yaml` (`dry_run = dry_run and not print_only`) and
   independently in `GritCommand.invoke()`'s pre-callback guard, since that check
-  runs before a `CurationContext` exists.
+  runs before a `CurationContext` exists. The paths still follow `--dry-run`:
+  with both flags a step fakes nothing and prints its real commands, resolved
+  against the sandbox's workdir/registry/curated dir (the tutorial's farm
+  preview relies on this).
 
   `setup`, `pretext-to-asm`, `blast-contaminants`, `rename-and-orient`,
   `microchromosome-combine`, `pretext-to-asm-recurate`, `busco-synteny`,

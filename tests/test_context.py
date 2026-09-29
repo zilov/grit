@@ -273,9 +273,9 @@ def test_dry_run_workdir_isolated_from_real_workdir(tmp_path, monkeypatch):
 
 
 def test_print_only_takes_precedence_over_dry_run(tmp_path, monkeypatch):
-    """Per the binding global constraint: if both --print-only and --dry-run are
-    set, --print-only wins — dry_run resolves to False and the real (non-sandboxed)
-    workdir is used, not dry_run_root()."""
+    """If both --print-only and --dry-run are set, --print-only wins: dry_run
+    resolves to False so no step fakes outputs, but paths stay in the sandbox so
+    the printed commands resolve against the sandbox's state."""
     monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
 
     ctx = CurationContext.from_ticket(
@@ -287,8 +287,9 @@ def test_print_only_takes_precedence_over_dry_run(tmp_path, monkeypatch):
     )
 
     assert ctx.dry_run is False
-    assert "assembly/draft" not in str(ctx.workdir)
-    assert tmp_path not in ctx.workdir.parents and ctx.workdir != tmp_path
+    assert ctx.print_only is True
+    assert tmp_path in ctx.workdir.parents
+    assert ctx.tracker._registry.dir == tmp_path
 
 
 def test_dry_run_isolates_every_writable_path(tmp_path, monkeypatch):

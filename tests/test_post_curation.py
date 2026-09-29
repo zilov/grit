@@ -941,6 +941,9 @@ def test_run_hic_remapping_dry_run_hap2(mock_find_fa, mock_run, mock_ctx, tmp_pa
     hap2_pretext = mock_ctx.tracker.get_output("hic_remapping_hap2", "hap2_pretext")
     assert hap1_pretext is not None and Path(hap1_pretext).exists()
     assert hap2_pretext is not None and Path(hap2_pretext).exists()
+    # named as curationpretext names them: <tol_id>.<hap>_{hr,normal}.pretext
+    hap2_normal = mock_ctx.tracker.get_output("hic_remapping_hap2", "hap2_normal_pretext")
+    assert Path(hap2_normal).name == f"{mock_ctx.tol_id}.{mock_ctx.hap2_prefix}_normal.pretext"
 
 
 @patch("grit.utils.helpers._run")
