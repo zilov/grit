@@ -332,6 +332,8 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   fresh_fasta=True)`, which drops the up-to-date check (not the in-flight one):
   they have just rebuilt the FASTA, and under `--print-only` that FASTA doesn't
   exist yet, so the check would wrongly skip the remap.
+  `--assembly` drops it for hap1 too: the check compares against the canonical
+  FASTA, not the file passed.
 - **`require_workdir(ctx)`** — guards steps that need an existing workdir; skipped in print_only mode
 - **`log.*` not `print()`** — use Python `logging`; `RichHandler` formats output
 - **Minimal docstrings** — one line stating what the function returns/does, only

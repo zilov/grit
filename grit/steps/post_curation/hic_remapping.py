@@ -256,7 +256,12 @@ def run_hic_remapping(
 
     if run_hap1:
         _submit_hic_remapping(
-            ctx, ctx.hap1_prefix, "hic_remapping", assembly=assembly, check_up_to_date=check
+            ctx,
+            ctx.hap1_prefix,
+            "hic_remapping",
+            assembly=assembly,
+            # the check compares against the canonical FASTA, not a custom --assembly
+            check_up_to_date=check and assembly is None,
         )
 
     if run_hap2:
@@ -303,7 +308,10 @@ def run_hic_remapping(
     "assembly",
     type=click.Path(),
     default=None,
-    help="Use this FASTA instead of the canonical assembly resolved from workdir.",
+    help=(
+        "Use this FASTA for hap1 instead of the canonical assembly; always remaps, "
+        "even if the hap1 map is up to date."
+    ),
 )
 @click.pass_context
 def hic_remapping_cmd(ctx, run_hap2, hic_dir, hifi_dir, ont_dir, assembly):
