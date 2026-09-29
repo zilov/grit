@@ -850,6 +850,27 @@ def test_run_hic_remapping_up_to_date_success_is_skipped(
     assert len(ctx.tracker.history("hic_remapping")) == 1
 
 
+@patch("grit.utils.helpers._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_fresh_fasta_ignores_an_up_to_date_map(
+    mock_find_fa, mock_run, mock_ctx, tmp_path
+):
+    """A chain that just rebuilt the FASTA remaps even when the map still looks newer."""
+    import os
+
+    ctx = _hic_ctx_with_tracker(mock_ctx, tmp_path)
+    _seed_hic_run(ctx, tmp_path, "success")
+    fa = tmp_path / "old.fa"
+    fa.write_text(">a\nA\n")
+    os.utime(fa, (1, 1))
+    mock_find_fa.return_value = fa
+    mock_run.return_value = "Job <3> is submitted to queue <oversubscribed>."
+
+    run_hic_remapping(ctx, fresh_fasta=True)
+
+    assert mock_run.call_count == 1
+
+
 @pytest.mark.parametrize("status", ["success", "started"])
 @patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")

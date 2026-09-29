@@ -17,7 +17,7 @@ def test_default_runs_hap1_chain(mock_recurate, mock_hic, mock_ctx):
     run_post_curation_recurate(mock_ctx)
 
     mock_recurate.assert_called_once_with(mock_ctx, "hap1", "pretext_to_asm_recurate")
-    mock_hic.assert_called_once_with(mock_ctx, run_hap1=True, run_hap2=False)
+    mock_hic.assert_called_once_with(mock_ctx, run_hap1=True, run_hap2=False, fresh_fasta=True)
 
 
 @patch("grit.steps.post_curation.post_curation_recurate.run_hic_remapping")
@@ -29,7 +29,7 @@ def test_hap2_flag_runs_hap2_chain_exclusively(mock_recurate, mock_hic, mock_ctx
     run_post_curation_recurate(mock_ctx, run_hap2=True)
 
     mock_recurate.assert_called_once_with(mock_ctx, "hap2", "pretext_to_asm_recurate_hap2")
-    mock_hic.assert_called_once_with(mock_ctx, run_hap1=False, run_hap2=True)
+    mock_hic.assert_called_once_with(mock_ctx, run_hap1=False, run_hap2=True, fresh_fasta=True)
 
 
 def test_cli_help():

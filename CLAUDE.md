@@ -198,6 +198,10 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   alike) whose latest run is still `started` — unless that run's map already
   predates the canonical FASTA — or whose `find_canonical_map()` is newer than its
   `find_canonical_fa()`, so `--hap2` after a hap2-only change remaps only hap2.
+  `post-curation` and `post-curation-recurate` call `run_hic_remapping(...,
+  fresh_fasta=True)`, which drops the up-to-date check (not the in-flight one):
+  they have just rebuilt the FASTA, and under `--print-only` that FASTA doesn't
+  exist yet, so the check would wrongly skip the remap.
 - **`require_workdir(ctx)`** — guards steps that need an existing workdir; skipped in print_only mode
 - **`log.*` not `print()`** — use Python `logging`; `RichHandler` formats output
 - **Minimal docstrings** — one line stating what the function returns/does, only

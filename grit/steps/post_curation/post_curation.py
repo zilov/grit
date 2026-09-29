@@ -41,7 +41,7 @@ def run_post_curation(ctx, *, run_hap2: bool = False):
     log.info("post-curation | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     run_pretext_to_asm(ctx)
     run_haplotig_files(ctx)
-    run_hic_remapping(ctx, run_hap2=run_hap2)
+    run_hic_remapping(ctx, run_hap2=run_hap2, fresh_fasta=True)
 
 
 # ---------------------------------------------------------------------------

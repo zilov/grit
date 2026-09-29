@@ -73,7 +73,9 @@ def _up_to_date_map(ctx: CurationContext, hap_prefix: str) -> Path | None:
     return pretext if pretext.stat().st_mtime > fasta.stat().st_mtime else None
 
 
-def _skip_hap(ctx: CurationContext, hap_prefix: str, step_name: str) -> bool:
+def _skip_hap(
+    ctx: CurationContext, hap_prefix: str, step_name: str, *, check_up_to_date: bool = True
+) -> bool:
     """Report and return True when *hap_prefix*'s remap is in flight or already up to date."""
     if ctx.tracker and (in_flight := _in_flight_run(ctx, step_name)):
         run_dir, job_id = in_flight
@@ -87,7 +89,7 @@ def _skip_hap(ctx: CurationContext, hap_prefix: str, step_name: str) -> bool:
             f"{f' (job {job_id})' if job_id else ''} — not resubmitting:\n  {run_dir}"
         )
         return True
-    pretext = _up_to_date_map(ctx, hap_prefix)
+    pretext = _up_to_date_map(ctx, hap_prefix) if check_up_to_date else None
     if pretext:
         log.info("HiC map for %s is newer than its canonical FASTA — skipping", hap_prefix)
         print_done(f"{hap_prefix} Hi-C map is up to date with the canonical FASTA → {pretext}")
@@ -101,10 +103,11 @@ def _submit_hic_remapping(
     step_name: str,
     *,
     assembly: Path | None = None,
+    check_up_to_date: bool = True,
 ) -> None:
     """Submit one curationpretext run for *hap_prefix*, tracked under *step_name*."""
 
-    if _skip_hap(ctx, hap_prefix, step_name):
+    if _skip_hap(ctx, hap_prefix, step_name, check_up_to_date=check_up_to_date):
         return
 
     run_dir = (
@@ -166,10 +169,10 @@ def _submit_hic_remapping(
 
 
 def _dry_run_hic_remapping_for_hap(
-    ctx: CurationContext, hap_prefix: str, step_name: str
+    ctx: CurationContext, hap_prefix: str, step_name: str, *, check_up_to_date: bool = True
 ) -> dict[str, str]:
     """Write a placeholder remapped pretext map directly into this hap's tracked run_dir."""
-    if _skip_hap(ctx, hap_prefix, step_name):
+    if _skip_hap(ctx, hap_prefix, step_name, check_up_to_date=check_up_to_date):
         return {}
     run_dir = ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
     outputs = write_fake_outputs(
@@ -193,6 +196,7 @@ def run_hic_remapping(
     hifi_dir: Path | None = None,
     ont_dir: Path | None = None,
     assembly: Path | None = None,
+    fresh_fasta: bool = False,
 ) -> None:
     """
     Runs the HiC remapping pipeline (sanger-tol/curationpretext).
@@ -204,7 +208,9 @@ def run_hic_remapping(
 
     ``hic_dir``, ``hifi_dir``, ``ont_dir`` override the values from the ticket
     YAML. If ``ont_dir`` is supplied, ``--read_type ont`` is used automatically.
+    ``fresh_fasta=True`` (a chain that just rebuilt the FASTA) skips the up-to-date check.
     """
+    check = not fresh_fasta
     if run_hap2:
         refuse_hap2_on_single_hap(ctx)
 
@@ -229,22 +235,30 @@ def run_hic_remapping(
     if ctx.dry_run:
         outputs: dict[str, str] = {}
         if run_hap1:
-            outputs.update(_dry_run_hic_remapping_for_hap(ctx, ctx.hap1_prefix, "hic_remapping"))
+            outputs.update(
+                _dry_run_hic_remapping_for_hap(
+                    ctx, ctx.hap1_prefix, "hic_remapping", check_up_to_date=check
+                )
+            )
         if run_hap2:
             print_step_header(ctx.ticket_id, ctx.tol_id, f"HiC remapping ({ctx.hap2_prefix})")
             outputs.update(
-                _dry_run_hic_remapping_for_hap(ctx, ctx.hap2_prefix, "hic_remapping_hap2")
+                _dry_run_hic_remapping_for_hap(
+                    ctx, ctx.hap2_prefix, "hic_remapping_hap2", check_up_to_date=check
+                )
             )
         placeholder = outputs.get("hap1_pretext") or outputs.get("hap2_pretext") or ctx.workdir
         print_done(f"[dry-run] Remapped pretext map → {placeholder}")
         return
 
     if run_hap1:
-        _submit_hic_remapping(ctx, ctx.hap1_prefix, "hic_remapping", assembly=assembly)
+        _submit_hic_remapping(
+            ctx, ctx.hap1_prefix, "hic_remapping", assembly=assembly, check_up_to_date=check
+        )
 
     if run_hap2:
         print_step_header(ctx.ticket_id, ctx.tol_id, f"HiC remapping ({ctx.hap2_prefix})")
-        _submit_hic_remapping(ctx, ctx.hap2_prefix, "hic_remapping_hap2")
+        _submit_hic_remapping(ctx, ctx.hap2_prefix, "hic_remapping_hap2", check_up_to_date=check)
 
 
 # ---------------------------------------------------------------------------
