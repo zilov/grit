@@ -273,7 +273,7 @@ class RegistryManager:
     def _refresh_pending_jobs(self) -> None:
         """Bulk-check all pending bsub jobs and write success/failed to each tracker."""
         from grit.core.run_tracker import RunTracker
-        from grit.utils.helpers import _check_bjobs
+        from grit.utils.helpers import _check_bjobs, lsf_cluster
 
         # Collect pending job_id → (tracker, entry, tol_id, hap1, hap2) across all active tickets
         pending: dict[str, tuple] = {}
@@ -296,6 +296,7 @@ class RegistryManager:
             return
 
         live = _check_bjobs(list(pending.keys()))
+        current_cluster = lsf_cluster()
 
         for job_id, bjobs_status in live.items():
             if job_id not in pending:
@@ -306,26 +307,55 @@ class RegistryManager:
 
             if bjobs_status == "EXIT":
                 tracker.finish(step, run_dir, "failed")
-            elif bjobs_status == "gone":
+            elif bjobs_status == "DONE":
+                # Resolved here, before `grit status -t` resolves canonical files, so a
+                # finished run's outputs are canonical in the same output. Missing
+                # outputs are left for the curator to check, not marked failed.
                 self._resolve_gone_job(tracker, step, run_dir, tol_id, hap1, hap2)
+            elif bjobs_status == "gone":
+                # 'gone' only means *this* cluster has no record of the job. A job
+                # submitted from another cluster reads the same way, so it is
+                # evidence of failure only when the clusters match.
+                job_cluster = entry.get("cluster")
+                self._resolve_gone_job(
+                    tracker,
+                    step,
+                    run_dir,
+                    tol_id,
+                    hap1,
+                    hap2,
+                    authoritative=job_cluster is not None and job_cluster == current_cluster,
+                )
+            # 'unknown' means LSF could not be asked: no evidence either way.
 
     @staticmethod
     def _resolve_gone_job(
-        tracker, step: str, run_dir: Path, tol_id: str, hap1: str = "hap1", hap2: str = "hap2"
+        tracker,
+        step: str,
+        run_dir: Path,
+        tol_id: str,
+        hap1: str = "hap1",
+        hap2: str = "hap2",
+        *,
+        authoritative: bool = False,
     ) -> None:
-        """Resolve a gone bsub job via output file presence."""
-        from grit.utils.helpers import _get_step_specs, collect_outputs
+        """Resolve a gone bsub job from its outputs; only call it failed when *authoritative*.
 
-        specs = _get_step_specs(step)
-        if specs:
-            outputs = collect_outputs(specs, run_dir, tol_id, hap1=hap1, hap2=hap2)
-            tracker.finish(
-                step, run_dir, "success" if outputs else "failed", outputs=outputs or None
-            )
-        elif step == "sex_matcher":
-            found = run_dir.exists() and any(run_dir.glob("Best_match*"))
-            tracker.finish(step, run_dir, "success" if found else "failed")
-        # other bsub steps: leave as-is until epilogue fix propagates
+        Outputs on disk prove completion from any host, so success is recorded
+        unconditionally. Their absence proves nothing unless LSF was asked about
+        the cluster the job was submitted to, so failure needs *authoritative*.
+        """
+        from grit.utils.helpers import _get_step_specs, finished_run_outputs
+
+        if step != "sex_matcher" and not _get_step_specs(step):
+            return  # other bsub steps: leave as-is until epilogue fix propagates
+        complete, outputs = finished_run_outputs(
+            tracker, step, run_dir, tol_id, hap1=hap1, hap2=hap2
+        )
+        if complete:
+            tracker.finish(step, run_dir, "success", outputs=outputs or None)
+        elif authoritative and not outputs:
+            tracker.finish(step, run_dir, "failed")
 
     def _load(self) -> list[dict]:
         """Return the registry document; raise RegistryError if it exists but is unreadable."""

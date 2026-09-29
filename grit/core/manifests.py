@@ -21,10 +21,10 @@ STEP_MANIFESTS: dict[str, dict] = {
         "dir": "workdir",
         "files": ["Best_match*.txt"],
     },
-    # script cd-s to workdir/reference, output stays there
+    # reheadered reference(s) land in the tracked run_dir
     "find_reference": {
-        "dir": "workdir",
-        "files": ["reference/*.fa"],
+        "dir": "run_dir",
+        "files": ["*_reheader.fna"],
     },
     "pretext_to_asm": {
         "dir": "run_dir",
@@ -42,13 +42,15 @@ STEP_MANIFESTS: dict[str, dict] = {
         "dir": "run_dir",
         "files": ["{tol_id}*haplotigs*.fa"],
     },
+    # *normal.pretext is the canonical map finalize-qc publishes; the larger
+    # *hr.pretext beside it can land first, so it does not prove the run finished
     "hic_remapping": {
         "dir": "run_dir",
-        "files": ["pretext_maps_processed/{tol_id}*hr.pretext"],
+        "files": ["pretext_maps_processed/{tol_id}*normal.pretext"],
     },
     "hic_remapping_hap2": {
         "dir": "run_dir",
-        "files": ["pretext_maps_processed/{tol_id}*hr.pretext"],
+        "files": ["pretext_maps_processed/{tol_id}*normal.pretext"],
     },
     # the script writes everything into a {tol_id}/ subdir of the run dir
     "microchromosome_second_shot": {
@@ -83,10 +85,6 @@ STEP_MANIFESTS: dict[str, dict] = {
         "dir": "run_dir",
         "files": [],  # output goes to assembly_curated_dir; just track exit code
     },
-    "validate_files": {
-        "dir": "run_dir",
-        "files": [],  # no output files; success = exit 0
-    },
     "finalize_qc": {
         "dir": "run_dir",
         "files": [],
@@ -110,7 +108,6 @@ STEP_TO_STATUS: dict[str, str] = {
     "haplotig_files": "post_curation",
     "hic_remapping": "remapping",
     "qv": "ready_for_qc",
-    "validate_files": "ready_for_qc",
     "finalize_qc": "post_processing",
     "post_processing": "done",
 }

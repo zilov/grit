@@ -211,6 +211,111 @@ def test_collect_curation_results_sums_breaks_joins_with_micro_run(tmp_path):
     assert (result.cuts, result.breaks, result.joins) == (4, 3, 15)
 
 
+# --- CORR-20: parse errors are logged (not silently swallowed) ---
+
+
+def test_collect_curation_results_chromosome_csv_parse_error_is_logged(tmp_path, caplog):
+    """A CSV that can't be read must not vanish silently — the curator should
+    see, via the log, which file failed and why, even though the summary
+    stays best-effort (no crash, no allosomes reported for it)."""
+    tracker, workdir = _make_tracker(tmp_path)
+
+    bad_csv = workdir / "sDipInt39.hap1.primary.chromosome.list.csv"
+    bad_csv.mkdir()  # glob matches it, but read_text() raises IsADirectoryError
+
+    with caplog.at_level("WARNING"):
+        result = collect_curation_results(tracker, workdir, "sDipInt39")
+
+    assert result.autosomes is None
+    assert str(bad_csv) in caplog.text
+    assert "IsADirectoryError" in caplog.text or "Is a directory" in caplog.text
+
+
+def test_collect_curation_results_pta_log_parse_error_is_logged(tmp_path, caplog):
+    tracker, workdir = _make_tracker(tmp_path)
+
+    pta_dir = workdir / "pretext_to_asm" / "run1"
+    pta_dir.mkdir(parents=True)
+    bad_log = pta_dir / "sDipInt39.log"
+    bad_log.mkdir()
+    tracker.finish("pretext_to_asm", pta_dir, "success")
+
+    with caplog.at_level("WARNING"):
+        result = collect_curation_results(tracker, workdir, "sDipInt39")
+
+    assert result.cuts is None
+    assert str(bad_log) in caplog.text
+
+
+def test_collect_curation_results_micro_log_parse_error_is_logged(tmp_path, caplog):
+    tracker, workdir = _make_tracker(tmp_path)
+
+    pta_dir = workdir / "pretext_to_asm" / "run1"
+    pta_dir.mkdir(parents=True)
+    (pta_dir / "sDipInt39.log").write_text(
+        "Curation made 3 cuts in contigs, 2 breaks at gaps and 11 joins\n"
+    )
+    tracker.finish("pretext_to_asm", pta_dir, "success")
+
+    micro_dir = workdir / "pretext_to_asm_micro" / "run1"
+    micro_dir.mkdir(parents=True)
+    bad_micro_log = micro_dir / "sDipInt39.log"
+    bad_micro_log.mkdir()
+    tracker.finish("pretext_to_asm_micro", micro_dir, "success")
+
+    with caplog.at_level("WARNING"):
+        result = collect_curation_results(tracker, workdir, "sDipInt39")
+
+    # main round's totals survive even though the micro log failed to parse
+    assert (result.cuts, result.breaks, result.joins) == (3, 2, 11)
+    assert str(bad_micro_log) in caplog.text
+
+
+def test_collect_curation_results_sex_matcher_parse_error_is_logged(tmp_path, caplog):
+    tracker, workdir = _make_tracker(tmp_path)
+
+    bad_best = workdir / "Best_match_sDipInt39.txt"
+    bad_best.mkdir()
+
+    with caplog.at_level("WARNING"):
+        result = collect_curation_results(tracker, workdir, "sDipInt39")
+
+    assert result.sex_matches == []
+    assert str(bad_best) in caplog.text
+
+
+def test_collect_curation_results_qv_read_error_is_logged(tmp_path, caplog):
+    tracker, workdir = _make_tracker(tmp_path)
+
+    curated_dir = tmp_path / "curated"
+    merquryk = curated_dir / "merquryk"
+    merquryk.mkdir(parents=True)
+    bad_qv = merquryk / "sDipInt39.qv"
+    bad_qv.mkdir()
+
+    with caplog.at_level("WARNING"):
+        result = collect_curation_results(tracker, workdir, "sDipInt39", curated_dir=curated_dir)
+
+    assert result.qv_text is None
+    assert str(bad_qv) in caplog.text
+
+
+def test_collect_curation_results_completeness_read_error_is_logged(tmp_path, caplog):
+    tracker, workdir = _make_tracker(tmp_path)
+
+    curated_dir = tmp_path / "curated"
+    merquryk = curated_dir / "merquryk"
+    merquryk.mkdir(parents=True)
+    bad_comp = merquryk / "sDipInt39.completeness.stats"
+    bad_comp.mkdir()
+
+    with caplog.at_level("WARNING"):
+        result = collect_curation_results(tracker, workdir, "sDipInt39", curated_dir=curated_dir)
+
+    assert result.completeness_text is None
+    assert str(bad_comp) in caplog.text
+
+
 def test_collect_curation_results_ignores_micro_run_when_it_never_ran(tmp_path):
     """No microchromosome workflow → totals unaffected, same as before this feature."""
     tracker, workdir = _make_tracker(tmp_path)

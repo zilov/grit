@@ -272,3 +272,31 @@ def test_cleanup_cmd_rejects_dry_run(monkeypatch, tmp_path):
 
     assert result.exit_code != 0
     assert "--dry-run is not supported" in plain(result.output)
+
+
+@patch("grit.core.cleanup._submit_bsub")
+@patch("grit.core.cleanup.RegistryManager")
+def test_run_cleanup_counts_an_untrackable_gzip_submission_as_an_error(
+    mock_registry_cls, mock_submit_bsub, tmp_path
+):
+    from grit.utils.helpers import BsubSubmissionError
+
+    workdirs = []
+    for name in ("wd1", "wd2"):
+        run_dir = tmp_path / name / "pretext_to_asm" / "run1"
+        run_dir.mkdir(parents=True)
+        (run_dir / "a.hap1.curated.fa").write_text("ACGT" * 10)
+        workdirs.append(tmp_path / name)
+
+    mock_registry = mock_registry_cls.return_value
+    mock_registry.done_tickets.return_value = [
+        {"ticket_id": "RC-1", "tol_id": "tolId1", "workdir": str(workdirs[0])},
+        {"ticket_id": "RC-2", "tol_id": "tolId2", "workdir": str(workdirs[1])},
+    ]
+    mock_submit_bsub.side_effect = [BsubSubmissionError("no job id"), "12345"]
+
+    with patch("grit.core.cleanup.RunTracker", return_value=_FakeTracker()):
+        run_cleanup(dry_run=False)
+
+    assert mock_submit_bsub.call_count == 2
+    mock_registry.mark_cleaned_up.assert_called_once_with("RC-2")

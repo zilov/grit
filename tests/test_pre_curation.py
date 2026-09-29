@@ -1,5 +1,6 @@
 """Tests for pre_curation steps."""
 
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -29,10 +30,8 @@ def test_sort_by_mtime_returns_newest_first(tmp_path):
     f2 = tmp_path / "new.fa"
     f1.write_text("old")
     f2.write_text("new")
-    import time
-
-    time.sleep(0.01)
-    f2.touch()  # make f2 newer
+    os.utime(f1, (1000, 1000))
+    os.utime(f2, (2000, 2000))
 
     result = _sort_by_mtime([str(f1), str(f2)])
     assert result[0] == str(f2)

@@ -154,3 +154,9 @@ Small fixes and improvements — close in one batch when still relevant.
   steps (`module_cmd(...)` in `grit/utils/modules.py`) instead of relying on
   singularity already being on PATH.
 
+
+- [x] **`grit status`: name the cluster when bjobs can't see a job** — a run
+  submitted from `farm22` and viewed from `tol22` (or the reverse) reads as
+  `Job <N> is not found`, so its row said `unknown (gone)`. That reads like a lost job.
+  It now says `unknown (job on <cluster>)` whenever the record's `cluster`
+  differs from `lsf_cluster()`. It is a display change only: the record stays `started`.

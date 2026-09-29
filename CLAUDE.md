@@ -35,11 +35,29 @@ Each step file exports:
 
 ### Command execution
 
-All shell commands go through `_run(cmd, print_only)` in `grit/utils/helpers.py`. When `print_only=True`, commands are printed but not executed — enables dry-run mode via `--print-only` flag.
+All shell commands go through `_run(cmd, print_only)` in `grit/utils/helpers.py`. When `print_only=True`, commands are printed but not executed — enables dry-run mode via `--print-only` flag. A captured command that fails raises `CommandError` (a `CalledProcessError` subclass, so existing `except` clauses still match) whose message ends with the tail of the tool's stderr, and the same tail is logged at error level — so the curator sees the tool's own diagnostic, not just an exit code. Callers that parse the return value get stdout only; stderr never leaks into it. `_run(..., timeout=seconds)` runs the command in its own process group and kills the whole group (shell and children) on expiry, raising `TimeoutExpired`; the default is no timeout, because the synchronous `_run` calls include multi-GB copies to NFS and tools whose runtime scales with the assembly, and a wrong default would kill real work. Never put a timeout on a `bsub` submission.
 
-`bsub` jobs are submitted via `_submit_bsub()` → `_run()`. Job IDs are parsed and logged; execution is non-blocking (fire-and-forget).
+`bsub` jobs are submitted via `_submit_bsub()` → `_run()`. Job IDs are parsed (`Job <N> is submitted`) and logged; execution is non-blocking (fire-and-forget). If bsub exits 0 without that line, `_submit_bsub` raises `BsubSubmissionError` rather than return anything — only a numeric job ID may ever reach `record_job()`/the registry, since a non-numeric one reads as `gone` to `bjobs`.
 
-**Tracking true completion of fire-and-forget bsub jobs:** `_state_update_epilogue()` builds a `bsub -Ep '...'` epilogue command that calls the hidden `grit _state-update --workdir --step --run-dir --status` CLI command; LSF runs it automatically when the job finishes, using `$LSB_JOBEXIT_STAT` to report success/failure. `_state-update` re-globs the run_dir for that step's `_OUTPUT_SPECS` and calls `RunTracker.finish()` with the real outputs — so the tracker's "success" only ever reflects verified on-disk state, not just "the submission succeeded." Every step that calls `_submit_bsub()` should pass this as `epilogue_cmd` (see `fastga.py`, `busco_synteny.py`, `rename_and_orient.py`). This mechanism only works when grit's own `bsub` call is the thing LSF is tracking — if a step instead shells out to an external script that submits (or backgrounds) its own async work internally, grit never sees a job it can attach an epilogue to, and the step's tracked status can go "success" long before the real work finishes.
+**Tracking true completion of fire-and-forget bsub jobs:** `_state_update_epilogue()` builds a `bsub -Ep '...'` epilogue command that calls the hidden `grit _state-update --workdir --step --run-dir --status` CLI command; LSF runs it automatically when the job finishes, using `$LSB_JOBEXIT_STAT` to report success/failure; when that is unset or non-numeric the epilogue calls nothing, so the run stays `started` for the bjobs sweep. The grit it calls is `sys.argv[0]` made absolute, or `grit` from `$PATH` when argv[0] isn't an executable (e.g. a `.py`); every argument is `shlex`-quoted and `_submit_bsub` quotes the whole `-Ep` string the same way, so workdirs with spaces or quotes survive. `_state-update` re-globs the run_dir for that step's `_OUTPUT_SPECS` and calls `RunTracker.finish()` with the real outputs. **`success` requires outputs:** a job LSF reports as exit 0 is recorded `success` only when `finished_run_outputs()` (`grit/utils/helpers.py`) calls the run complete — `STEP_MANIFESTS` via `verify_outputs()` where the step has a manifest, else any `_OUTPUT_SPECS` match, the same criterion `_resolve_gone_job` uses. When it doesn't, `_state-update` writes nothing and the run stays `started` (with its `job_id`), so the next `grit status` bjobs sweep re-checks it; it is *not* marked `failed`, because an exit-0 job with missing outputs is not evidence of failure and `failed` is terminal. A new epilogue step therefore needs `_OUTPUT_SPECS` or a manifest entry, or it can never succeed. Every step that calls `_submit_bsub()` must pass this as `epilogue_cmd`, and must wrap the submission and its `record_job()` in a try/except that calls `finish(step, run_dir, "failed", untracked=ctx.untracked)` and re-raises — a rejected submission leaves no job for the epilogue or bjobs to resolve, so it would strand the `started` record (see `fastga.py`, `busco_synteny.py`, `rename_and_orient.py`). `tests/test_bsub_submission.py` enforces both for every call site under `grit/steps/`. This mechanism only works when grit's own `bsub` call is the thing LSF is tracking — if a step instead shells out to an external script that submits (or backgrounds) its own async work internally, grit never sees a job it can attach an epilogue to, and the step's tracked status can go "success" long before the real work finishes So when a tool ships as a wrapper that issues its own `bsub`, bypass the wrapper and submit what it runs: `hic_remapping.py` submits `grit/scripts/curationpretext.sh` (the module's wrapper minus its own `bsub`, same resources) so the nextflow head job is grit's job. The script resolves `main.nf` *inside the job* from the module-loaded wrapper (`grep` on `$(command -v curationpretext.sh)`) so version bumps stay in the `grit` module, never pinned in grit. Keep job-side shell logic in such a repo script, not inline in `inner_cmd`: `_submit_bsub` wraps `inner_cmd` in double quotes, so inline `$VAR`s need `\$` escaping and the printed command becomes unreadable. A nextflow head exits 0 only when the whole pipeline completed, so the epilogue's `$LSB_JOBEXIT_STAT` is the completion signal. A step that skips resubmission because a prior run exists must treat a latest record of `started` as in flight — report it and return — and never `finish()` it from outputs that may still be mid-write.
+
+**Reconciling bsub jobs via `bjobs` (`_check_bjobs` → `_refresh_pending_jobs` →
+`_resolve_gone_job`):** the fallback for runs whose epilogue never fired, and
+for runs submitted without one — chiefly `hic_remapping` records from before it
+owned its job (its `bsub` was then issued by `curationpretext.sh`). `_check_bjobs`
+returns three kinds of answer and they must stay distinct: an LSF state,
+`"gone"` (LSF explicitly answered `Job <N> is not found`, parsed from stderr)
+and `"unknown"` (LSF could not be asked — no `bjobs`, an LSF library error).
+Only the first two are evidence. `"gone"` is evidence *about the cluster that
+was queried*: a job submitted from another cluster reads exactly the same way,
+which is why `start()` records `cluster` (`lsf_cluster()`, from `LSF_ENVDIR`)
+on every run. The rule `_resolve_gone_job` applies, and any new reconciliation
+path must apply too: **output files on disk promote a run to `success` from any
+host; their absence marks it `failed` only when the job's recorded cluster is
+the one queried.** Records written before `cluster` existed have none, so they
+are never auto-failed. Completion itself is judged by `STEP_MANIFESTS` via
+`verify_outputs()` (the same criterion `grit status`'s table uses), falling back
+to "any `_OUTPUT_SPECS` match" only for steps with no manifest entry.
 
 Any step that shells out to an external script/pipeline should `cd {run_dir} && ...` before invoking it, even when the tool also takes an explicit output-dir flag — nextflow pipelines (e.g. `curationpretext`) always write `.nextflow.log`/`work/`/`.nextflow/` into the invoking cwd regardless of other flags, and `cd`-ing first keeps stray files out of wherever grit happened to be run from. See `fastga.py`, `hic_remapping.py`, `find_reference.py`, `sex_matcher.py` for the pattern.
 
@@ -58,7 +76,10 @@ post-`start()` work in try/except and call `ctx.tracker.finish(step, run_dir,
 "failed", untracked=ctx.untracked)` itself on any failure (a script error,
 or a "success" exit that produced none of the expected outputs), then
 re-raise, or a crash strands the record as "started" forever with no
-recovery path but `grit untrack`.
+recovery path but `grit untrack`. `qv` is the same kind of step:
+`kmer_completeness.bash` blocks on its own `bsub -K` MerquryFK job but exits 0
+whatever that job did, so `run_qv` judges completion by the `.qv` and
+`.completeness.stats` files in `merquryk/`, never by the wrapper's exit status.
 
 ### HPC module loading
 
@@ -224,6 +245,9 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   guard) only act on records with `status="started"`, which an untracked run
   never has — for the same reason `record_job()` finds nothing to patch, so an
   untracked bsub run stores no `job_id` and can't be recovered via bjobs.
+  The resolvers' filesystem fallbacks honour the marker too: `find_latest_dir()`
+  never returns a run dir whose latest record is `untracked` (for any caller), so
+  an `--untracked` run cannot become canonical just by being the newest dir on disk.
 - **No global state** — everything flows through `ctx`
 - **`print_only` everywhere** — every step respects `ctx.print_only`; `_run()` enforces it
 - **`--dry-run`** — a separate mode from `print_only`, for exercising step-sequencing/
@@ -256,11 +280,6 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   `rm -rf ~/.grit/dry_run`. See `tests/local_smoke_test.sh`'s dry-run section
   for a real chained example.
 
-  `validate-files` is allowlisted in `_DRY_RUN_SUPPORTED_COMMANDS` for when it's
-  eventually registered on the CLI group, but its Click command is currently
-  commented out in `click_cli.py` (pre-existing, unrelated gap) — `grit
-  validate-files`/`grit --dry-run validate-files` are not reachable today.
-
   `add_pretext_view_tracks.py` deliberately has no dry-run branch and is not in
   `_DRY_RUN_SUPPORTED_COMMANDS` — it mutates a `.pretext` binary in place, has
   no tracked output to fake, and plays no part in the canonical-resolution/
@@ -273,7 +292,13 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   (single-hap) assembly; the shared check for gating hap2-fabrication bugs, used by
   `pretext_to_asm`, `blast_contaminants`, `microchromosome_combine`,
   `super_to_scaffold`, `microchromosome_second_shot`, and `finalize_qc` (in both
-  their dry-run branches and their real paths).
+  their dry-run branches and their real paths). All five canonical resolvers
+  (`find_curated_fa`, `find_canonical_{fa,haplotigs,chr_list,map}`) raise
+  `FileNotFoundError` for `ctx.hap2_prefix` on a single-hap ticket via
+  `_refuse_missing_hap2()` — their alias/no-prefix fallbacks would otherwise
+  hand back hap1's file as `alternate`'s — and `refuse_hap2_on_single_hap()`
+  makes `hic-remapping --hap2` / `rename-and-orient --hap2` a `UsageError`
+  before anything is started or submitted.
 - **`require_workdir(ctx)`** — guards steps that need an existing workdir; skipped in print_only mode
 - **`log.*` not `print()`** — use Python `logging`; `RichHandler` formats output
 - **Minimal docstrings** — one line stating what the function returns/does, only
@@ -281,24 +306,43 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   the implementation, no historical context about bugs/commits that motivated
   it (that belongs in the commit message, not the code)
 - **`console.print()`** for structured step output (headers, tips, done messages) via `grit/utils/output.py`
-- **Assembly type detection** — `_detect_assembly_type(yaml_data)` maps YAML keys to `(assembly_type, hap1_prefix, hap2_prefix)`: `hap1/hap2`, `primary/alternate`
-- **Canonical FASTA priority** — `find_canonical_fa`/`find_canonical_chr_list`/`find_canonical_haplotigs`
+- **Assembly type detection** — `_detect_assembly_type(yaml_data)` maps YAML keys to `(assembly_type, hap1_prefix, hap2_prefix)`: `hap1/hap2`, `primary/alternate`. A YAML with `paternal`/`maternal` keys is recognised but not supported: it raises `UnsupportedAssemblyTypeError` (`grit/core/context.py`, a `click.ClickException`) at context build with a clear message, rather than the generic "Cannot detect assembly type" `ValueError` an unrecognised key set gets, or silently mishandling a trio assembly. The `paternal`/`maternal` branches still present elsewhere (`helpers.py`'s `_PTA_ALIASES`, `is_single_hap`, a few step files) are dead code that can never be reached while detection rejects those keys — real trio support needs both sides done together.
+- **Canonical FASTA priority** — `find_canonical_fa`/`find_canonical_chr_list`/`find_canonical_haplotigs`/`find_canonical_map`
   (`grit/utils/helpers.py`) resolve "the current canonical assembly" per haplotype from a single flat,
   mtime-ordered pool of tracker steps (`pretext_to_asm`, `microchromosome_combine`,
-  `blast_contaminants`, `rename_and_orient[_hap2]`, `pretext_to_asm_recurate[_hap2]`) — the freshest
-  existing tracked output wins outright, with a filesystem fallback when nothing is tracked. A step
+  `blast_contaminants`, `rename_and_orient[_hap2]`, `pretext_to_asm_recurate[_hap2]` — each `_hap2`
+  step only in hap2's pool and its unsuffixed twin only in hap1's, via `_rename_and_orient_step_name()`
+  / `_recurate_step_name()`, never by relying on output keys differing) — the freshest
+  existing tracked output wins outright, with a filesystem fallback when nothing is tracked — that
+  fallback skips run dirs the tracker marks `untracked` or still `started`
+  (`find_latest_dir(..., settled_only=True)`, `_settled_matches()`), so it only ever sees dirs the
+  tracker has no opinion on or has seen finish. A step
   whose latest successful run recorded no matching output key is not dropped from that comparison:
   `_step_output()` re-globs that run dir with the step's `_OUTPUT_SPECS` first, so a run with
   incompletely recorded outputs can't hand canonical back to an older step (canonical must never move
-  backwards in time). See
+  backwards in time). The recorded output comes from `RunTracker.get_output()`, which reads only the
+  step's latest successful run (any of that run dir's success records) and returns None rather than
+  let an older run of the same step stand in — otherwise the re-glob never fires (report 06 T2). Only
+  a *finished* run competes: `_step_output` asks for
+  `latest_run_dir(step, include_started=False)`, because a `started` run is a bsub job that may still
+  be writing the file (report 06 T3); the default `include_started=True` stays for callers that need
+  to see in-flight runs (resubmit guards, `untrack`, `cleanup`). See
   `docs/recuration-canonical-priority.md` for the full curator-facing decision path and a flowchart — read
-  it before touching any of these three functions or the recurate step. `grit status -t`'s step-history
-  table surfaces this per row via a "Canonical" column showing per-type codes (`fa`/`hap`/`chr`), with a
+  it before touching any of these four functions or the recurate step. `grit status -t`'s step-history
+  table surfaces this per row via a "Canonical" column showing per-type codes (`fa`/`hap`/`chr`/`map`), with a
   `(1)`/`(2)` haplotype-index suffix when a ticket has more than one haplotype — e.g. a recurate row can
   read `hap(1),chr(1)` while a later rename-and-orient row reads `fa(1)`, making clear they're each
   canonical for a *different* output, not in conflict. `_canonical_mark()` marks a row for a canonical
   file found in that row's run dir even when the run's recorded `outputs` never captured it, so the
-  column can't disagree with the canonical-files table above it
+  column can't disagree with the canonical-files table above it (that re-glob matches a canonical file
+  anywhere under the run dir, since `hic_remapping` writes its map into a `pretext_maps_processed/`
+  subdir rather than the run dir itself). `find_canonical_map` is the odd one out in that pool: its
+  pool is a single step per haplotype (`hic_remapping` / `hic_remapping_hap2`) and it resolves each
+  haplotype only from that haplotype's own step and output key (`hap{1,2}_normal_pretext`) — no alias
+  or no-prefix fallback, because handing hap1's file back for hap2 here means publishing the wrong
+  haplotype's Hi-C map to NFS. Only `*normal.pretext` is canonical; the `hr.pretext` beside it is the
+  curation input and stays on the farm, and `setup`'s staged draft map never counts. Its consumers are
+  `finalize_qc`'s NFS copy and `grit status`'s download tip
 - **`GritJiraIssue`** is a shared server library injected via `sys.path` (path in user config), not a pip dependency
 
 ## Planning / design docs
@@ -356,6 +400,14 @@ misconfiguration:
   on the parent is misleading.
 - **The node is shared** with other curators. Real compute goes through `bsub`,
   never into the login shell.
+- **There is more than one LSF cluster, and `bjobs` only answers for its own.**
+  `farm22-agentic1` is in the `farm22` cluster; curation jobs are typically
+  submitted from a `tol22` node. Asking about a `tol22` job from `farm22` gives
+  `Job <N> is not found` — indistinguishable from a job that never existed —
+  and `bjobs -m tol22` gives `User permission denied`. So a `grit status` run on
+  the agentic node cannot see the curator's jobs, and must never conclude
+  anything from that (see the `_check_bjobs` note above). `lsid` names the
+  current cluster, `lsclusters` lists them.
 - **Everything runs as the curator's own account**, not a service account —
   same quota, same groups, same audit trail.
 

@@ -112,6 +112,14 @@ def run_sex_matcher(ctx: CurationContext) -> None:
 
                 job_id = last.get("job_id")
                 live_status = _check_bjobs([job_id])[job_id] if job_id else "gone"
+                if live_status == "unknown":
+                    log.warning(
+                        "Could not reach LSF to check the previous sex_matcher job (%s) — "
+                        "not resubmitting. Run dir: %s",
+                        job_id,
+                        last.get("run_dir"),
+                    )
+                    return
                 if live_status in ("PEND", "RUN"):
                     log.warning(
                         "sex_matcher job already submitted and still running (%s) — skipping. "
@@ -155,10 +163,14 @@ def run_sex_matcher(ctx: CurationContext) -> None:
         if run_dir
         else None
     )
-    job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
-
-    if ctx.tracker and run_dir and job_id:
-        ctx.tracker.record_job("sex_matcher", run_dir, job_id)
+    try:
+        job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
+        if ctx.tracker and run_dir and job_id:
+            ctx.tracker.record_job("sex_matcher", run_dir, job_id)
+    except Exception:
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("sex_matcher", run_dir, "failed", untracked=ctx.untracked)
+        raise
 
     if not ctx.print_only:
         matches = glob.glob(str(work_dir / "Best_match*"))

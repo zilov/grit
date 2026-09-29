@@ -25,7 +25,6 @@ _DRY_RUN_SUPPORTED_COMMANDS = frozenset(
         "post-curation-recurate",
         "fastga-stats",
         "haplotig-files",
-        "validate-files",
         "super-to-scaffold",
         "busco-curated",
         "find-reference",

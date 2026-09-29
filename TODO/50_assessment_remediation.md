@@ -55,10 +55,11 @@ Ticked items carry their evidence inline. Summary of what has actually landed on
 |---|---|---|
 | `1aae166` | smoke test runs in CI; console width and path matching decoupled from `$HOME` length and terminal width | `TEST-11` (smoke half) |
 | `50f2142` | smoke test can fail again (`run()` helper), four inapplicable commands dropped, farm section auto-skips off-farm; fixed the empty `alternate/` dir its first real run exposed | `DX-01` |
+| `f3ee015` | **read this one before touching any reconciliation path.** `bjobs` sweep stops reading "not found" as "finished": three-state `_check_bjobs`, cluster recorded per run, failure inferred only from the job's own cluster | `CORR-04`, `TEST-04` |
 | `256a92b` | `TODO/` excluded from ruff formatting — ruff 0.16 formats Python blocks inside Markdown and would fail CI on a design note | — |
 | `5b93ccc` | registry fails closed on an unreadable file, keeps `.bak` + dated snapshots, writes via a per-writer temp path at 0600 | `CORR-01`, `SEC-03`, `CORR-02` (interim only) |
 
-Three corrections to the assessment itself, all worth carrying forward:
+Four corrections to the assessment itself, all worth carrying forward:
 
 - **`DX-01`'s symptom was wrong.** The smoke test did not die under `set -euo
   pipefail`; `cmd && ok "..."` is exempt from `errexit`, so it ran to the end and
@@ -77,6 +78,25 @@ Three corrections to the assessment itself, all worth carrying forward:
   left an empty `alternate/` directory for single-hap tickets — the real path
   never creates one. No audit found it; running the repaired smoke test did, on
   its first green pass. Expect more of these as Batch 1's tests come online.
+- **`CORR-04` was filed with the wrong symptom, the wrong trigger and half the
+  severity — see `f3ee015`.** Filed as "a `bjobs` outage makes
+  `_resolve_gone_job` finalise still-running jobs as *success* off partially
+  written files". In the field it did the opposite: it wrote a permanent
+  *`failed`* over three tickets' healthy in-flight `hic_remapping` runs. And
+  there was no outage — `bjobs` answered correctly, for the wrong cluster.
+  `farm22-agentic1` is in `farm22`, curation jobs run in `tol22`, and LSF says
+  `Job <N> is not found` for a foreign job exactly as it does for a forgotten
+  one. Two things to carry forward:
+  **(1) An agent session on the agentic node is itself a writer to the shared
+  registry.** `grit status` reconciles and writes; run from a node that cannot
+  see the curator's jobs, it corrupts their step history. Treat `grit status`
+  on `farm22-agentic1` as a mutating command, not a read.
+  **(2) Absence of evidence keeps being read as evidence of failure, and a
+  `failed` record is not recoverable.** `pending_jobs()` treats it as terminal,
+  so the run is never re-checked and `untrack`/`retrack` do not apply to it
+  (`retrack` only promotes `untracked` runs). Any path that writes a terminal
+  status off a negative — no outputs, no job, no answer — deserves the same
+  audit. `DOM-02`, `DOM-04` and `CORR-07` are the same shape.
 
 ---
 
@@ -108,13 +128,16 @@ to be trustworthy first. This is also where the missing boundary tests get
 written, because Batches 2-5 need them.
 
 - [ ] `ARCH-07` — four commands allowlisted for `--dry-run` with zero `dry_run`
-      code: `haplotig_files`, `validate_files`, `post_curation`,
+      code: `haplotig_files`, ~~`validate_files`~~ (deleted, `ARCH-07b`), `post_curation`,
       `post_curation_recurate`. `grit --dry-run haplotig-files` does real
       filesystem writes. Either implement the branch or remove from
       `_DRY_RUN_SUPPORTED_COMMANDS`. *Verified: 0 `dry_run` hits in all four.*
-- [ ] `ARCH-07b` — `validate-files` is allowlisted, has a `_cmd`, and is
-      commented out of the command tree (`click_cli.py:280`): 151 LOC
-      unreachable. Register it or delete it.
+- [x] `ARCH-07b` — **deleted** (author's call, 2026-09-25: unused, not called
+      from notebooks either). Nothing invoked `run_validate_files` besides its own
+      unregistered `_cmd`, and the registry held no `validate_files` records, so
+      its `STEP_MANIFESTS`/`STEP_TO_STATUS` entries and the dry-run allowlist entry
+      went with it. `ARCH-07` is now down to three commands. *Evidence:* `grep -rn
+      validate_files grit/ tests/` is empty.
 - [x] `DX-01` — **fixed, and the finding's diagnosis was wrong in a way that
       mattered.** The script does not die at line 66: every step was written as
       `cmd && ok "..."`, and bash exempts all but the last command of an AND-OR
@@ -128,20 +151,67 @@ written, because Batches 2-5 need them.
       canonical-FASTA regression check) run on a laptop. Verified green, and
       verified to fail when a command fails.
       Now runs in CI as its own step (`TEST-11`'s smoke half).
-- [ ] `CORR-12` — `_run` captures stderr and discards it; a failing farm tool
-      reaches the curator as an exit code plus a traceback with the tool's own
-      diagnostic lost. Surface it. This is the single biggest improvement to
-      debugging cost in the report.
-- [ ] `CORR-22` — `_run` sets no timeout anywhere.
-- [ ] `TEST-01` — write the missing boundary tests: `_run`'s subprocess branch,
-      `_submit_bsub`, `build_bsub_opts`, `_state_update_epilogue`,
-      `_check_bjobs`. Nothing currently distinguishes a valid `bsub` line from a
-      mis-quoted one. These are the baseline for Batches 2-4.
-- [ ] `TEST-08` — no test of any kind covers `_state_update_epilogue` or the
-      `_state-update` command. The function is pure string-building; the command
-      is invocable via `CliRunner`. (`effort: S`.)
-- [ ] `TEST-04` — `_check_bjobs`'s output parsing is untested; it is a pure
-      function over an injectable string.
+- [x] `CORR-12` — **done.** A failing captured `_run` now logs the last 40
+      lines of the tool's stderr and raises `CommandError`, a
+      `CalledProcessError` subclass whose message ends with that tail (full
+      stderr stays on `.stderr`); stdout-parsing callers (`_submit_bsub`,
+      `blast_contaminants`' lineage lookup — the only two that use the return
+      value) are unaffected. *Tests:*
+      `test_run_failure_error_carries_the_tools_stderr`,
+      `test_run_failure_logs_the_tools_stderr`,
+      `test_run_failure_message_keeps_only_the_stderr_tail`,
+      `test_run_success_returns_stdout_without_stderr`,
+      `test_run_failure_without_stderr_keeps_the_plain_message`. Was: `_run`
+      captured stderr and discarded it; a failing farm tool reached the curator
+      as an exit code plus a traceback with the tool's own diagnostic lost.
+- [x] `CORR-22` — **done (the `_run` half).** `_run` takes an optional
+      `timeout`; when set, the command runs in its own process group and the
+      whole group is killed on expiry (a plain `subprocess.run(timeout=)` only
+      kills the shell, and then blocks on the grandchild still holding the
+      pipe), raising `TimeoutExpired` with the stderr so far, also logged.
+      Default stays `None`: no caller-independent bound is safe (multi-GB `cp`
+      to NFS, assembly-sized tools), and no call site was given one; bsub
+      submissions deliberately have none. *Tests:*
+      `test_run_timeout_kills_the_command_and_its_children` (captured and
+      uncaptured), `test_run_timeout_keeps_and_logs_the_stderr_so_far`,
+      `test_run_timeout_does_not_fire_for_a_fast_command`,
+      `test_run_timeout_still_raises_on_nonzero_exit`,
+      `test_run_without_timeout_waits_for_the_command`,
+      `test_submit_bsub_sets_no_timeout`. Not addressed: the finding's second
+      half, `grit status` mutating the registry — that is reconcile-once
+      (Batch 6 / Phase 2). Was: `_run` set no timeout anywhere.
+- [x] `TEST-01` — **done** in `tests/test_execution_boundary.py`, which runs the
+      real shell into a fake `bsub` on `$PATH` (records its argv) instead of
+      mocking `_run`, so quoting is checked by tokenisation, not substrings.
+      *Tests:* `test_run_*` (6, unmocked subprocess branch),
+      `test_build_bsub_opts_*` (5),
+      `test_submit_bsub_passes_opts_then_inner_cmd_as_one_argument`,
+      `test_submit_bsub_passes_the_epilogue_as_one_unexpanded_argument`,
+      `test_submit_bsub_expands_unescaped_dollar_vars_at_submit_time`,
+      `test_submit_bsub_parses_job_id_after_a_preceding_line`. `_check_bjobs`
+      was already covered by `TEST-04`. Mutation-checked: swapping the `-Ep`
+      quotes, dropping the inner-cmd quotes, breaking the job-id split, the
+      `-R` quoting or `-K` each fails at least one test. Was: nothing
+      distinguished a valid `bsub` line from a mis-quoted one.
+- [x] `TEST-08` — **done**, same file. The epilogue bsub received is executed
+      through `sh` with `$LSB_JOBEXIT_STAT` set as LSF would, into a fake `grit`:
+      `test_epilogue_run_by_lsf_calls_state_update_with_the_job_outcome`
+      (success/failed x tracked/untracked, plus unset `$LSB_JOBEXIT_STAT` →
+      `failed`), `test_epilogue_string_shape`, `test_epilogue_appends_untracked_flag`.
+      `_state-update` via `CliRunner`, documenting *current* behaviour:
+      `test_state_update_success_records_outputs_found_on_disk`,
+      `test_state_update_success_with_no_outputs_still_records_success` (the
+      `CORR-03` gap, pinned so its fix shows up as a deliberate test change),
+      `test_state_update_failed_does_not_collect_outputs`,
+      `test_state_update_untracked_keeps_the_marker_and_records_outputs`,
+      `test_state_update_for_an_unregistered_workdir_writes_nothing`,
+      `test_state_update_rejects_an_unknown_status`,
+      `test_state_update_is_hidden_from_help`. Not covered: that each of the
+      steps calling `_submit_bsub` passes an `epilogue_cmd`.
+- [x] `TEST-04` — **done**, alongside `CORR-04`: five tests in
+      `tests/test_helpers.py` cover the state column, the per-job "is not found"
+      lines on stderr, an unreachable LSF, a missing `bjobs` binary and the
+      empty-input short circuit.
 - [ ] `PKG-06` — add a type checker to CI against the existing ~75%/77%
       annotation coverage that nothing enforces. Highest value-per-effort gate
       available; the work is already done.
@@ -211,33 +281,115 @@ Root cause: `success` is recorded from the scheduler's exit status, not from
 verified outputs. Fixing the root deactivates the trigger for `DOM-01` in
 Batch 4, so do this batch first.
 
-- [ ] `CORR-03` (root) — `click_cli.py:228-251`: `state_update_cmd` passes the
+- [x] `CORR-03` (root) — `click_cli.py:228-251`: `state_update_cmd` passes the
       LSF-derived `status` straight to `tracker.finish()`; `outputs` is
       best-effort and, when empty, becomes `None` without downgrading the
       status. Rule to enforce: `success` requires outputs; empty outputs
-      downgrade. *Verified directly.*
-- [ ] `CORR-03b` — `grit/scripts/sex-matcher.sh:49` ends in an unconditional
+      downgrade. *Verified directly.* **Fixed:** exit 0 is recorded `success`
+      only when `finished_run_outputs()` calls the run complete (manifest via
+      `verify_outputs()`, else any `_OUTPUT_SPECS` match; `sex_matcher` by
+      `Best_match*` in its run dir). Otherwise the epilogue writes nothing: the
+      run stays `started` with its `job_id` for the bjobs sweep, not `failed`,
+      since exit 0 without outputs is no evidence of failure and `failed` is
+      terminal. *Tests:*
+      `test_state_update_success_with_no_outputs_leaves_the_run_started`,
+      `test_state_update_success_with_partial_outputs_leaves_the_run_started`,
+      `test_state_update_success_with_manifest_outputs_records_success`,
+      `test_state_update_sex_matcher_success_requires_best_match_in_the_run_dir`,
+      `test_state_update_untracked_with_no_outputs_keeps_the_marker`.
+- [x] `CORR-03b` — `grit/scripts/sex-matcher.sh:49` ends in an unconditional
       `exit 0`, so the step's success is unconditional: a permanently green row
       with no `Best_match` file, and the step's own resubmit guard then refuses
-      to re-run it. *Verified directly.*
-- [ ] `CORR-07` — `qv.py:80-96`: synchronous tracked step records `success` as
+      to re-run it. *Verified directly.* **Fixed:** the script exits 1 for an
+      unsupported tol_id, when busco leaves no `full_table.tsv`, and when no
+      `Best_match*` was written; `exit 0` only after that check. (`CORR-03`'s
+      output check would already stop the green row; this makes LSF's exit
+      status agree.) *Tests:*
+      `test_sex_matcher_script_exits_zero_when_it_writes_best_match`,
+      `test_sex_matcher_script_fails_when_busco_fails`,
+      `test_sex_matcher_script_fails_when_no_best_match_is_written`,
+      `test_sex_matcher_script_fails_for_an_unsupported_tol_id`.
+- [x] `CORR-07` — `qv.py:80-96`: synchronous tracked step records `success` as
       soon as the submitting wrapper returns. No `job_id`, so bjobs recovery can
-      never repair it.
-- [ ] `CORR-08` — `hic_remapping.py:70-84`: the "already done, skipping" branch
-      finalises a run as `success` from the mere existence of an output.
-- [ ] `CORR-09` — four steps (`busco_curated.py:153`, `busco_synteny.py:119`,
+      never repair it. **Fixed, and the finding's mechanism was wrong:** the
+      module's `kmer_completeness.bash` (read from
+      `/software/grit/projects/vgp_curation_scripts/`, the dir `module load
+      grit` prepends to `PATH`) submits MerquryFK with `bsub -K`, so it *blocks*
+      until the job ends; the defect is that its last command is `rm`, so it
+      exits 0 whether MerquryFK succeeded or not. grit therefore never owns an
+      async job here, and the synchronous-step rule applies: `run_qv` now
+      records `success` only when both `merquryk/{tol_id}.qv` and
+      `.completeness.stats` exist, and `failed` (with `untracked=`) on a
+      wrapper error or missing outputs, then re-raises. `failed` is warranted
+      here because the work has provably ended. `finalize_qc`, which calls
+      `run_qv`, now finishes its own run `failed` too instead of stranding it.
+      *Tests:* `test_run_qv_fails_the_run_when_outputs_are_missing` (none, and
+      `.qv` only), `test_run_qv_fails_the_run_when_the_wrapper_errors`,
+      `test_run_qv_untracked_failure_keeps_the_marker`,
+      `test_finalize_for_qc_fails_its_run_when_qv_fails`.
+- [x] `CORR-08` — `hic_remapping.py:70-84`: the "already done, skipping" branch
+      finalises a run as `success` from the mere existence of an output. Fixed in TODO/52.
+- [x] `CORR-09` — four steps (`busco_curated.py:153`, `busco_synteny.py:119`,
       `fastga_synteny.py:108`, `sex_matcher.py:158`) call `_submit_bsub` outside
       any try/except after `tracker.start()`; a submission failure strands the
       record as `started` with no `job_id` and no recovery path but `untrack`.
-- [ ] `CORR-11` — `pretext_to_asm_recurate.py:163-172`: the guard that should
+      **Fixed:** all four now finish the run `failed` (`untracked=ctx.untracked`)
+      and re-raise, like `fastga`/`rename_and_orient`/`hic_remapping`. A grep
+      found no other step of that shape (`cleanup`'s gzip jobs are untracked
+      and already count a failure per ticket). *Tests:*
+      `test_rejected_submission_finishes_the_run_and_reraises` (each step ×
+      `BsubSubmissionError`/`CommandError` × tracked/untracked);
+      `test_every_submit_bsub_call_passes_an_epilogue` and
+      `test_every_submit_bsub_call_finishes_the_run_when_submission_fails`
+      enumerate every `_submit_bsub` call under `grit/steps/` by AST, so a new
+      step without either fails CI; `test_every_epilogue_step_has_a_completion_criterion`
+      checks each epilogue step has `_OUTPUT_SPECS` or a manifest, without
+      which `CORR-03`'s rule means it can never succeed.
+- [x] `CORR-11` — `pretext_to_asm_recurate.py:163-172`: the guard that should
       fail loudly on a missing recurate FASTA runs *after* the actions it was
-      meant to prevent.
-- [ ] `CORR-25` — when bsub's stdout lacks `Job <`, `_submit_bsub` returns that
-      stdout as the job id; a non-numeric "job_id" then reaches the registry and
-      `bjobs`.
-- [ ] `CORR-18` — the epilogue rests on two unguarded assumptions: `sys.argv[0]`
+      meant to prevent. **Fixed:** `_run_pretext_to_asm_core` takes
+      `required_outputs` (key → message) and raises inside its try, before
+      `finish(..., "success")`, so the run is recorded `failed`; recurate
+      requires `{hap}_fa`. The old post-call check stays only for the "already
+      done" skip path, which writes no record. *Test:*
+      `test_missing_curated_fa_output_raises_instead_of_silent_success` (now
+      asserts history `started, failed`, with a haplotigs output present so
+      the outputs dict is not empty).
+- [x] `CORR-25` — **done.** `_submit_bsub` matches `^Job <(\d+)> is submitted`
+      on any line and otherwise raises `BsubSubmissionError` (message: bsub's
+      stdout, and "check bjobs before resubmitting", since exit 0 may still mean
+      a job exists). Also fixed on the way: the old `split("<")[1]` took the
+      first `<` anywhere, so a warning line like `project <default>` above the
+      banner yielded `default` as the job id. Callers: the three steps with a
+      try/except (`fastga`, `rename_and_orient`, `hic_remapping`) now record
+      `failed`; `cleanup` counts it as that ticket's error and carries on (it
+      used to treat any truthy stdout as a job id); the four without one are
+      `CORR-09`, still open — they now strand a `started` record with no
+      `job_id` instead of storing garbage. *Tests:*
+      `test_submit_bsub_raises_when_bsub_prints_no_numeric_job_id` (warning
+      text, `Job <abc>`, empty stdout),
+      `test_submit_bsub_parses_job_id_after_a_line_with_angle_brackets`,
+      `test_unparseable_bsub_output_fails_the_run_without_storing_a_job_id`,
+      `test_run_cleanup_counts_an_untrackable_gzip_submission_as_an_error`.
+      Was: when bsub's stdout lacked `Job <`, `_submit_bsub` returned that
+      stdout as the job id; a non-numeric "job_id" then reached the registry
+      and `bjobs`.
+- [x] `CORR-18` — the epilogue rests on two unguarded assumptions: `sys.argv[0]`
       being a path valid on the compute node (see also Phase 2 / `PORT-02`), and
-      `$LSB_JOBEXIT_STAT` being set.
+      `$LSB_JOBEXIT_STAT` being set. **Fixed:** the epilogue is a `case` on
+      `${LSB_JOBEXIT_STAT:-}` — `0` → success, other digits → failed, unset or
+      non-numeric → no call at all (was: a `test` syntax error that recorded a
+      successful job `failed`). The grit path is `sys.argv[0]` made absolute, or
+      `shutil.which("grit")` when argv[0] is not an executable; all arguments go
+      through `shlex.join`, and `_submit_bsub` passes `-Ep` via `shlex.quote`
+      instead of bare single quotes. Still open: a venv path that is not mounted
+      on the exec host (that is `PORT-02`), and node death skipping post-exec
+      (the bjobs paths cover it). *Tests:*
+      `test_epilogue_without_a_numeric_exit_status_records_nothing` (unset,
+      empty, non-numeric), `test_epilogue_survives_paths_with_spaces_and_quotes`,
+      `test_epilogue_resolves_a_relative_grit_path`,
+      `test_epilogue_falls_back_to_grit_on_path_when_argv0_is_not_executable`,
+      `test_epilogue_run_by_lsf_calls_state_update_with_the_job_outcome`.
 
 *Batch done when:* a test proves an empty output glob cannot produce a `success`
 record, for both the epilogue path and the synchronous-step path.
@@ -250,65 +402,164 @@ record, for both the epilogue path and the synchronous-step path.
 item here is about its *inputs*: what counts as a step's current output, and
 what counts as finished.
 
-- [ ] `DOM-06` (critical) — `--hap2` is not gated by `is_single_hap`, and the
+- [x] `DOM-06` (critical) — `--hap2` is not gated by `is_single_hap`, and the
       no-prefix fallbacks guard only the literal tokens `hap1`/`hap2`. On a
       `primary`/`alternate` ticket the resolvers return **hap1's** FASTA and
       chromosome list as `alternate`'s canonical files; `hic-remapping --hap2`
       then publishes hap1's Hi-C map to NFS as the alternate haplotype's.
-- [ ] `DOM-02` (critical) — `latest_run_dir` falls back to `started` runs, so a
+      *Fixed:* every resolver refuses `hap2_prefix` on a single-hap ticket
+      (`_refuse_missing_hap2`), and `hic-remapping`/`rename-and-orient` refuse
+      `--hap2` up front (`refuse_hap2_on_single_hap`). finalize-qc's hap2-map
+      copy already goes through `find_canonical_map`, so it now logs "not
+      found" instead of copying. *Tests:*
+      `test_trace_t7_single_hap_ticket_has_no_alternate_files` (4 resolvers ×
+      tracked/filesystem), `test_single_hap_ticket_still_resolves_primary`,
+      `test_hic_remapping_hap2_is_refused_on_a_single_hap_ticket`,
+      `test_hap2_is_refused_on_a_single_hap_ticket` (rename-and-orient).
+- [x] `DOM-02` (critical) — `latest_run_dir` falls back to `started` runs, so a
       half-written FASTA from an in-flight bsub job is the freshest pool member.
-- [ ] `DOM-01` (critical) — when the newest successful run recorded no outputs,
+      *Fixed:* `latest_run_dir(step, include_started=False)` for the resolver's
+      re-glob; the default is unchanged for the resubmit guards, `untrack` and
+      `cleanup`. The filesystem fallbacks skip in-flight dirs too (with
+      `DOM-03`). *Tests:* `test_trace_t3_in_flight_rename_and_orient_is_not_canonical`,
+      `test_in_flight_recurate_haplotigs_are_not_canonical`,
+      `test_in_flight_rerun_leaves_the_previous_run_of_the_step_canonical`,
+      `test_in_flight_hic_remapping_map_is_not_canonical`.
+- [x] `DOM-01` (critical) — when the newest successful run recorded no outputs,
       `get_output` substitutes an older run of the same step and the re-glob
       never fires; `143f425` covers the other half only. Re-check after Batch 3:
       the trigger should be gone, but the code path remains and should still be
-      closed.
-- [ ] `DOM-03` (critical) — the filesystem fallbacks of all three resolvers go
+      closed. *Fixed:* `get_output` reads only the latest successful run dir
+      (any success record for that dir, so a retrack/re-finish without outputs
+      keeps them) and otherwise returns None, so `_step_output` re-globs the
+      right run. Also applies to `qv`/`finalize_qc`/`validate_files` lookups.
+      *Tests:* `test_trace_t2_rerun_with_uncaptured_outputs_still_wins`,
+      `test_rerun_with_no_outputs_on_disk_does_not_resurrect_the_older_run`,
+      `test_get_output_does_not_substitute_an_older_run`,
+      `test_get_output_reads_an_earlier_record_of_the_same_run`.
+- [x] `DOM-03` (critical) — the filesystem fallbacks of all three resolvers go
       through `find_latest_dir`, which never consults untracked status, so an
       `--untracked` run becomes canonical for fa, haplotigs *and* chr_list and
-      is shipped by `finalize-qc`.
+      is shipped by `finalize-qc`. *Fixed:* `find_latest_dir` skips untracked
+      run dirs for every caller; with `settled_only=True` (all resolver
+      fallbacks) it also skips in-flight ones, and the `rename_and_orient*` and
+      hic-remapping map globs filter the same way (`_settled_matches`).
+      `test_show_ticket_history_resolves_done_job_without_waiting_for_gone` now
+      runs the `refresh_statuses()` sweep first, as `grit status` does: a
+      still-`started` run is no longer canonical before it. *Tests:*
+      `test_trace_t4_an_untracked_only_run_is_never_canonical` (4 resolvers),
+      `test_filesystem_fallback_skips_a_newer_untracked_run` (fa/chr/haplotigs),
+      `test_untracking_the_only_pretext_to_asm_run_takes_it_out_of_canonical`,
+      `test_rename_and_orient_fallback_skips_unsettled_runs`,
+      `test_filesystem_fallback_skips_an_in_flight_pretext_to_asm_run`,
+      `test_canonical_map_fallback_skips_unsettled_runs`,
+      `test_find_latest_dir_skips_an_untracked_run`.
 - [ ] `DOM-04` (critical) — `pending_jobs()` treats only `success`/`failed` as
       terminal, so untracking an in-flight run is silently reverted by the next
       `grit status` via `_resolve_gone_job`, which re-`finish`es it without
       `untracked=`. CLAUDE.md asserts this is impossible.
-- [ ] `CORR-04` (critical) — `helpers.py:117` pre-seeds every job id as `"gone"`
-      and never checks the subprocess return code, so a `bjobs` outage makes
-      `_resolve_gone_job` finalise still-running jobs as success off partially
-      written files. Also the reason grit silently pretends jobs finished on a
-      non-LSF host. *Verified directly.*
-- [ ] `CORR-05` (critical) — `pretext_to_asm.py:117`: curated AGP chosen by
+- [x] `CORR-04` (critical) — **fixed, and the finding understated it.** The
+      symptom seen in the field was the mirror image of the one recorded here:
+      not "success off partially written files" but a permanent `failed` written
+      over three tickets' still-running `hic_remapping` jobs
+      (`RC-4645`, `GRIT-1374`, `RC-4949`, all stamped in the same second by one
+      `grit status` sweep — e.g. `GRIT-1374/2026-09-21T15_30_38` marked failed at
+      22 Sep 09:56 and writing `bGraRel1.hap1_normal.pretext` at 16:08 the same
+      day). And the trigger was not an outage: `bjobs` answered perfectly, but
+      **from the wrong cluster**. `farm22-agentic1` is in the `farm22` cluster,
+      the jobs were in `tol22`, and `Job <N> is not found` is what LSF says for
+      both a forgotten job and a foreign one. `_check_bjobs` now returns `gone`
+      only for ids LSF names on stderr and `unknown` when it could not be asked;
+      `start()` records the run's cluster; missing outputs mark a run `failed`
+      only when that cluster is the one queried, while outputs on disk promote it
+      to `success` from any host. *Tests:*
+      `test_gone_job_from_another_cluster_is_not_marked_failed`,
+      `test_gone_job_on_its_own_cluster_is_marked_failed`,
+      `test_gone_job_without_a_recorded_cluster_is_not_marked_failed`,
+      `test_gone_job_with_outputs_succeeds_from_any_cluster`,
+      `test_unreachable_lsf_leaves_pending_jobs_alone`,
+      `test_hr_pretext_alone_does_not_complete_the_run`.
+      Note the second-order damage this did, which argues for the same
+      conservatism elsewhere: `pending_jobs()` treats a `failed` record as
+      terminal, so the bogus mark also stopped the run from ever being
+      re-checked, and the maps were never picked up when they did appear.
+      *Carries `TEST-04` with it* — `_check_bjobs`'s parsing is now covered
+      (`tests/test_helpers.py`), including the "LSF library call" error output.
+- [x] `CORR-05` (critical) — `pretext_to_asm.py:117`: curated AGP chosen by
       unsorted `glob.glob(...)[0]`; a stale AGP in the workdir
       non-deterministically builds the wrong curated FASTA. *Verified directly.*
-- [ ] `DOM-07` — `haplotig-files` touches empty hap-prefixed placeholders into
+      *Already fixed by `3d03f86`* (now `pretext_to_asm.py:135-153`): the
+      matches are sorted, and more than one match fails the run (`failed`
+      recorded) listing every candidate rather than guessing — no rule in the
+      code distinguishes a stale AGP from the current one. Shared by
+      pretext-to-asm, recurate and microchromosome-combine via
+      `_run_pretext_to_asm_core`. *Test:*
+      `test_agp_pick_is_deterministic_and_fails_on_multiple_matches`
+      (`tests/test_microchromosome.py`).
+- [x] `DOM-07` — `haplotig-files` touches empty hap-prefixed placeholders into
       the `pretext_to_asm` run dir, where the re-glob and
       `find_canonical_haplotigs`' fallback prefer them over the real combined
-      file beside them.
+      file beside them. *Fixed in the resolver:* a zero-byte hap-specific pick
+      (tracked or fallback) yields to a non-empty no-prefix haplotigs file in
+      the same dir (hap1 only, as before); `haplotig-files` itself is
+      unchanged, so the placeholder still stands in when there are no
+      haplotigs. Whether pretext-to-asm's dual-hap file really is
+      `{tol_id}.1.haplotigs.fa` is still unverified from this repo. *Tests:*
+      `test_trace_t8_placeholder_does_not_outrank_the_real_combined_haplotigs`
+      (tracked/filesystem, runs the real `run_haplotig_files`),
+      `test_placeholder_is_used_when_there_are_no_real_haplotigs`,
+      `test_a_real_hap_specific_haplotigs_file_is_kept`.
 - [ ] `DOM-11` — `cleanup`'s keep-set excludes untracked runs, so the newest run
       dir is deleted while an older tracked one is kept, making `retrack`
       unrecoverable.
 - [ ] `DOM-10` — `untrack` excludes only the named run dir, so canonical passes
       to an earlier run of the *same* step before any other pool member, not to
       "the next-freshest pool member" as the spec says (L147-149).
-- [ ] `DOM-12` — the unrecorded-file credit matches `Path(path).parent ==
+- [x] `DOM-12` — the unrecorded-file credit matches `Path(path).parent ==
       run_dir`, so it misses steps whose outputs live in a subdirectory — i.e.
       the spec's "the two tables can't disagree" (L188-191) fails exactly for
-      `blast_contaminants`.
-- [ ] `DOM-14` — both `rename_and_orient` and `rename_and_orient_hap2` sit in
+      `blast_contaminants`. *Already fixed by `78f9d35`* (`run_dir in
+      Path(path).parents`, for the hic-remapping map); only a map test covered
+      it. *Test:* `test_show_ticket_history_credits_unrecorded_blast_output_in_its_hap_subdir`
+      (fails against the old `parent ==` check).
+- [x] `DOM-14` — both `rename_and_orient` and `rename_and_orient_hap2` sit in
       the pool for every haplotype; cross-hap contamination is prevented only by
-      their output keys happening to differ, not by any hap check.
-- [ ] `DOM-16` — `_latest_tracked_output` stats candidates unguarded and
+      their output keys happening to differ, not by any hap check. *Fixed:*
+      `_rename_and_orient_step_name()` puts only this haplotype's step in the
+      fa and chr-list pools, as `_recurate_step_name()` already did. *Tests:*
+      `test_rename_and_orient_steps_never_cross_haplotypes` (both directions),
+      `test_rename_and_orient_hap2_is_canonical_for_hap2`.
+- [x] `DOM-16` — `_latest_tracked_output` stats candidates unguarded and
       `_resolve_canonical_files` catches only `FileNotFoundError`, so a stale
-      NFS handle (`OSError`/ESTALE) crashes the resolver.
+      NFS handle (`OSError`/ESTALE) crashes the resolver. *Fixed:* every
+      existence/mtime check in the pool and the map fallback goes through
+      `_mtime()`, which treats any `OSError` as "not available", and
+      `_resolve_canonical_files` catches `OSError`. *Tests:*
+      `test_a_stale_pool_candidate_is_skipped`,
+      `test_a_stale_map_in_the_filesystem_fallback_is_skipped`,
+      `test_resolve_canonical_files_treats_an_os_error_as_not_found`.
 - [ ] `DOM-08` (plausible) — mtime is compared across files written by different
       clocks (login host vs compute node); a few seconds of negative skew
       reverses pool order. The run-dir ISO timestamps, all from one host, are
-      never consulted.
+      never consulted. *Not done — proposal:* keep mtime as the key, but have
+      `grit status` warn when the pool's mtime winner is not the member whose
+      run dir timestamp (submit-host clock) is newest; that detects skew
+      without changing the policy.
 - [ ] `DOM-09` (plausible) — the "already done" skip decides whether a curator's
       new curation round runs, from input-vs-output mtime alone, so any
       mtime-preserving copy of the AGP (`cp -p`, `rsync -a`, archive extraction)
       makes grit print "Already done", run nothing, and write no tracker record.
-- [ ] `TEST-07` — `find_canonical_haplotigs` (86 LOC) has zero direct tests and
+      *Not done — proposal:* record the input AGP's sha256 in the run's
+      `outputs` and skip only when the hash matches; fall back to today's
+      mtime test for runs without one, and name the compared files in the
+      "Already done" line.
+- [x] `TEST-07` — `find_canonical_haplotigs` (86 LOC) has zero direct tests and
       is mocked out in all its consumers. Write them; `DOM-06`/`DOM-07` had
-      nothing that could catch them.
+      nothing that could catch them. *Tests:* the `find_canonical_haplotigs`
+      section of `tests/test_helpers_canonical.py` — tracked output, recurate
+      vs rerun in both orders, per-hap recurate step, untracked recurate,
+      re-glob of an unrecorded key, hap-specific / alias / combined /
+      additional-haplotigs fallbacks, and the not-found error.
 - [ ] `CORR-23` — `grit retrack` promotes a run to `success` without checking
       that its recorded outputs still exist (see `DOM-11`).
 - [ ] `CORR-24` (plausible) — `cleanup` keeps the latest run dir per step while
@@ -318,7 +569,10 @@ what counts as finished.
       uniqueness check.
 
 *Batch done when:* the scenario traces in report 06 §"Scenario traces" are
-encoded as tests and pass.
+encoded as tests and pass. *Resolver half:* T1, T2, T3, T4, T7, T8 are
+`test_trace_t{1,2,3,4,7,8}_*` in `tests/test_helpers_canonical.py`. Still
+open: T5 (`DOM-04`), T6 (`DOM-05`, Batch 5), T9/T10 (`DOM-08`/`DOM-09`,
+plausible).
 
 ---
 
@@ -421,21 +675,51 @@ performs no registry writes.
       legitimate double quote in `inner_cmd` silently truncates the job's
       command while bsub still reports success. Enforce it in code, not in
       institutional knowledge. (Batch 1's tests are what make this checkable.)
-- [ ] `PKG-01` — `rename-and-orient` sourced from an unpinned git URL on a
+- [x] `PKG-01` — **done:** `[tool.uv.sources]` git override dropped; the dep now
+      resolves from PyPI (`rename-and-orient` 1.2.3 locked). *Verified:* `pip install .`
+      into a fresh venv installs grit + `rename-and-orient` 1.2.3 and both CLIs run.
+      Was: `rename-and-orient` sourced from an unpinned git URL on a
       personal account via uv-only `[tool.uv.sources]`: unpublishable to PyPI,
       `pip install -e .` broken, and `uv.lock` pins `1.2.0` against a `>=1.2.2`
       constraint.
-- [ ] `PKG-05` — `pymysql` declared and imported nowhere; two other declared
-      deps unused. Also a hint of a credential surface to audit before a split.
-- [ ] `PKG-06b` — CI never builds or installs the package, so nothing verifies
-      that `grit/config/sanger_template.yaml` ships in the wheel.
-- [ ] `PKG-07` — README and `examples.md` give mutually inconsistent install
-      instructions.
-- [ ] `DOC-03` — README mislabels `--print-only` as "Dry run" next to the real
-      `--dry-run` flag; `--dry-run` (the strongest onboarding affordance in the
-      project) is documented only in `CLAUDE.md`.
-- [ ] `.gitignore` covers only `__pycache__` and `.worktrees/`; `.claude/` and
-      `.superpowers/` are not covered.
+- [ ] `PKG-05` — **reverted: the finding was wrong.** All three deps are
+      needed at runtime by the out-of-repo Jira modules loaded via
+      `gritjiraissue_path` (`GritJiraIssue.py` imports `requests` and `Bio`;
+      a sibling module imports `pymysql`), so dropping them broke every Jira
+      ticket with `ModuleNotFoundError: requests` — caught by
+      `grit-dev --print-only setup -t RC-3290`. Restored with a comment in
+      `pyproject.toml`; they move to `grit-sanger` with `MetadataSource`
+      (`ARCH-17`/`PKG-04`). The same grep blind spot applies to any dep audit
+      here: `sys.path`-loaded code is invisible to it. Original (wrong) note:
+      Verified by grep: `pymysql` has zero hits in `grit/`,
+      `tests/` and `grit/scripts/`; `biopython`/`requests` are imported only
+      inside the PEP-723 `# /// script` blocks of `grit/scripts/busco_synteny_
+      format_and_plot.py` and `fastga_synteny_format_and_plot.py`, which run
+      under their own `uv run --script` environment, not the installed
+      package's. Removed all three from `[project] dependencies` in
+      `pyproject.toml`; regenerated `uv.lock` with `uv lock`.
+- [x] `PKG-06b` — **done.** `grit/config/sanger_template.yaml` and
+      `grit/scripts/*` were already shipped in the wheel (verified locally via
+      `uv build --offline` + a Python `zipfile` check), so no packaging-config
+      change was needed. Added a `Build package` + `Verify packaged data files
+      ship in the wheel` step to `.github/workflows/ci.yml` so a future
+      regression (like CHANGELOG 0.3.4's) fails CI instead of shipping silently.
+- [x] `PKG-07` — **done.** README's Installation section offered a `pip install
+      -e .` path that cannot work (PKG-01's git-only dependency source) and a
+      different clone URL scheme than `docs/examples.md`. Removed the broken
+      `pip` instructions with a one-line explanation, and unified both README
+      and `examples.md` on the same `git clone git@github.com:zilov/grit.git &&
+      uv tool install .` flow (matching the repo's actual `origin` remote),
+      with `examples.md` pointing back to README for the from-git and
+      local-dev variants.
+- [x] `DOC-03` — **already fixed**, before this remediation pass, by
+      `6c8b0ac` ("docs: refresh README and examples.md for the 0.4.2
+      release"), which relabelled `--print-only` correctly and added the
+      `--dry-run` example block at `README.md:89-95`. Verified current README
+      text matches CLAUDE.md's `--dry-run` description; no further change
+      needed.
+- [x] `.gitignore` covers only `__pycache__` and `.worktrees/`; `.claude/` and
+      `.superpowers/` are not covered. — **done**, both added.
 
 ---
 
@@ -443,17 +727,84 @@ performs no registry writes.
 
 Do these whenever a related file is open.
 
-- [ ] `CORR-16` — `context.py:146`: `read_type = "hifi" if pacbio_read_type else
+- [x] `CORR-16` — `context.py:146`: `read_type = "hifi" if pacbio_read_type else
       "hifi"`. Tautology; the YAML field is effectively ignored.
-      *Verified directly.*
-- [ ] `CORR-14` — `_detect_assembly_type` can never return `paternal`, so every
+      *Verified directly.* Fixed: `read_type = pacbio_read_type if pacbio_read_type
+      else "hifi"` — the field now takes effect, defaulting to `hifi` only when
+      absent/empty. Tests:
+      `test_build_context_read_type_defaults_to_hifi_when_pacbio_read_type_missing`,
+      `test_build_context_read_type_respects_non_hifi_pacbio_read_type`
+      (`tests/test_context.py`). Open question: downstream (`hic_remapping.py`'s
+      `--read_type` to sanger-tol/curationpretext, `microchromosome_second_shot.py`'s
+      `-rt`) and the type annotation (`read_type: str  # 'hifi' | 'ont'`) suggest only
+      `hifi`/`ont` are actually valid values there — every real fixture's
+      `pacbio_read_type` is `hifi`, so what a non-hifi PacBio value (e.g. `clr`)
+      should map to downstream is unclear and needs an author/curator answer;
+      this fix makes the field respected rather than guessing that mapping.
+- [x] `CORR-14` — `_detect_assembly_type` can never return `paternal`, so every
       `paternal`/`maternal` branch is dead code that *looks* like support for
       those assembly types. Delete or implement.
-- [ ] `CORR-20` — `except Exception: pass` swallows every parse error in
+      Today: a `paternal`/`maternal` YAML falls through to the generic
+      `else` branch and raises a bare `ValueError("Cannot detect assembly
+      type from YAML keys: [...]")` — not a `ClickException`, so the curator
+      sees a raw traceback, and it looks identical to a truly unrecognised
+      YAML rather than naming the unsupported case. Fixed: `_detect_assembly_type`
+      now explicitly recognises `paternal`/`maternal` keys and raises the new
+      `UnsupportedAssemblyTypeError` (`grit/core/context.py`, a
+      `click.ClickException`) with the message "paternal/maternal assemblies
+      are not supported yet — grit only handles hap1/hap2 and primary/alternate
+      assembly YAML today." The dead `paternal`/`maternal` branches elsewhere
+      (`helpers.py`'s `_PTA_ALIASES` in the four canonical resolvers,
+      `is_single_hap`, `finalize_qc.py`, `haplotig_files.py`,
+      `microchromosome_combine.py`, `setup.py`, `status.py`) are left in place
+      per this batch's scope (those files belong to other in-flight
+      remediation work) — CLAUDE.md's assembly-type bullet now says plainly
+      that they're unreachable dead code, not working support, until trio
+      support is actually implemented. CLAUDE.md updated. Tests:
+      `test_detect_assembly_type_paternal_raises_not_supported`,
+      `test_detect_assembly_type_maternal_only_raises_not_supported`,
+      `test_unsupported_assembly_type_error_is_a_click_exception`,
+      `test_build_context_paternal_maternal_yaml_fails_loudly_not_silently`
+      (`tests/test_context.py`).
+- [x] `CORR-20` — `except Exception: pass` swallows every parse error in
       `result_parsers.py:180-259`; the curator sees an incomplete summary and
       does not know why.
-- [ ] `CORR-21` — the telomere track's awk program is mis-escaped
+      Fixed: every `except Exception: pass` in `collect_curation_results` now
+      logs a `log.warning(...)` naming the specific file and the caught
+      exception, and still keeps the summary best-effort (no re-raise). The
+      chromosome-list loop is now per-file (`try` inside the `for csv_path in
+      csv_files` loop) instead of one `try` around the whole aggregation, so a
+      malformed CSV for one haplotype no longer wipes out a successfully
+      parsed sibling — it's logged and skipped, and the first hap that *did*
+      parse still sets `autosomes`/contributes to `allosomes`. Tests:
+      `test_collect_curation_results_chromosome_csv_parse_error_is_logged`,
+      `test_collect_curation_results_pta_log_parse_error_is_logged`,
+      `test_collect_curation_results_micro_log_parse_error_is_logged`,
+      `test_collect_curation_results_sex_matcher_parse_error_is_logged`,
+      `test_collect_curation_results_qv_read_error_is_logged`,
+      `test_collect_curation_results_completeness_read_error_is_logged`
+      (`tests/test_result_parsers.py`).
+- [x] `CORR-21` — the telomere track's awk program is mis-escaped
       (`add_pretext_view_tracks.py:143`, `92-97`, `62`).
+      Fixed the mis-escaping at line 143: the awk program was built from a
+      raw string (`r"..."`) so `\"` and `\t` inside it stayed literal
+      backslash-quote/backslash-t pairs instead of becoming real `"` and a
+      tab escape awk can parse — bash's single quotes pass that straight to
+      awk, which died with a syntax error (proven with the real `awk`
+      binary). Now built as a normal string with `\"` → `"` and `\\t` → the
+      two-char `\t` escape awk itself interprets, producing
+      `awk '{ print $1"\t"$2"\t"$3"\t"($3-$2) }'`. Docstring example at line
+      113 updated to match. Test:
+      `test_add_telo_track_builds_a_syntactically_valid_awk_program`
+      (`tests/test_add_pretext_view_tracks.py`) — extracts the generated awk
+      program from the built command and actually runs it through `awk`
+      (skipped if `awk` isn't on PATH), asserting correct tab-separated
+      output. Out of scope for this item: the broader last-stage-exit-status
+      masking noted in the same finding (`add_bedgraph_track`/`add_gap_track`
+      pipelines still report success on an upstream `zcat`/`cat`/`python3`
+      failure since none of the three commands use `set -o pipefail`) —
+      that's a separate, more invasive change than "fix the mis-escaping"
+      and wasn't attempted here.
 - [ ] `ARCH-16` — two commands bypass `_run()`, so "all shell commands go
       through `_run`" is false. `cleanup._size_bytes` shells GNU-only `du -sb
       --apparent-size`, silently rendering every size as `?` off-farm;
@@ -468,9 +819,23 @@ Do these whenever a related file is open.
 - [ ] `ARCH-15` — the dry-run fixture writer exists twice; the recurate copy
       cannot express a 4-element "multi" spec and raises `ValueError` at dry-run
       time only.
-- [ ] `ARCH-20` — `grit/__init__.py` re-exports private helpers (`_run`,
+- [x] `ARCH-20` — `grit/__init__.py` re-exports private helpers (`_run`,
       `_submit_bsub`, …) as public surface; `grit/steps/__init__.py` eagerly
       imports all 21 step modules.
+      Fixed the `grit/__init__.py` half only (the eager-import half of
+      `grit/steps/__init__.py` is unchanged, per this batch's scope): removed
+      `_run`, `_submit_bsub`, `_clean_species_name`, and
+      `_find_pretext_map_in_workdir` from the top-level re-exports —
+      `grep -rn "grit\._run\|grit\._submit_bsub\|grit\._clean_species_name\|
+      grit\._find_pretext_map_in_workdir\|from grit import"` across `tests/`
+      and `grit/scripts/` found zero importers going through the `grit.`
+      package root (only `grit.utils.helpers.*` direct imports), so nothing
+      outside is broken. The genuinely public re-exports (`cli`,
+      `CurationContext`, `build_bsub_opts`, `module_cmd`, `console`,
+      `print_done`, `print_next_step`, `print_step_header`) are unchanged.
+      Tests: `test_grit_package_does_not_reexport_private_helpers`,
+      `test_grit_package_still_exports_its_intended_public_surface`
+      (`tests/test_package_exports.py`).
 - [ ] `TEST-05` — mocking `_run` removes `check=True`, so every mock signals
       success and no test distinguishes "ran" from "succeeded";
       `CalledProcessError` is caught in exactly one place in all of `grit/`.

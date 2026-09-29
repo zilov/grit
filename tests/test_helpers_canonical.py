@@ -1,10 +1,19 @@
 """Tests for the canonical-output priority chain in grit/utils/helpers.py."""
 
+import itertools
+import os
+
 import pytest
 
 from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
-from grit.utils.helpers import find_canonical_chr_list, find_canonical_fa, find_curated_fa
+from grit.utils.helpers import (
+    find_canonical_chr_list,
+    find_canonical_fa,
+    find_canonical_haplotigs,
+    find_canonical_map,
+    find_curated_fa,
+)
 
 
 def _make_tracker(tmp_path, ctx):
@@ -15,9 +24,15 @@ def _make_tracker(tmp_path, ctx):
     return ctx.tracker
 
 
+_MTIMES = itertools.count(1_000_000, 10)
+
+
 def _write(path):
+    """Write *path* with an mtime strictly later than every earlier ``_write``."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(">seq\n")
+    mtime = next(_MTIMES)
+    os.utime(path, (mtime, mtime))
     return path
 
 
@@ -209,8 +224,6 @@ def test_pretext_to_asm_rerun_after_rename_and_orient_wins(mock_ctx, tmp_path):
     pta_fa2 = _write(pta_dir2 / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
     tracker.finish("pretext_to_asm", pta_dir2, "success", outputs={"hap1_fa": str(pta_fa2)})
 
-    import os
-
     os.utime(pta_fa, (1000, 1000))
     os.utime(bc_fa, (2000, 2000))
     os.utime(rao_fa, (3000, 3000))
@@ -221,8 +234,6 @@ def test_pretext_to_asm_rerun_after_rename_and_orient_wins(mock_ctx, tmp_path):
 
 def test_blast_contaminants_rerun_after_rename_and_orient_wins(mock_ctx, tmp_path):
     """A fresh blast_contaminants re-run must beat a now-stale rename_and_orient output."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     rao_dir = tmp_path / "rename_and_orient" / "2026-01-01T00_00_00"
     rao_fa = _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
@@ -241,8 +252,6 @@ def test_blast_contaminants_rerun_after_rename_and_orient_wins(mock_ctx, tmp_pat
 def test_microchromosome_combine_rerun_after_blast_contaminants_wins(mock_ctx, tmp_path):
     """A fresh microchromosome_combine re-run must beat a now-stale blast_contaminants
     output — recency wins within and across tiers, tier order is only a tie-break."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     bc_dir = tmp_path / "blast_contaminants" / "2026-01-01T00_00_00"
     bc_fa = _write(bc_dir / f"{mock_ctx.tol_id}.hap1.1.decontaminated.fa")
@@ -263,8 +272,6 @@ def test_microchromosome_combine_rerun_after_blast_contaminants_wins(mock_ctx, t
 def test_pool_tie_break_favors_first_listed_step(mock_ctx, tmp_path):
     """On an exact mtime tie between two pool members, the first-listed step
     (pretext_to_asm, earlier in the flat pool order) wins."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     pta_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
     pta_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
@@ -284,8 +291,6 @@ def test_pool_tie_break_favors_first_listed_step(mock_ctx, tmp_path):
 def test_blast_contaminants_after_recurate_with_newer_mtime_wins(mock_ctx, tmp_path):
     """blast_contaminants run after pretext_to_asm_recurate, with a newer mtime,
     correctly becomes canonical — recuration is no longer an unconditional top tier."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     recurate_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-01T00_00_00"
     recurate_fa = _write(recurate_dir / f"{mock_ctx.tol_id}.1.primary.curated.fa")
@@ -306,8 +311,6 @@ def test_blast_contaminants_after_recurate_with_newer_mtime_wins(mock_ctx, tmp_p
 def test_rename_and_orient_after_recurate_with_newer_mtime_wins(mock_ctx, tmp_path):
     """rename_and_orient run after pretext_to_asm_recurate, with a newer mtime,
     correctly becomes canonical."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     recurate_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-01T00_00_00"
     recurate_fa = _write(recurate_dir / f"{mock_ctx.tol_id}.1.primary.curated.fa")
@@ -328,8 +331,6 @@ def test_rename_and_orient_after_recurate_with_newer_mtime_wins(mock_ctx, tmp_pa
 def test_pretext_to_asm_rerun_after_recurate_with_newer_mtime_wins(mock_ctx, tmp_path):
     """A fresh pretext_to_asm re-run correctly wins back over a stale recurate
     output, matching the recency-wins model applied to the rest of the pool."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     recurate_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-01T00_00_00"
     recurate_fa = _write(recurate_dir / f"{mock_ctx.tol_id}.1.primary.curated.fa")
@@ -410,8 +411,6 @@ def test_rename_and_orient_chr_list_beats_older_pretext_to_asm(mock_ctx, tmp_pat
     older pretext_to_asm one, instead of find_canonical_chr_list returning
     before it ever considers rename_and_orient (previously impossible since
     rename_and_orient never had a tracked chr_list output at all)."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     pta_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
     pta_chr_list = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.chromosome.list.csv")
@@ -436,8 +435,6 @@ def test_pretext_to_asm_chr_list_rerun_after_rename_and_orient_wins(mock_ctx, tm
     still be able to displace an older rename_and_orient one — proving the
     mtime pool genuinely competes both ways, not just that rename_and_orient
     always wins once tracked."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     rao_dir = tmp_path / "rename_and_orient" / "2026-01-01T00_00_00"
     rao_chr_list = _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.chromosome.list.csv")
@@ -462,8 +459,6 @@ def test_chr_list_from_newer_run_dir_wins_when_output_key_was_not_recorded(mock_
     outputs must still win over an older rename_and_orient one: the file is in
     that run's dir, so resolution re-globs the run dir instead of silently
     falling back to the stale step."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     rao_dir = tmp_path / "rename_and_orient" / "2026-01-01T00_00_00"
     rao_chr_list = _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.chromosome.list.csv")
@@ -486,8 +481,6 @@ def test_chr_list_of_latest_run_beats_earlier_run_of_the_same_step(mock_ctx, tmp
     """When the latest run of a step recorded no chr_list, an earlier run of
     that same step must not stand in for it — the latest run dir's own file is
     what the step currently offers."""
-    import os
-
     tracker = _make_tracker(tmp_path, mock_ctx)
     old_dir = tmp_path / "pretext_to_asm" / "2026-01-01T00_00_00"
     old_chr_list = _write(old_dir / f"{mock_ctx.tol_id}.hap1.1.chromosome.list.csv")
@@ -504,3 +497,743 @@ def test_chr_list_of_latest_run_beats_earlier_run_of_the_same_step(mock_ctx, tmp
     os.utime(new_chr_list, (2000, 2000))
 
     assert find_canonical_chr_list(mock_ctx, "hap1") == new_chr_list
+
+
+# ---------------------------------------------------------------------------
+# find_canonical_map — the canonical remapped Pretext map per haplotype
+# ---------------------------------------------------------------------------
+
+
+def _write_map(run_dir, tol_id, hap_token):
+    """Write a hic-remapping run's normal.pretext (shipped) and hr.pretext (farm-only)."""
+    processed = run_dir / "pretext_maps_processed"
+    normal = _write(processed / f"{tol_id}.{hap_token}_normal.pretext")
+    _write(processed / f"{tol_id}.{hap_token}_hr.pretext")
+    return normal
+
+
+def test_canonical_map_is_the_latest_hic_remapping_run(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    old_dir = tmp_path / "hic_remapping" / "2026-01-01T00_00_00"
+    old_map = _write_map(old_dir, mock_ctx.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping", old_dir, "success", outputs={"hap1_normal_pretext": str(old_map)}
+    )
+
+    new_dir = tmp_path / "hic_remapping" / "2026-01-02T00_00_00"
+    new_map = _write_map(new_dir, mock_ctx.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping", new_dir, "success", outputs={"hap1_normal_pretext": str(new_map)}
+    )
+
+    assert find_canonical_map(mock_ctx, "hap1") == new_map
+
+
+def test_canonical_map_ignores_the_hr_map(mock_ctx, tmp_path):
+    """hr.pretext is the curation input and stays on the farm; only normal.pretext ships."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    run_dir = tmp_path / "hic_remapping" / "2026-01-01T00_00_00"
+    normal = _write_map(run_dir, mock_ctx.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping",
+        run_dir,
+        "success",
+        outputs={
+            "hap1_pretext": str(
+                run_dir / "pretext_maps_processed" / f"{mock_ctx.tol_id}.hap1_hr.pretext"
+            ),
+            "hap1_normal_pretext": str(normal),
+        },
+    )
+
+    assert find_canonical_map(mock_ctx, "hap1") == normal
+
+
+def test_canonical_map_skips_an_untracked_run(mock_ctx, tmp_path):
+    """The newest run dir on disk loses to the older one when it was untracked."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    kept_dir = tmp_path / "hic_remapping" / "2026-01-01T00_00_00"
+    kept_map = _write_map(kept_dir, mock_ctx.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping", kept_dir, "success", outputs={"hap1_normal_pretext": str(kept_map)}
+    )
+
+    rejected_dir = tmp_path / "hic_remapping" / "2026-01-02T00_00_00"
+    rejected_map = _write_map(rejected_dir, mock_ctx.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping",
+        rejected_dir,
+        "success",
+        outputs={"hap1_normal_pretext": str(rejected_map)},
+        untracked=True,
+    )
+
+    assert find_canonical_map(mock_ctx, "hap1") == kept_map
+
+
+def test_canonical_map_falls_back_to_the_filesystem(mock_ctx, tmp_path):
+    _make_tracker(tmp_path, mock_ctx)
+    run_dir = tmp_path / "hic_remapping" / "2026-01-01T00_00_00"
+    fs_map = _write_map(run_dir, mock_ctx.tol_id, "hap1")
+
+    assert find_canonical_map(mock_ctx, "hap1") == fs_map
+
+
+def test_canonical_map_hap2_comes_from_hic_remapping_hap2(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    hap1_dir = tmp_path / "hic_remapping" / "2026-01-01T00_00_00"
+    hap1_map = _write_map(hap1_dir, mock_ctx.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping", hap1_dir, "success", outputs={"hap1_normal_pretext": str(hap1_map)}
+    )
+
+    hap2_dir = tmp_path / "hic_remapping_hap2" / "2026-01-02T00_00_00"
+    hap2_map = _write_map(hap2_dir, mock_ctx.tol_id, "hap2")
+    tracker.finish(
+        "hic_remapping_hap2", hap2_dir, "success", outputs={"hap2_normal_pretext": str(hap2_map)}
+    )
+
+    assert find_canonical_map(mock_ctx, "hap1") == hap1_map
+    assert find_canonical_map(mock_ctx, "hap2") == hap2_map
+
+
+def test_canonical_map_has_no_hap2_for_a_single_hap_ticket(mock_ctx_primary, tmp_path):
+    """A primary/alternate ticket has no genuine hap2 — never hand back hap1's map."""
+    tracker = _make_tracker(tmp_path, mock_ctx_primary)
+    run_dir = tmp_path / "hic_remapping" / "2026-01-01T00_00_00"
+    hap1_map = _write_map(run_dir, mock_ctx_primary.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping", run_dir, "success", outputs={"hap1_normal_pretext": str(hap1_map)}
+    )
+
+    assert find_canonical_map(mock_ctx_primary, "primary") == hap1_map
+    with pytest.raises(FileNotFoundError):
+        find_canonical_map(mock_ctx_primary, "alternate")
+
+
+def test_canonical_map_raises_when_no_map_exists(mock_ctx, tmp_path):
+    _make_tracker(tmp_path, mock_ctx)
+    with pytest.raises(FileNotFoundError):
+        find_canonical_map(mock_ctx, "hap1")
+
+
+# ---------------------------------------------------------------------------
+# find_canonical_haplotigs — the haplotig FASTA per haplotype
+# ---------------------------------------------------------------------------
+
+
+def _pta_dir(tmp_path, ts="2026-01-01T00_00_00"):
+    return tmp_path / "pretext_to_asm" / ts
+
+
+def test_haplotigs_come_from_the_tracked_pretext_to_asm_output(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    hap1 = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    hap2 = _write(pta_dir / f"{mock_ctx.tol_id}.hap2.1.all_haplotigs.curated.fa")
+    tracker.finish(
+        "pretext_to_asm",
+        pta_dir,
+        "success",
+        outputs={"hap1_haplotigs": str(hap1), "hap2_haplotigs": str(hap2)},
+    )
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == hap1
+    assert find_canonical_haplotigs(mock_ctx, "hap2") == hap2
+
+
+def test_haplotigs_of_a_newer_recurate_round_win(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    pta_hap = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_haplotigs": str(pta_hap)})
+
+    rec_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-02T00_00_00"
+    rec_hap = _write(rec_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish(
+        "pretext_to_asm_recurate", rec_dir, "success", outputs={"hap1_haplotigs": str(rec_hap)}
+    )
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == rec_hap
+
+
+def test_haplotigs_of_a_pretext_to_asm_rerun_beat_an_older_recurate(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    rec_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-01T00_00_00"
+    rec_hap = _write(rec_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish(
+        "pretext_to_asm_recurate", rec_dir, "success", outputs={"hap1_haplotigs": str(rec_hap)}
+    )
+
+    pta_dir = _pta_dir(tmp_path, "2026-01-02T00_00_00")
+    pta_hap = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_haplotigs": str(pta_hap)})
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == pta_hap
+
+
+def test_haplotigs_hap2_recurate_does_not_touch_hap1(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    pta_hap1 = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    pta_hap2 = _write(pta_dir / f"{mock_ctx.tol_id}.hap2.1.all_haplotigs.curated.fa")
+    tracker.finish(
+        "pretext_to_asm",
+        pta_dir,
+        "success",
+        outputs={"hap1_haplotigs": str(pta_hap1), "hap2_haplotigs": str(pta_hap2)},
+    )
+
+    rec_dir = tmp_path / "pretext_to_asm_recurate_hap2" / "2026-01-02T00_00_00"
+    rec_hap2 = _write(rec_dir / f"{mock_ctx.tol_id}.hap2.1.all_haplotigs.curated.fa")
+    tracker.finish(
+        "pretext_to_asm_recurate_hap2",
+        rec_dir,
+        "success",
+        outputs={"hap2_haplotigs": str(rec_hap2)},
+    )
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == pta_hap1
+    assert find_canonical_haplotigs(mock_ctx, "hap2") == rec_hap2
+
+
+def test_haplotigs_of_an_untracked_recurate_do_not_count(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    pta_hap = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_haplotigs": str(pta_hap)})
+
+    rec_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-02T00_00_00"
+    rec_hap = _write(rec_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish(
+        "pretext_to_asm_recurate",
+        rec_dir,
+        "success",
+        outputs={"hap1_haplotigs": str(rec_hap)},
+        untracked=True,
+    )
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == pta_hap
+
+
+def test_haplotigs_unrecorded_in_the_latest_run_are_re_globbed(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    pta_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    pta_hap = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_fa": str(pta_fa)})
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == pta_hap
+
+
+def test_haplotigs_fall_back_to_a_hap_specific_file_on_disk(mock_ctx, tmp_path):
+    _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    hap2 = _write(pta_dir / f"{mock_ctx.tol_id}.hap2.1.haplotigs.fa")
+
+    assert find_canonical_haplotigs(mock_ctx, "hap2") == hap2
+
+
+def test_haplotigs_fall_back_through_the_primary_to_hap1_alias(mock_ctx_primary, tmp_path):
+    _make_tracker(tmp_path, mock_ctx_primary)
+    pta_dir = _pta_dir(tmp_path)
+    hap = _write(pta_dir / f"{mock_ctx_primary.tol_id}.hap1.1.all_haplotigs.curated.fa")
+
+    assert find_canonical_haplotigs(mock_ctx_primary, "primary") == hap
+
+
+def test_combined_haplotigs_go_to_hap1_only(mock_ctx, tmp_path):
+    """The dual-hap combined file has no hap token; handing it to both haps would
+    copy the same haplotigs twice."""
+    _make_tracker(tmp_path, mock_ctx)
+    combined = _write(_pta_dir(tmp_path) / f"{mock_ctx.tol_id}.1.haplotigs.fa")
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == combined
+    with pytest.raises(FileNotFoundError):
+        find_canonical_haplotigs(mock_ctx, "hap2")
+
+
+def test_single_hap_additional_haplotigs_are_found(mock_ctx_primary, tmp_path):
+    _make_tracker(tmp_path, mock_ctx_primary)
+    extra = _write(
+        _pta_dir(tmp_path) / f"{mock_ctx_primary.tol_id}.1.additional_haplotigs.curated.fa"
+    )
+
+    assert find_canonical_haplotigs(mock_ctx_primary, "primary") == extra
+
+
+def test_haplotigs_raise_when_nothing_exists(mock_ctx, tmp_path):
+    _make_tracker(tmp_path, mock_ctx)
+    _pta_dir(tmp_path).mkdir(parents=True)
+
+    with pytest.raises(FileNotFoundError):
+        find_canonical_haplotigs(mock_ctx, "hap1")
+
+
+# ---------------------------------------------------------------------------
+# DOM-06 / report 06 trace T7: a primary/alternate ticket has no hap2
+# ---------------------------------------------------------------------------
+
+
+def _single_hap_pta_run(tmp_path, ctx, *, tracked=True):
+    """A primary ticket's pretext-to-asm output: unprefixed fa, chr list, haplotigs."""
+    tracker = _make_tracker(tmp_path, ctx)
+    pta_dir = _pta_dir(tmp_path)
+    fa = _write(pta_dir / f"{ctx.tol_id}.1.primary.curated.fa")
+    chr_list = _write(pta_dir / f"{ctx.tol_id}.1.primary.chromosome.list.csv")
+    haplotigs = _write(pta_dir / f"{ctx.tol_id}.1.all_haplotigs.curated.fa")
+    if tracked:
+        tracker.finish(
+            "pretext_to_asm",
+            pta_dir,
+            "success",
+            outputs={
+                "hap1_fa": str(fa),
+                "hap1_chr_list": str(chr_list),
+                "hap1_haplotigs": str(haplotigs),
+            },
+        )
+    return fa, chr_list, haplotigs
+
+
+@pytest.mark.parametrize("tracked", [True, False], ids=["tracked", "filesystem"])
+@pytest.mark.parametrize(
+    "finder",
+    [find_canonical_fa, find_canonical_chr_list, find_canonical_haplotigs, find_curated_fa],
+    ids=lambda f: f.__name__,
+)
+def test_trace_t7_single_hap_ticket_has_no_alternate_files(
+    mock_ctx_primary, tmp_path, finder, tracked
+):
+    """Resolving 'alternate' on a primary ticket must refuse, not return hap1's file."""
+    _single_hap_pta_run(tmp_path, mock_ctx_primary, tracked=tracked)
+
+    with pytest.raises(FileNotFoundError, match="single-haplotype"):
+        finder(mock_ctx_primary, "alternate")
+
+
+def test_single_hap_ticket_still_resolves_primary(mock_ctx_primary, tmp_path):
+    fa, chr_list, haplotigs = _single_hap_pta_run(tmp_path, mock_ctx_primary)
+
+    assert find_canonical_fa(mock_ctx_primary, "primary") == fa
+    assert find_canonical_chr_list(mock_ctx_primary, "primary") == chr_list
+    assert find_canonical_haplotigs(mock_ctx_primary, "primary") == haplotigs
+
+
+# ---------------------------------------------------------------------------
+# DOM-02 / report 06 trace T3: an in-flight run's files are not canonical
+# ---------------------------------------------------------------------------
+
+
+def _pta_success(tmp_path, ctx, ts="2026-01-01T00_00_00"):
+    pta_dir = _pta_dir(tmp_path, ts)
+    fa = _write(pta_dir / f"{ctx.tol_id}.hap1.1.curated.fa")
+    chr_list = _write(pta_dir / f"{ctx.tol_id}.hap1.1.chromosome.list.csv")
+    ctx.tracker.finish(
+        "pretext_to_asm",
+        pta_dir,
+        "success",
+        outputs={"hap1_fa": str(fa), "hap1_chr_list": str(chr_list)},
+    )
+    return fa, chr_list
+
+
+def test_trace_t3_in_flight_rename_and_orient_is_not_canonical(mock_ctx, tmp_path):
+    """rename-and-orient's bsub job is still writing: canonical stays pretext-to-asm's."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_fa, pta_chr = _pta_success(tmp_path, mock_ctx)
+
+    rao_dir = tracker.start("rename_and_orient", mock_ctx.ticket_id, mock_ctx.tol_id)
+    tracker.record_job("rename_and_orient", rao_dir, "12345")
+    _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")  # half-written
+    _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.chromosome.list.csv")
+
+    assert find_canonical_fa(mock_ctx, "hap1") == pta_fa
+    assert find_canonical_chr_list(mock_ctx, "hap1") == pta_chr
+
+
+def test_trace_t2_rerun_with_uncaptured_outputs_still_wins(mock_ctx, tmp_path):
+    """rename-and-orient run 2 succeeded but its epilogue captured no outputs: its
+    on-disk FASTA C is the freshest, not run 1's superseded B."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    _pta_success(tmp_path, mock_ctx)
+
+    run1 = tmp_path / "rename_and_orient" / "2026-01-02T00_00_00"
+    fa_b = _write(run1 / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+    chr_b = _write(run1 / f"{mock_ctx.tol_id}.hap1.primary.renamed.chromosome.list.csv")
+    tracker.finish(
+        "rename_and_orient",
+        run1,
+        "success",
+        outputs={"hap1_fa": str(fa_b), "hap1_chr_list": str(chr_b)},
+    )
+
+    run2 = tmp_path / "rename_and_orient" / "2026-01-03T00_00_00"
+    fa_c = _write(run2 / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+    chr_c = _write(run2 / f"{mock_ctx.tol_id}.hap1.primary.renamed.chromosome.list.csv")
+    tracker.finish("rename_and_orient", run2, "success", outputs=None)
+
+    assert find_canonical_fa(mock_ctx, "hap1") == fa_c
+    assert find_canonical_chr_list(mock_ctx, "hap1") == chr_c
+
+
+def test_rerun_with_no_outputs_on_disk_does_not_resurrect_the_older_run(mock_ctx, tmp_path):
+    """The latest run produced nothing: the step offers nothing, and canonical passes
+    to the next pool member rather than to the step's own superseded run."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+
+    run1 = tmp_path / "rename_and_orient" / "2026-01-01T00_00_00"
+    fa_b = _write(run1 / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+    tracker.finish("rename_and_orient", run1, "success", outputs={"hap1_fa": str(fa_b)})
+
+    pta_fa, _ = _pta_success(tmp_path, mock_ctx, ts="2026-01-02T00_00_00")
+    os.utime(pta_fa, (1, 1))  # older than B: B would win if run 1 still competed
+
+    run2 = tmp_path / "rename_and_orient" / "2026-01-03T00_00_00"
+    run2.mkdir(parents=True)
+    tracker.finish("rename_and_orient", run2, "success", outputs=None)
+
+    assert find_canonical_fa(mock_ctx, "hap1") == pta_fa
+
+
+def test_in_flight_rerun_leaves_the_previous_run_of_the_step_canonical(mock_ctx, tmp_path):
+    """A second rename-and-orient run in flight must not hide the first, finished one."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    _pta_success(tmp_path, mock_ctx)
+
+    done_dir = tmp_path / "rename_and_orient" / "2026-01-02T00_00_00"
+    done_fa = _write(done_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+    tracker.finish("rename_and_orient", done_dir, "success", outputs={"hap1_fa": str(done_fa)})
+
+    running_dir = tracker.start("rename_and_orient", mock_ctx.ticket_id, mock_ctx.tol_id)
+    _write(running_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+
+    assert find_canonical_fa(mock_ctx, "hap1") == done_fa
+
+
+def test_in_flight_recurate_haplotigs_are_not_canonical(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    pta_hap = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={"hap1_haplotigs": str(pta_hap)})
+
+    rec_dir = tracker.start("pretext_to_asm_recurate", mock_ctx.ticket_id, mock_ctx.tol_id)
+    _write(rec_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == pta_hap
+
+
+def test_in_flight_hic_remapping_map_is_not_canonical(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    done_dir = tmp_path / "hic_remapping" / "2026-01-01T00_00_00"
+    done_map = _write_map(done_dir, mock_ctx.tol_id, "hap1")
+    tracker.finish(
+        "hic_remapping", done_dir, "success", outputs={"hap1_normal_pretext": str(done_map)}
+    )
+
+    running_dir = tracker.start("hic_remapping", mock_ctx.ticket_id, mock_ctx.tol_id)
+    _write_map(running_dir, mock_ctx.tol_id, "hap1")
+
+    assert find_canonical_map(mock_ctx, "hap1") == done_map
+
+
+# ---------------------------------------------------------------------------
+# DOM-03 / report 06 trace T4: the filesystem fallbacks respect the tracker
+# ---------------------------------------------------------------------------
+
+
+def _untracked_pta_run(ctx):
+    """A `pretext-to-asm --untracked` run with the full dual-hap output set."""
+    run_dir = ctx.tracker.start("pretext_to_asm", ctx.ticket_id, ctx.tol_id, untracked=True)
+    fa = _write(run_dir / f"{ctx.tol_id}.hap1.1.curated.fa")
+    chr_list = _write(run_dir / f"{ctx.tol_id}.hap1.1.chromosome.list.csv")
+    _write(run_dir / f"{ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    ctx.tracker.finish(
+        "pretext_to_asm",
+        run_dir,
+        "success",
+        outputs={"hap1_fa": str(fa), "hap1_chr_list": str(chr_list)},
+        untracked=True,
+    )
+    return run_dir
+
+
+@pytest.mark.parametrize(
+    "finder",
+    [find_canonical_fa, find_canonical_chr_list, find_canonical_haplotigs, find_curated_fa],
+    ids=lambda f: f.__name__,
+)
+def test_trace_t4_an_untracked_only_run_is_never_canonical(mock_ctx, tmp_path, finder):
+    _make_tracker(tmp_path, mock_ctx)
+    _untracked_pta_run(mock_ctx)
+
+    with pytest.raises(FileNotFoundError):
+        finder(mock_ctx, "hap1")
+
+
+@pytest.mark.parametrize(
+    "finder, name",
+    [
+        (find_canonical_fa, "hap1.1.curated.fa"),
+        (find_canonical_chr_list, "hap1.1.chromosome.list.csv"),
+        (find_canonical_haplotigs, "hap1.1.all_haplotigs.curated.fa"),
+    ],
+    ids=["fa", "chr_list", "haplotigs"],
+)
+def test_filesystem_fallback_skips_a_newer_untracked_run(mock_ctx, tmp_path, finder, name):
+    """A pre-tracking pretext_to_asm dir on disk stays canonical over a newer untracked run."""
+    _make_tracker(tmp_path, mock_ctx)
+    legacy = _write(_pta_dir(tmp_path) / f"{mock_ctx.tol_id}.{name}")
+    _untracked_pta_run(mock_ctx)
+
+    assert finder(mock_ctx, "hap1") == legacy
+
+
+def test_untracking_the_only_pretext_to_asm_run_takes_it_out_of_canonical(mock_ctx, tmp_path):
+    """Trace T4's second half: `grit untrack -s pretext_to_asm` must not be a no-op."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    _pta_success(tmp_path, mock_ctx)
+    tracker.untrack("pretext_to_asm")
+
+    with pytest.raises(FileNotFoundError):
+        find_canonical_fa(mock_ctx, "hap1")
+
+
+@pytest.mark.parametrize("untracked", [True, False], ids=["untracked", "in_flight"])
+def test_rename_and_orient_fallback_skips_unsettled_runs(mock_ctx, tmp_path, untracked):
+    _make_tracker(tmp_path, mock_ctx)
+    legacy_fa = _write(_pta_dir(tmp_path) / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    legacy_chr = _write(_pta_dir(tmp_path) / f"{mock_ctx.tol_id}.hap1.1.chromosome.list.csv")
+
+    rao_dir = mock_ctx.tracker.start(
+        "rename_and_orient", mock_ctx.ticket_id, mock_ctx.tol_id, untracked=untracked
+    )
+    _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+    _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.chromosome.list.csv")
+
+    assert find_canonical_fa(mock_ctx, "hap1") == legacy_fa
+    assert find_canonical_chr_list(mock_ctx, "hap1") == legacy_chr
+
+
+def test_filesystem_fallback_skips_an_in_flight_pretext_to_asm_run(mock_ctx, tmp_path):
+    _make_tracker(tmp_path, mock_ctx)
+    legacy = _write(_pta_dir(tmp_path) / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    running = mock_ctx.tracker.start("pretext_to_asm", mock_ctx.ticket_id, mock_ctx.tol_id)
+    _write(running / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+
+    assert find_canonical_fa(mock_ctx, "hap1") == legacy
+
+
+@pytest.mark.parametrize("untracked", [True, False], ids=["untracked", "in_flight"])
+def test_canonical_map_fallback_skips_unsettled_runs(mock_ctx, tmp_path, untracked):
+    _make_tracker(tmp_path, mock_ctx)
+    legacy = _write_map(tmp_path / "hic_remapping" / "2026-01-01T00_00_00", mock_ctx.tol_id, "hap1")
+    run_dir = mock_ctx.tracker.start(
+        "hic_remapping", mock_ctx.ticket_id, mock_ctx.tol_id, untracked=untracked
+    )
+    _write_map(run_dir, mock_ctx.tol_id, "hap1")
+
+    assert find_canonical_map(mock_ctx, "hap1") == legacy
+
+
+def test_find_latest_dir_skips_an_untracked_run(mock_ctx, tmp_path):
+    from grit.utils.helpers import find_latest_dir
+
+    _make_tracker(tmp_path, mock_ctx)
+    kept = _pta_dir(tmp_path)
+    kept.mkdir(parents=True)
+    _untracked_pta_run(mock_ctx)
+
+    assert find_latest_dir(mock_ctx, "pretext_to_asm") == kept
+
+
+# ---------------------------------------------------------------------------
+# DOM-16: a stale NFS handle is "not available", not a crash
+# ---------------------------------------------------------------------------
+
+
+def _stale_handle_on(monkeypatch, bad_path):
+    """Make every stat() of *bad_path* raise ESTALE, as NFS does after a concurrent delete."""
+    import errno
+    from pathlib import Path
+
+    real_stat = Path.stat
+
+    def fake_stat(self, *args, **kwargs):
+        if str(self) == str(bad_path):
+            raise OSError(errno.ESTALE, "Stale file handle", str(self))
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", fake_stat)
+
+
+def test_a_stale_pool_candidate_is_skipped(mock_ctx, tmp_path, monkeypatch):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_fa, _ = _pta_success(tmp_path, mock_ctx)
+    rao_dir = tmp_path / "rename_and_orient" / "2026-01-02T00_00_00"
+    rao_fa = _write(rao_dir / f"{mock_ctx.tol_id}.hap1.primary.renamed.fa")
+    tracker.finish("rename_and_orient", rao_dir, "success", outputs={"hap1_fa": str(rao_fa)})
+
+    _stale_handle_on(monkeypatch, rao_fa)
+
+    assert find_canonical_fa(mock_ctx, "hap1") == pta_fa
+
+
+def test_a_stale_map_in_the_filesystem_fallback_is_skipped(mock_ctx, tmp_path, monkeypatch):
+    _make_tracker(tmp_path, mock_ctx)
+    hic = tmp_path / "hic_remapping"
+    old_map = _write_map(hic / "2026-01-01T00_00_00", mock_ctx.tol_id, "hap1")
+    new_map = _write_map(hic / "2026-01-02T00_00_00", mock_ctx.tol_id, "hap1")
+
+    _stale_handle_on(monkeypatch, new_map)
+
+    assert find_canonical_map(mock_ctx, "hap1") == old_map
+
+
+# ---------------------------------------------------------------------------
+# DOM-14: each rename-and-orient step competes only for its own haplotype
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "step, key, asked",
+    [
+        ("rename_and_orient_hap2", "hap1_fa", "hap1"),
+        ("rename_and_orient", "hap2_fa", "hap2"),
+    ],
+)
+def test_rename_and_orient_steps_never_cross_haplotypes(mock_ctx, tmp_path, step, key, asked):
+    """Even if a step's output key named the other haplotype, it must not compete for it."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    pta_fa = _write(pta_dir / f"{mock_ctx.tol_id}.{asked}.1.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs={f"{asked}_fa": str(pta_fa)})
+
+    other_dir = tmp_path / step / "2026-01-02T00_00_00"
+    other_fa = _write(other_dir / "renamed.fa")
+    tracker.finish(step, other_dir, "success", outputs={key: str(other_fa)})
+
+    assert find_canonical_fa(mock_ctx, asked) == pta_fa
+
+
+def test_rename_and_orient_hap2_is_canonical_for_hap2(mock_ctx, tmp_path):
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    rao_dir = tmp_path / "rename_and_orient_hap2" / "2026-01-02T00_00_00"
+    rao_fa = _write(rao_dir / f"{mock_ctx.tol_id}.hap2.primary.renamed.fa")
+    rao_chr = _write(rao_dir / f"{mock_ctx.tol_id}.hap2.primary.renamed.chromosome.list.csv")
+    tracker.finish(
+        "rename_and_orient_hap2",
+        rao_dir,
+        "success",
+        outputs={"hap2_fa": str(rao_fa), "hap2_chr_list": str(rao_chr)},
+    )
+
+    assert find_canonical_fa(mock_ctx, "hap2") == rao_fa
+    assert find_canonical_chr_list(mock_ctx, "hap2") == rao_chr
+
+
+# ---------------------------------------------------------------------------
+# DOM-07 / report 06 trace T8: haplotig-files' placeholders never beat real haplotigs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("tracked", [True, False], ids=["tracked", "filesystem"])
+def test_trace_t8_placeholder_does_not_outrank_the_real_combined_haplotigs(
+    mock_ctx, tmp_path, tracked
+):
+    """`grit post-curation`: pretext-to-asm writes the combined {tol}.1.haplotigs.fa,
+    then haplotig-files touches empty hap-prefixed placeholders beside it."""
+    from grit.steps.post_curation.haplotig_files import run_haplotig_files
+
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    mock_ctx.print_only = False
+    pta_dir = _pta_dir(tmp_path)
+    hap1_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.curated.fa")
+    hap2_fa = _write(pta_dir / f"{mock_ctx.tol_id}.hap2.1.curated.fa")
+    combined = _write(pta_dir / f"{mock_ctx.tol_id}.1.haplotigs.fa")
+    if tracked:
+        tracker.finish(
+            "pretext_to_asm",
+            pta_dir,
+            "success",
+            outputs={"hap1_fa": str(hap1_fa), "hap2_fa": str(hap2_fa)},
+        )
+
+    run_haplotig_files(mock_ctx)
+    placeholder = pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa"
+    assert placeholder.exists() and placeholder.stat().st_size == 0
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == combined
+
+
+def test_placeholder_is_used_when_there_are_no_real_haplotigs(mock_ctx, tmp_path):
+    """No haplotigs came out of curation: the placeholder is the right answer."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    placeholder = pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa"
+    placeholder.parent.mkdir(parents=True)
+    placeholder.touch()
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs=None)
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == placeholder
+
+
+def test_a_real_hap_specific_haplotigs_file_is_kept(mock_ctx, tmp_path):
+    """A non-empty hap-prefixed file is real output and wins over a combined file."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    pta_dir = _pta_dir(tmp_path)
+    _write(pta_dir / f"{mock_ctx.tol_id}.1.haplotigs.fa")
+    hap1 = _write(pta_dir / f"{mock_ctx.tol_id}.hap1.1.all_haplotigs.curated.fa")
+    tracker.finish("pretext_to_asm", pta_dir, "success", outputs=None)
+
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == hap1
+
+
+# ---------------------------------------------------------------------------
+# Report 06 trace T1: the documented happy chain, all three file types
+# ---------------------------------------------------------------------------
+
+
+def test_trace_t1_documented_chain(mock_ctx, tmp_path):
+    """pretext-to-asm → blast-contaminants → recurate → rename-and-orient: rename owns
+    fa and chr list, recurate owns the haplotigs (rename produces none)."""
+    tracker = _make_tracker(tmp_path, mock_ctx)
+    tol = mock_ctx.tol_id
+
+    pta_dir = _pta_dir(tmp_path)
+    pta = {
+        "hap1_fa": _write(pta_dir / f"{tol}.hap1.1.curated.fa"),
+        "hap1_chr_list": _write(pta_dir / f"{tol}.hap1.1.chromosome.list.csv"),
+        "hap1_haplotigs": _write(pta_dir / f"{tol}.hap1.1.all_haplotigs.curated.fa"),
+    }
+    tracker.finish(
+        "pretext_to_asm", pta_dir, "success", outputs={k: str(v) for k, v in pta.items()}
+    )
+
+    bc_dir = tmp_path / "blast_contaminants" / "2026-01-02T00_00_00"
+    bc_fa = _write(bc_dir / "hap1" / f"{tol}.hap1.1.decontaminated.fa")
+    tracker.finish("blast_contaminants", bc_dir, "success", outputs={"hap1_fa": str(bc_fa)})
+
+    rec_dir = tmp_path / "pretext_to_asm_recurate" / "2026-01-03T00_00_00"
+    rec = {
+        "hap1_fa": _write(rec_dir / f"{tol}.hap1.1.curated.fa"),
+        "hap1_chr_list": _write(rec_dir / f"{tol}.1.primary.chromosome.list.csv"),
+        "hap1_haplotigs": _write(rec_dir / f"{tol}.hap1.1.all_haplotigs.curated.fa"),
+    }
+    tracker.finish(
+        "pretext_to_asm_recurate", rec_dir, "success", outputs={k: str(v) for k, v in rec.items()}
+    )
+
+    rao_dir = tmp_path / "rename_and_orient" / "2026-01-04T00_00_00"
+    rao_fa = _write(rao_dir / f"{tol}.hap1.primary.renamed.fa")
+    rao_chr = _write(rao_dir / f"{tol}.hap1.primary.renamed.chromosome.list.csv")
+    tracker.finish(
+        "rename_and_orient",
+        rao_dir,
+        "success",
+        outputs={"hap1_fa": str(rao_fa), "hap1_chr_list": str(rao_chr)},
+    )
+
+    assert find_canonical_fa(mock_ctx, "hap1") == rao_fa
+    assert find_canonical_chr_list(mock_ctx, "hap1") == rao_chr
+    assert find_canonical_haplotigs(mock_ctx, "hap1") == rec["hap1_haplotigs"]

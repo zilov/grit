@@ -86,7 +86,7 @@ if grit --help > /dev/null; then ok "grit --help"; else fail "grit --help"; fi
 # =============================================================================
 # --- Section 1: --print-only pass over the commands that need real ToL paths -
 # =============================================================================
-# add-gap-track, add-telo-track and validate-files are deliberately absent:
+# add-gap-track and add-telo-track are deliberately absent:
 # they are commented out of the command tree in click_cli.py, so invoking them
 # only ever produced "No such command". sex-matcher is absent because both
 # fixtures are algae/fish — the step aborts by design on any ToL ID outside its

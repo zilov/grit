@@ -29,18 +29,18 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def _untracked_dirs(records: list[dict]) -> set[str]:
-    """Return the set of run_dirs whose most recent record status is 'untracked'.
-
-    Iterating forward means the last status seen for each run_dir wins, which
-    correctly handles undo (a later 'success' re-enables a previously untracked dir).
-    """
-    latest_status: dict[str, str] = {}
+def _latest_statuses(records: list[dict], key=str) -> dict[str, str]:
+    """Map each record's ``key(run_dir)`` to the status of its most recent record."""
+    latest: dict[str, str] = {}
     for r in records:
-        rd = r.get("run_dir")
-        if rd:
-            latest_status[rd] = r.get("status", "")
-    return {rd for rd, st in latest_status.items() if st == "untracked"}
+        if r.get("run_dir"):
+            latest[key(r["run_dir"])] = r.get("status", "")
+    return latest
+
+
+def _untracked_dirs(records: list[dict]) -> set[str]:
+    """Return the set of run_dirs whose most recent record status is 'untracked'."""
+    return {rd for rd, st in _latest_statuses(records).items() if st == "untracked"}
 
 
 class RunTracker:
@@ -82,6 +82,10 @@ class RunTracker:
         Pass ``untracked=True`` to mark the run as non-canonical from the start
         so that ``latest_run_dir`` never returns it.
 
+        The record carries the LSF cluster this host submits to, so a later
+        `bjobs` sweep can tell "this cluster has no record of the job" from
+        "I asked the wrong cluster".
+
         In print_only mode: returns a virtual path without touching the filesystem.
         """
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H_%M_%S")
@@ -89,6 +93,8 @@ class RunTracker:
         run_dir = self.workdir / step / dir_name
 
         if not self.print_only:
+            from grit.utils.helpers import lsf_cluster
+
             if create_dir:
                 run_dir.mkdir(parents=True, exist_ok=True)
             status = "untracked" if untracked else "started"
@@ -102,6 +108,7 @@ class RunTracker:
                     "tol_id": tol_id,
                     "run_dir": str(run_dir),
                     "job_id": None,
+                    "cluster": lsf_cluster(),
                 },
             )
             log.debug("Run started: step=%s run_dir=%s untracked=%s", step, run_dir, untracked)
@@ -165,12 +172,13 @@ class RunTracker:
         """Return all step records, optionally filtered by step name."""
         return self._registry.get_steps(self.workdir, step)
 
-    def latest_run_dir(self, step: str) -> Path | None:
+    def latest_run_dir(self, step: str, *, include_started: bool = True) -> Path | None:
         """
         Return the run_dir of the last *successful* run for a step, or None.
 
         If the step only has a 'started' entry (bsub job still running or finished
-        but _state-update hasn't fired yet), returns that run_dir as a fallback.
+        but _state-update hasn't fired yet), returns that run_dir as a fallback
+        unless ``include_started=False``.
         Run dirs whose most recent record has status 'untracked' are excluded.
         """
         runs = self.history(step)
@@ -184,6 +192,8 @@ class RunTracker:
         ]
         if success_runs:
             return Path(success_runs[-1]["run_dir"])
+        if not include_started:
+            return None
         started_runs = [
             r
             for r in runs
@@ -195,25 +205,26 @@ class RunTracker:
             return Path(started_runs[-1]["run_dir"])
         return None
 
+    def run_dir_statuses(self, step: str) -> dict[str, str]:
+        """Map each of *step*'s run dir names to the status of its most recent record."""
+        return _latest_statuses(self.history(step), key=lambda rd: Path(rd).name)
+
     def get_output(self, step: str, key: str) -> str | None:
         """
         Return the path string for *key* from the latest successful run of *step*.
 
-        Returns None if no successful run exists or the key is absent.
-        Runs whose most recent record has status 'untracked' are excluded.
+        Returns None if no successful run exists or that run recorded no such
+        key — an older run never stands in for it. Runs whose most recent record
+        has status 'untracked' are excluded.
         """
-        runs = self.history(step)
-        untracked_dirs = _untracked_dirs(runs)
-        success_runs = [
-            r
-            for r in runs
-            if r.get("status") == "success"
-            and r.get("outputs")
-            and r.get("run_dir") not in untracked_dirs
-        ]
-        if not success_runs:
+        run_dir = self.latest_run_dir(step, include_started=False)
+        if run_dir is None:
             return None
-        return success_runs[-1]["outputs"].get(key)
+        for r in reversed(self.history(step)):
+            if r.get("status") == "success" and r.get("run_dir") == str(run_dir):
+                if r.get("outputs"):
+                    return r["outputs"].get(key)
+        return None
 
     def untrack(self, step: str, run_dir: Path | None = None) -> bool:
         """Mark the latest success run of *step* as untracked. Returns True if found."""

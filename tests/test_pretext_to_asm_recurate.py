@@ -269,17 +269,22 @@ def test_missing_curated_fa_output_raises_instead_of_silent_success(
     mock_find_fa, mock_glob, mock_run, mock_ctx, tmp_path
 ):
     """No recognised curated FASTA → raise, never report success with stale canonical data."""
-    _tracker(tmp_path, mock_ctx)
+    tracker = _tracker(tmp_path, mock_ctx)
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.hap1_prefix = "hap1"
     mock_ctx.hap2_prefix = "hap2"
     mock_find_fa.return_value = _write(tmp_path / "canonical.fa")
     mock_glob.return_value = [str(tmp_path / "recurate" / "sDipInt39.hap1.recurate.agp")]
-    mock_run.side_effect = _fake_pta_run(curated_name="sDipInt39.unexpected_shape.fasta")
+    mock_run.side_effect = _fake_pta_run(
+        curated_name="sDipInt39.unexpected_shape.fasta", haplotigs_name="sDipInt39.haplotigs.fa"
+    )
 
     with pytest.raises(FileNotFoundError, match="no curated FASTA"):
         run_pretext_to_asm_recurate(mock_ctx, "hap1", "pretext_to_asm_recurate")
+
+    statuses = [r["status"] for r in tracker.history("pretext_to_asm_recurate")]
+    assert statuses == ["started", "failed"]
 
 
 # ---------------------------------------------------------------------------
@@ -424,14 +429,17 @@ def test_chained_dry_run_forward_chain_from_recurate(mock_ctx, tmp_path):
 
     run_pretext_to_asm(mock_ctx)
     pretext_output = Path(tracker.get_output("pretext_to_asm", "hap1_fa"))
+    os.utime(pretext_output, (1000, 1000))
     assert find_canonical_fa(mock_ctx, "hap1") == pretext_output
 
     run_pretext_to_asm_recurate(mock_ctx, "hap1", "pretext_to_asm_recurate")
     recurate_output = Path(tracker.get_output("pretext_to_asm_recurate", "hap1_fa"))
     assert recurate_output != pretext_output
+    os.utime(recurate_output, (2000, 2000))
     assert find_canonical_fa(mock_ctx, "hap1") == recurate_output
 
     run_blast_contaminants(mock_ctx)
     blast_output = Path(tracker.get_output("blast_contaminants", "hap1_fa"))
     assert blast_output != recurate_output
+    os.utime(blast_output, (3000, 3000))
     assert find_canonical_fa(mock_ctx, "hap1") == blast_output

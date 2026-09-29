@@ -13,21 +13,37 @@ recurating hap1 has no effect on hap2.
 ## The model: one flat pool, freshest wins
 
 There are no tiers and no step that outranks another. `grit` looks at a pool of
-steps, keeps the ones that still have an output on disk for this haplotype, and
-returns the one with the **newest file mtime**. A tie goes to whichever step is
+steps, keeps the ones whose latest *finished* run still has an output on disk
+for this haplotype, and returns the one with the **newest file mtime**. A run
+whose job is still in flight does not count yet — its file may be half
+written — so launching `hic-remapping` straight after submitting
+`rename-and-orient` remaps the previous canonical FASTA, not a partial one. A tie goes to whichever step is
 listed first — that is a tie-break, not a priority.
 
 The pool differs per file type, because not every step produces every file:
 
 | File | Steps in the pool |
 |---|---|
-| assembly FASTA | `pretext_to_asm`, `microchromosome_combine`, `blast_contaminants`, `rename_and_orient`, `rename_and_orient_hap2`, `pretext_to_asm_recurate[_hap2]` |
+| assembly FASTA | `pretext_to_asm`, `microchromosome_combine`, `blast_contaminants`, `rename_and_orient[_hap2]`, `pretext_to_asm_recurate[_hap2]` |
 | chromosome list | the same, minus `blast_contaminants` |
 | haplotigs | `pretext_to_asm`, `pretext_to_asm_recurate[_hap2]` |
+| Pretext map | `hic_remapping` (hap1) or `hic_remapping_hap2` (hap2) |
 
 `blast_contaminants` is absent from the chromosome-list pool because contaminant
 filtering was assumed not to touch the chromosome list, and the rename/contam
 steps are absent from the haplotigs pool because they do not produce haplotigs.
+The empty `{tol_id}.{hap}.*.all_haplotigs.curated.fa` placeholders that
+`haplotig-files` creates never hide real haplotigs: an empty file yields to a
+non-empty combined haplotigs file (`{tol_id}.1.haplotigs.fa`) in the same run
+dir, which — as the combined file for both haplotypes — is hap1's.
+
+The map pool holds a single step per haplotype, since only hic-remapping
+produces a remapped map — but the same rules apply, and the point of resolving
+it this way is that a ticket accumulates one hic-remapping run per round. Only
+the `*normal.pretext` map counts: the `hr.pretext` alongside it is the curation
+input and stays on the farm. The staged draft map that `setup` copies from NFS
+is not canonical — a ticket has a canonical map only once hic-remapping has
+run. A single-hap assembly has no hap2 map at all.
 
 The practical consequence: **whichever pool step you ran most recently for a
 haplotype owns that file.** There is no special case for recurate — running
@@ -41,7 +57,11 @@ as such.
 
 If nothing in a pool has a live tracked output — a fresh clone, a workdir
 populated outside `grit` — resolution falls back to globbing the workdir:
-`rename_and_orient*` run dirs first, then the `pretext_to_asm` output.
+`rename_and_orient*` run dirs first, then the `pretext_to_asm` output. The
+fallback still skips run dirs that `grit` knows are untracked or still in
+flight, so an `--untracked` run never becomes canonical by being the newest
+directory on disk, and untracking the only run of a step leaves that file
+type with no canonical file rather than changing nothing.
 
 ### `--hap2` does not mean the same thing everywhere
 
@@ -55,6 +75,10 @@ one haplotype or two:
 | `hic-remapping` | hap2 **instead of** hap1 |
 | `pretext-to-asm-recurate` | hap2 **instead of** hap1 |
 | `post-curation-recurate` | hap2 **instead of** hap1 |
+
+A `primary`/`alternate` ticket has no second haplotype: `hic-remapping --hap2`
+and `rename-and-orient --hap2` refuse to run, and every resolver answers "not
+found" for `alternate` rather than handing back the primary's files.
 
 ## User path
 
@@ -136,11 +160,16 @@ one haplotype or two:
 `grit status -t {ticket}` answers this in two places:
 
 - the **Canonical files** table — the resolved path per haplotype for assembly
-  FASTA, haplotigs and chromosome list, with a found/not-found marker;
+  FASTA, haplotigs, chromosome list and Pretext map, with a found/not-found
+  marker;
 - the **Canonical** column of the step-history table — which of that step's
   outputs are currently canonical: `fa`, `hap` (haplotigs), `chr` (chromosome
-  list), suffixed with a 1-based haplotype index when the ticket has more than
-  one haplotype.
+  list), `map` (Pretext map), suffixed with a 1-based haplotype index when the
+  ticket has more than one haplotype.
+
+The canonical map is also what the `scp` download tip offers and what
+`finalize-qc` ships to the curated-maps NFS dir, so an older round's map cannot
+reach the release just because its run dir happens to sort last.
 
 So `pretext_to_asm_recurate` reading `hap(1),chr(1)` while `rename_and_orient`
 reads `fa(1)` means a rename-and-orient run owns the FASTA and an even newer
@@ -150,19 +179,29 @@ tables come from the same resolution call, so they cannot disagree.
 ## Details that matter when changing this
 
 For anyone editing `find_canonical_fa` / `find_canonical_chr_list` /
-`find_canonical_haplotigs` in `grit/utils/helpers.py`:
+`find_canonical_haplotigs` / `find_canonical_map` in `grit/utils/helpers.py`:
 
 - A step's candidate is normally its recorded output path. When the step's
   latest successful run recorded no such output key, its run dir is re-globbed
   with that step's own `_OUTPUT_SPECS` rather than dropping the step from the
   comparison — otherwise a run with incompletely recorded outputs hands
   canonical back to an older step, moving it *backwards* in time with nothing
-  in `grit status` to show for it.
+  in `grit status` to show for it. For the same reason an *earlier* run of the
+  same step never stands in for the latest one: a step offers only what its
+  latest successful run recorded or left in its run dir.
 - Haplotype prefixes are matched on dot-delimited tokens, so `primary` as a
   prefix does not collide with the `.primary.curated.fa` suffix that every
   curated FASTA carries.
 - `pretext_to_asm_recurate` and `pretext_to_asm_recurate_hap2` are separate
-  step names, as are `rename_and_orient` and `rename_and_orient_hap2`.
+  step names, as are `rename_and_orient` and `rename_and_orient_hap2`, and
+  `hic_remapping` and `hic_remapping_hap2`. `[_hap2]` in the pool table means
+  the `_hap2` step is in hap2's pool and the unsuffixed one in hap1's — never
+  both — so one haplotype's run can never compete for the other's slot.
+- `find_canonical_map` resolves a haplotype only from that haplotype's own
+  step and output key, with no alias or no-prefix fallback. Keep it that way:
+  the fallbacks that make sense for FASTA naming are what let hap1's file be
+  returned as hap2's, which for a map means publishing the wrong haplotype's
+  Hi-C map to NFS.
 
 ## Flowchart
 
@@ -210,9 +249,11 @@ flowchart TD
     J -->|No| Z
 
     classDef canonical fill:#e8f0fe,stroke:#5b7fc7,color:#12233f
-    class D,E2,G1,H1,L canonical
+    class D,E2,G1,H1,L,R canonical
 ```
 
 Highlighted nodes are the steps that produce a new canonical candidate; every
 other node reads the canonical files without replacing them. Whichever
-highlighted step ran most recently for a haplotype owns that haplotype's files.
+highlighted step ran most recently for a haplotype owns that haplotype's files
+— bearing in mind that each step only competes for the file types it produces,
+so `hic-remapping` owns the map alone and never the FASTA.
