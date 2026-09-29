@@ -268,28 +268,15 @@ _TUTORIAL_1 = Scenario(
             why=(
                 "Builds a fresh Pretext map from the curated assembly, so you can check "
                 "your edits in PretextView before sending the ticket to QC. It submits "
-                "a curationpretext job to LSF and returns straight away."
+                "a curationpretext job to LSF and returns straight away. --hap2 remaps "
+                "both haplotypes; without it grit remaps hap1 only. A haplotype whose map "
+                "is already newer than its canonical FASTA is skipped, so re-running is "
+                "safe."
             ),
-            task="Remap the HiC reads for the first haplotype.",
-            command="hic-remapping",
-        ),
-        Lesson(
-            title="hic-remapping — and now the second haplotype",
-            why=(
-                "hic-remapping's --hap2 is *exclusive*: it runs the second haplotype "
-                "instead of the first, so a diploid ticket needs the command twice. "
-                "Other steps treat --hap2 additively — you'll meet one later. Each "
-                "step's --help says which it is; guessing is how people lose a haplotype."
-            ),
-            task="Do the same for the second haplotype.",
+            task="Remap the HiC reads for both haplotypes.",
             command="hic-remapping",
             args=["--hap2"],
-            flag_hints={
-                "--hap2": (
-                    "hic-remapping runs one haplotype per invocation — --hap2 selects the "
-                    "second one instead of the first."
-                )
-            },
+            flag_hints={"--hap2": ("--hap2 runs both haplotypes; without it grit runs hap1 only.")},
             check=(
                 "the remapped map for each haplotype in the Canonical files table, and "
                 "the scp tip for downloading it. A ticket can collect several maps "
@@ -476,18 +463,12 @@ _TUTORIAL_2 = Scenario(
             why=(
                 "A shortcut for the two steps you'd otherwise run back to back: "
                 "pretext-to-asm on the new AGP, then hic-remapping to build the next "
-                "Pretext map. Pass --hap2 to also remap the second haplotype "
-                "(additively — hap1 still runs)."
+                "Pretext map. --hap2 runs both haplotypes."
             ),
             task="Run post-curation for both haplotypes.",
             command="post-curation",
             args=["--hap2"],
-            flag_hints={
-                "--hap2": (
-                    "post-curation's --hap2 is additive — it submits hic-remapping for "
-                    "hap2 as well as hap1, both in the same run."
-                )
-            },
+            flag_hints={"--hap2": ("--hap2 runs both haplotypes; without it grit runs hap1 only.")},
             check=(
                 "the Step history now lists every step you have run on this ticket, and "
                 "in Canonical files the assembly now points into a newer pretext_to_asm/ "
@@ -635,39 +616,21 @@ _TUTORIAL_3 = Scenario(
             title="rename-and-orient — apply the collaborator's numbering",
             why=(
                 "Reads fastga's PAF and renames/flips scaffolds so the chromosome "
-                "numbering matches the reference. --hap2 here is *additive* — one "
-                "invocation with it does both haplotypes in the same run, unlike "
-                "hic-remapping's exclusive --hap2 you've seen before."
+                "numbering matches the reference. --hap2 runs both haplotypes."
             ),
             task="Rename and orient the chromosomes for both haplotypes in one go.",
             command="rename-and-orient",
             args=["--hap2"],
-            flag_hints={
-                "--hap2": (
-                    "rename-and-orient's --hap2 is additive — it adds the second "
-                    "haplotype to the same run rather than replacing the first."
-                )
-            },
+            flag_hints={"--hap2": ("--hap2 runs both haplotypes; without it grit runs hap1 only.")},
             check="canonical chained forward to rename_and_orient/",
         ),
         Lesson(
             title="hic-remapping",
-            why="Build the next Pretext map from whatever is canonical now.",
-            task="Remap the HiC reads for the first haplotype.",
-            command="hic-remapping",
-        ),
-        Lesson(
-            title="hic-remapping — second haplotype",
-            why="Exclusive --hap2 again: one invocation per haplotype.",
-            task="And the second haplotype.",
+            why="Build the next Pretext maps from whatever is canonical now.",
+            task="Remap the HiC reads for both haplotypes.",
             command="hic-remapping",
             args=["--hap2"],
-            flag_hints={
-                "--hap2": (
-                    "hic-remapping runs one haplotype per invocation — --hap2 selects the "
-                    "second one instead of the first."
-                )
-            },
+            flag_hints={"--hap2": ("--hap2 runs both haplotypes; without it grit runs hap1 only.")},
         ),
         Lesson(
             title="finalize-qc",
@@ -722,23 +685,22 @@ _TUTORIAL_4 = Scenario(
                 "Same idea as pretext-to-asm, but it consumes the map hic-remapping just "
                 "made and applies new edits on top of the already-curated assembly, then "
                 "remaps again — a shortcut for pretext-to-asm-recurate + hic-remapping. "
-                "Here --hap2 is *exclusive*, like post-curation-recurate's own hap2 "
-                "flag but unlike post-curation's: it recurates hap2 instead of hap1, not "
-                "in addition to it, so a diploid ticket needs the command twice."
+                "Each haplotype is recurated from its own AGP, so you run it once per "
+                "haplotype: plain for hap1, with --hap2 for hap2."
             ),
             task="Recurate the first haplotype's remapped map.",
             command="post-curation-recurate",
         ),
         Lesson(
             title="post-curation-recurate — second haplotype",
-            why="Same command, --hap2 this time to recurate the other haplotype instead.",
+            why="Same command, with --hap2 this time to recurate hap2.",
             task="And the second haplotype.",
             command="post-curation-recurate",
             args=["--hap2"],
             flag_hints={
                 "--hap2": (
-                    "post-curation-recurate's --hap2 is exclusive — it recurates hap2 "
-                    "instead of hap1, so both haplotypes need their own invocation."
+                    "post-curation-recurate --hap2 recurates hap2 from its own AGP; "
+                    "hap1 was the previous lesson."
                 )
             },
             check=(
@@ -872,11 +834,7 @@ _TUTORIAL_5 = Scenario(
             task="Rename and orient both haplotypes.",
             command="rename-and-orient",
             args=["--hap2"],
-            flag_hints={
-                "--hap2": (
-                    "rename-and-orient's --hap2 is additive — both haplotypes in the same run."
-                )
-            },
+            flag_hints={"--hap2": ("--hap2 runs both haplotypes; without it grit runs hap1 only.")},
             check="canonical FA moved to rename_and_orient/ — the run you don't want",
         ),
         Lesson(
