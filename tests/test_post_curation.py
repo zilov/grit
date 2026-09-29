@@ -871,6 +871,30 @@ def test_run_hic_remapping_fresh_fasta_ignores_an_up_to_date_map(
     assert mock_run.call_count == 1
 
 
+@patch("grit.utils.helpers._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_custom_assembly_ignores_an_up_to_date_map(
+    mock_find_fa, mock_run, mock_ctx, tmp_path
+):
+    """--assembly remaps hap1 from that file even when the map is newer than the canonical FASTA."""
+    import os
+
+    ctx = _hic_ctx_with_tracker(mock_ctx, tmp_path)
+    _seed_hic_run(ctx, tmp_path, "success")
+    fa = tmp_path / "old.fa"
+    fa.write_text(">a\nA\n")
+    os.utime(fa, (1, 1))
+    mock_find_fa.return_value = fa
+    custom = tmp_path / "custom.fa"
+    custom.write_text(">a\nA\n")
+    mock_run.return_value = "Job <4> is submitted to queue <oversubscribed>."
+
+    run_hic_remapping(ctx, assembly=custom)
+
+    assert mock_run.call_count == 1
+    assert f"--input {custom}" in mock_run.call_args[0][0]
+
+
 @pytest.mark.parametrize("status", ["success", "started"])
 @patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
