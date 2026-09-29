@@ -63,18 +63,24 @@ flight, so an `--untracked` run never becomes canonical by being the newest
 directory on disk, and untracking the only run of a step leaves that file
 type with no canonical file rather than changing nothing.
 
-### `--hap2` does not mean the same thing everywhere
+### What `--hap2` means
 
-Worth knowing before running anything below, because it decides whether you get
-one haplotype or two:
+Without `--hap2` a command runs hap1 only; with it, hap1 **and** hap2. The
+recurate commands are the exception, because each haplotype is recurated from
+its own hand-curated AGP:
 
 | Command | `--hap2` means |
 |---|---|
-| `post-curation` | **also** remap hap2 (hap1 still runs) |
-| `rename-and-orient` | **also** do hap2, using hap1's mapping table |
-| `hic-remapping` | hap2 **instead of** hap1 |
+| `post-curation` | hap1 and hap2 remapped |
+| `rename-and-orient` | hap1 and hap2, hap2 reusing hap1's mapping table |
+| `hic-remapping` | hap1 and hap2 |
 | `pretext-to-asm-recurate` | hap2 **instead of** hap1 |
 | `post-curation-recurate` | hap2 **instead of** hap1 |
+
+`hic-remapping` (and so `post-curation`) skips a haplotype whose run is still in
+flight, or whose canonical map is newer than its canonical FASTA — the map was
+built from the current assembly, so remapping it again would change nothing.
+After recurating only hap2, `hic-remapping --hap2` therefore remaps just hap2.
 
 A `primary`/`alternate` ticket has no second haplotype: `hic-remapping --hap2`
 and `rename-and-orient --hap2` refuse to run, and every resolver answers "not

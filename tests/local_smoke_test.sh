@@ -161,7 +161,7 @@ assert_canonical "$s1" hap1 "assembly FA" "blast_contaminants/" "[S1] hap1 canon
 assert_canonical "$s1" hap2 "assembly FA" "blast_contaminants/" "[S1] hap2 canonical = blast_contaminants"
 
 run "[S1] hic-remapping (hap1)" $GRIT_DRY hic-remapping -t "$T1" --dry-run
-run "[S1] hic-remapping (hap2, exclusive flag)" $GRIT_DRY hic-remapping -t "$T1" --dry-run --hap2
+run "[S1] hic-remapping (hap1+hap2, hap1 up to date)" $GRIT_DRY hic-remapping -t "$T1" --dry-run --hap2
 s1=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s1" hap1 "assembly FA" "blast_contaminants/" "[S1] hic-remapping doesn't change canonical_fa (hap1)"
 
@@ -177,7 +177,7 @@ assert_canonical "$s1" hap1 "assembly FA" "rename_and_orient/" "[S1] hap1 canoni
 assert_canonical "$s1" hap2 "assembly FA" "rename_and_orient_hap2/" "[S1] hap2 canonical = rename_and_orient_hap2 (chain forward from recurate)"
 
 run "[S1] 2nd hic-remapping (hap1)" $GRIT_DRY hic-remapping -t "$T1" --dry-run
-run "[S1] 2nd hic-remapping (hap2)" $GRIT_DRY hic-remapping -t "$T1" --dry-run --hap2
+run "[S1] 2nd hic-remapping (hap1+hap2, both up to date)" $GRIT_DRY hic-remapping -t "$T1" --dry-run --hap2
 
 if finalize_output=$($GRIT_DRY finalize-qc -t "$T1" --dry-run); then
     ok "[S1] finalize-qc"

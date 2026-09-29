@@ -241,7 +241,7 @@ def run_rename_and_orient(
     "run_hap2",
     is_flag=True,
     default=False,
-    help="Also rename and orient hap2 using the mapping table from hap1 run.",
+    help="Run hap2 as well as hap1 (hap2 reuses hap1's mapping table).",
 )
 @click.option(
     "--mapping-table",

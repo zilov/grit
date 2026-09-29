@@ -78,7 +78,8 @@ grit post-curation -t RC-1234 --hap2
 grit pretext-to-asm -t RC-1234
 grit haplotig-files -t RC-1234
 grit hic-remapping -t RC-1234 # hap1 only
-grit hic-remapping -t RC-1234 --hap2 # hap2 only
+grit hic-remapping -t RC-1234 --hap2 # hap1 and hap2 (hap1 skipped if its map
+                                     # is newer than its canonical FASTA)
 
 # 3. Copying results to curated directory + run qv/completeness check
 grit finalize-qc -t RC-1234
@@ -378,7 +379,7 @@ grit pretext-to-asm-recurate -t RC-1234           # hap1 / primary
 grit pretext-to-asm-recurate -t RC-1234 --hap2    # hap2 / alternate
 
 # 4. Remap Hi-C against the new assembly
-grit hic-remapping -t RC-1234 [--hap2]
+grit hic-remapping -t RC-1234 [--hap2]   # --hap2: both; an up-to-date hap1 map is skipped
 
 # steps 3 and 4 in one go:
 grit post-curation-recurate -t RC-1234 [--hap2]
@@ -430,7 +431,7 @@ grit pp -t RC-1234
 grit setup -t RC-1234
 # curate both haplotypes, copy both AGPs into the workdir
 
-grit post-curation -t RC-1234 --hap2   # here --hap2 means ALSO hap2, hap1 still runs
+grit post-curation -t RC-1234 --hap2   # --hap2: hap1 and hap2
 #   hap1:  fa, chr, hap  ->  pretext_to_asm
 #   hap2:  fa, chr, hap  ->  pretext_to_asm
 
@@ -513,7 +514,7 @@ grit find-reference -t RC-1234               # or --local /path/to/reference.fa
 grit fastga -t RC-1234                       # rename-and-orient needs its PAF,
                                              # unless you pass --mapping-table
 
-grit rename-and-orient -t RC-1234 --hap2     # here --hap2 means ALSO hap2,
+grit rename-and-orient -t RC-1234 --hap2     # --hap2: hap1 and hap2,
                                              # reusing hap1's mapping table
 #   hap1:  fa, chr  ->  rename_and_orient
 #   hap2:  fa, chr  ->  rename_and_orient_hap2
