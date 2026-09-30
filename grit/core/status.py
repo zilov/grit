@@ -693,6 +693,7 @@ def show_ticket_history(
         curated_dirs = sorted(curated_base.glob(f"{tol_id}.*")) if curated_base.exists() else []
         curated_dir = curated_dirs[0] if curated_dirs else None
 
+    console.print()
     print_curation_results(tracker, workdir, tol_id, curated_dir=curated_dir)
     console.print()
 
