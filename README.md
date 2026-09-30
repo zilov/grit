@@ -33,6 +33,19 @@ To pick up a newer version:
 uv tool upgrade grit --reinstall
 ```
 
+## First steps: the tutorial
+
+New to grit? Right after installing, run the guided tutorial — no config,
+Jira, LSF or real data needed (every command runs in an isolated sandbox):
+
+```bash
+grit tutorial                        # pick a scenario from the menu
+grit tutorial --scenario overview    # tutorial 0: what curation and grit are
+grit tutorial --scenario basic       # tutorial 1: the standard post-curation chain
+```
+
+Start with `overview`, then `basic`. `grit tutorial --help` lists all scenarios.
+
 ## Configuration
 
 Run `grit init` to create `~/.grit/grit_curation_config.yaml`, pre-filled with your
