@@ -156,9 +156,14 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
         if run_dir
         else None
     )
-    job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
-    if ctx.tracker and run_dir and job_id:
-        ctx.tracker.record_job("busco_curated", run_dir, job_id)
+    try:
+        job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
+        if ctx.tracker and run_dir and job_id:
+            ctx.tracker.record_job("busco_curated", run_dir, job_id)
+    except Exception:
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("busco_curated", run_dir, "failed", untracked=ctx.untracked)
+        raise
 
     print_done("BUSCO on curated genome submitted.")
 

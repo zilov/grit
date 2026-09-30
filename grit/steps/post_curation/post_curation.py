@@ -36,12 +36,12 @@ __all__ = [
 def run_post_curation(ctx, *, run_hap2: bool = False):
     """Run all post-curation steps in sequence.
 
-    ``run_hap2=True`` also submits HiC remapping for hap2 (hap1 still runs).
+    ``run_hap2=True`` remaps hap2 as well as hap1.
     """
     log.info("post-curation | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     run_pretext_to_asm(ctx)
     run_haplotig_files(ctx)
-    run_hic_remapping(ctx, run_hap2=run_hap2)
+    run_hic_remapping(ctx, run_hap2=run_hap2, fresh_fasta=True)
 
 
 # ---------------------------------------------------------------------------
@@ -51,7 +51,11 @@ def run_post_curation(ctx, *, run_hap2: bool = False):
 
 @click.command("post-curation", cls=GritCommand)
 @click.option(
-    "--hap2", "run_hap2", is_flag=True, default=False, help="Also submit HiC remapping for hap2."
+    "--hap2",
+    "run_hap2",
+    is_flag=True,
+    default=False,
+    help="Run hap2 as well as hap1 (HiC remapping; hap1 is skipped if its map is up to date).",
 )
 @click.pass_context
 def post_curation_cmd(ctx, run_hap2):

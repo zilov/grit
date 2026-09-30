@@ -86,28 +86,41 @@ if grit --help > /dev/null; then ok "grit --help"; else fail "grit --help"; fi
 # =============================================================================
 # --- Section 1: --print-only pass over the commands that need real ToL paths -
 # =============================================================================
-# add-gap-track, add-telo-track and validate-files are deliberately absent:
+# add-gap-track and add-telo-track are deliberately absent:
 # they are commented out of the command tree in click_cli.py, so invoking them
 # only ever produced "No such command". sex-matcher is absent because both
 # fixtures are algae/fish — the step aborts by design on any ToL ID outside its
 # insect/nematode prefixes, so it needs a fixture it does not have yet.
 if [ -d /lustre ]; then
-    run "setup (hap, --print-only after subcommand)" $GRIT --yaml "$HAP_YAML" setup --print-only
-    run "find-reference"                             $GRIT --yaml "$HAP_YAML" find-reference
+    # --print-only creates nothing, so a chain of print-only steps finds none of
+    # its inputs. Each step is therefore previewed with --dry-run --print-only
+    # (real farm commands, inputs resolved in the dry-run sandbox) and then run
+    # with --dry-run alone, whose placeholder outputs feed the next step.
+    P1_HAP="print_only_hap"
+    P1_PRIMARY="print_only_primary"
+    preview() {
+        local desc="$1" yaml="$2" ticket="$3"
+        shift 3
+        run "$desc" grit --config "$CONFIG" --yaml "$yaml" "$@" -t "$ticket" --dry-run --print-only
+        grit --config "$CONFIG" --yaml "$yaml" "$@" -t "$ticket" --dry-run > /dev/null \
+            || fail "$desc (--dry-run seed for the next step)"
+    }
+    preview "setup"                     "$HAP_YAML"     "$P1_HAP"     setup
+    preview "find-reference"            "$HAP_YAML"     "$P1_HAP"     find-reference
 
-    run "setup (primary)"                            $GRIT --yaml "$PRIMARY_YAML" setup
-    run "find-reference (primary)"                   $GRIT --yaml "$PRIMARY_YAML" find-reference
+    preview "setup (primary)"           "$PRIMARY_YAML" "$P1_PRIMARY" setup
+    preview "find-reference (primary)"  "$PRIMARY_YAML" "$P1_PRIMARY" find-reference
 
-    run "pretext-to-asm"                             $GRIT --yaml "$HAP_YAML" pretext-to-asm
-    run "haplotig-files"                             $GRIT --yaml "$HAP_YAML" haplotig-files
-    run "hic-remapping"                              $GRIT --yaml "$HAP_YAML" hic-remapping
-    run "qv"                                         $GRIT --yaml "$HAP_YAML" qv
-    run "finalize-qc"                                $GRIT --yaml "$HAP_YAML" finalize-qc
+    preview "pretext-to-asm"            "$HAP_YAML"     "$P1_HAP"     pretext-to-asm
+    preview "haplotig-files"            "$HAP_YAML"     "$P1_HAP"     haplotig-files
+    preview "hic-remapping"             "$HAP_YAML"     "$P1_HAP"     hic-remapping
+    preview "qv"                        "$HAP_YAML"     "$P1_HAP"     qv
+    preview "finalize-qc"               "$HAP_YAML"     "$P1_HAP"     finalize-qc
 
-    run "fastga"                                     $GRIT --yaml "$HAP_YAML" fastga
-    run "blast-contaminants"                         $GRIT --yaml "$HAP_YAML" blast-contaminants
-    run "rename-and-orient"                          $GRIT --yaml "$HAP_YAML" rename-and-orient
-    run "busco-synteny"                              $GRIT --yaml "$HAP_YAML" busco-synteny --lineage stramenopiles_odb10
+    preview "fastga"                    "$HAP_YAML"     "$P1_HAP"     fastga
+    preview "blast-contaminants"        "$HAP_YAML"     "$P1_HAP"     blast-contaminants
+    preview "rename-and-orient"         "$HAP_YAML"     "$P1_HAP"     rename-and-orient
+    preview "busco-synteny"             "$HAP_YAML"     "$P1_HAP"     busco-synteny --lineage stramenopiles_odb10
 else
     skip "section 1 — needs real ToL paths, and /lustre is not mounted here"
 fi
@@ -161,7 +174,7 @@ assert_canonical "$s1" hap1 "assembly FA" "blast_contaminants/" "[S1] hap1 canon
 assert_canonical "$s1" hap2 "assembly FA" "blast_contaminants/" "[S1] hap2 canonical = blast_contaminants"
 
 run "[S1] hic-remapping (hap1)" $GRIT_DRY hic-remapping -t "$T1" --dry-run
-run "[S1] hic-remapping (hap2, exclusive flag)" $GRIT_DRY hic-remapping -t "$T1" --dry-run --hap2
+run "[S1] hic-remapping (hap1+hap2, hap1 up to date)" $GRIT_DRY hic-remapping -t "$T1" --dry-run --hap2
 s1=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s1" hap1 "assembly FA" "blast_contaminants/" "[S1] hic-remapping doesn't change canonical_fa (hap1)"
 
@@ -177,7 +190,7 @@ assert_canonical "$s1" hap1 "assembly FA" "rename_and_orient/" "[S1] hap1 canoni
 assert_canonical "$s1" hap2 "assembly FA" "rename_and_orient_hap2/" "[S1] hap2 canonical = rename_and_orient_hap2 (chain forward from recurate)"
 
 run "[S1] 2nd hic-remapping (hap1)" $GRIT_DRY hic-remapping -t "$T1" --dry-run
-run "[S1] 2nd hic-remapping (hap2)" $GRIT_DRY hic-remapping -t "$T1" --dry-run --hap2
+run "[S1] 2nd hic-remapping (hap1+hap2, both up to date)" $GRIT_DRY hic-remapping -t "$T1" --dry-run --hap2
 
 if finalize_output=$($GRIT_DRY finalize-qc -t "$T1" --dry-run); then
     ok "[S1] finalize-qc"
@@ -276,11 +289,13 @@ echo "--- Scenario 4: untrack/retrack round-trip ---"
 # pretext_to_asm_recurate's re-run) — so untracking it must fall back to the
 # next-freshest tracked output, pretext_to_asm_recurate, NOT all the way back
 # to rename_and_orient (which is older than the recurate re-run).
-run "[S4] untrack blast_contaminants (hap1)" $GRIT_DRY --dry-run untrack -t "$T1" --step blast_contaminants
+# untrack/retrack take a run ID; read the latest blast_contaminants run's from the sandbox.
+bc_run=$(python -c 'import sys; from grit.core.tutorial import _sandbox_run_id; print(_sandbox_run_id(*sys.argv[1:]))' "$T1" blast_contaminants)
+run "[S4] untrack blast_contaminants (hap1)" $GRIT_DRY --dry-run untrack -t "$T1" --run "$bc_run"
 s4=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s4" hap1 "assembly FA" "pretext_to_asm_recurate/" "[S4] hap1 canonical falls back to pretext_to_asm_recurate after untracking blast_contaminants"
 
-run "[S4] retrack blast_contaminants" $GRIT_DRY --dry-run retrack -t "$T1" --step blast_contaminants
+run "[S4] retrack blast_contaminants" $GRIT_DRY --dry-run retrack -t "$T1" --run "$bc_run"
 s4=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s4" hap1 "assembly FA" "blast_contaminants/" "[S4] hap1 canonical returns to blast_contaminants after retrack"
 
@@ -291,6 +306,79 @@ assert_canonical "$s4" hap1 "assembly FA" "blast_contaminants/" "[S4] hap1 canon
 # scenario above reuses $T1 anyway, since Scenarios 1/2/4 are deliberately
 # chained on top of each other. The $DRY_RUN_TICKET CLI argument is still
 # accepted for backward compatibility but is no longer used by this script.
+
+# ---------------------------------------------------------------------------
+# Scenario 5: `grit tutorial --auto` end to end, per scenario (overview, basic,
+#   references, canonical-changes, recurate, other).
+#   The tutorial drives grit's own CLI in-process with its bundled demo YAMLs,
+#   so a step whose dry-run branch breaks, a lesson naming a command that no
+#   longer exists, or a "run status and find X" claim that stopped being true
+#   shows up here rather than in front of a new curator. Each scenario is run
+#   on its own so the assertion sees only that scenario's final canonical table.
+#   Exception: `overview` has no ticket and no --dry-run sandbox — it is
+#   text screens only and runs no grit command at all.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Scenario 5: grit tutorial --auto ---"
+
+# final_canonical_table OUTPUT — the last "Canonical files" table in a transcript.
+final_canonical_table() {
+    echo "$1" | awk '/^[[:space:]]*Canonical files[[:space:]]*$/{buf=""} {buf=buf"\n"$0} END{print buf}'
+}
+
+run_tutorial_scenario() {
+    local key="$1"
+    if ! tutorial_output=$(grit --config "$CONFIG" tutorial --auto --scenario "$key" 2>&1); then
+        fail "[S5] tutorial scenario '$key' failed:
+$tutorial_output"
+        return 1
+    fi
+    ok "[S5] tutorial scenario '$key' ran every lesson"
+}
+
+# Tutorial 0 is text screens only, with no ticket, so there is no canonical
+# table to assert on. Just confirm it runs end to end and
+# reaches its closing list of the five scenarios.
+run_tutorial_scenario overview
+echo "$tutorial_output" | grep -q "grit tutorial --scenario basic" \
+    && ok "[S5] overview ends by listing the five scenarios" \
+    || fail "[S5] overview did not print its closing scenario list:
+$tutorial_output"
+echo "$tutorial_output" | grep -q "Canonical files" \
+    && fail "[S5] overview printed a canonical-files table, but it has no ticket" \
+    || ok "[S5] overview prints no canonical-files table"
+
+run_tutorial_scenario basic
+basic_out=$(final_canonical_table "$tutorial_output")
+assert_canonical "$basic_out" hap1 "assembly FA" "pretext_to_asm/" "[S5] basic ends with hap1 canonical = pretext_to_asm"
+assert_canonical "$basic_out" hap2 "assembly FA" "pretext_to_asm/" "[S5] basic ends with hap2 canonical = pretext_to_asm"
+
+run_tutorial_scenario references
+refs=$(final_canonical_table "$tutorial_output")
+assert_canonical "$refs" hap1 "assembly FA" "pretext_to_asm/" "[S5] references ends with hap1 canonical = pretext_to_asm (post sex-chromosome re-curation)"
+assert_canonical "$refs" hap2 "assembly FA" "pretext_to_asm/" "[S5] references ends with hap2 canonical = pretext_to_asm (post sex-chromosome re-curation)"
+
+run_tutorial_scenario canonical-changes
+canon=$(final_canonical_table "$tutorial_output")
+assert_canonical "$canon" hap1 "assembly FA" "rename_and_orient/" "[S5] canonical-changes ends with hap1 canonical = rename_and_orient"
+assert_canonical "$canon" hap2 "assembly FA" "rename_and_orient_hap2/" "[S5] canonical-changes ends with hap2 canonical = rename_and_orient_hap2"
+
+run_tutorial_scenario recurate
+recur=$(final_canonical_table "$tutorial_output")
+assert_canonical "$recur" hap1 "assembly FA" "pretext_to_asm_recurate/" "[S5] recurate ends with hap1 canonical = pretext_to_asm_recurate"
+assert_canonical "$recur" hap2 "assembly FA" "pretext_to_asm/" "[S5] recurate ends with hap2 canonical = pretext_to_asm (only hap1 is recurated)"
+
+run_tutorial_scenario other
+other_out=$(final_canonical_table "$tutorial_output")
+assert_canonical "$other_out" hap1 "assembly FA" "rename_and_orient/" "[S5] other ends with hap1 canonical = rename_and_orient (after untrack + a corrected redo)"
+assert_canonical "$other_out" hap2 "assembly FA" "rename_and_orient_hap2/" "[S5] other ends with hap2 canonical = rename_and_orient_hap2"
+
+# --all is what CI would reach for; assert only that it completes.
+if grit --config "$CONFIG" tutorial --auto --all >/dev/null 2>&1; then
+    ok "[S5] tutorial --auto --all completed"
+else
+    fail "[S5] tutorial --auto --all failed"
+fi
 
 rm -rf ~/.grit/dry_run
 ok "dry-run sandbox cleaned up"

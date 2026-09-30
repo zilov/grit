@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Data containers
@@ -177,16 +180,20 @@ def collect_curation_results(
     for d in [d for d in (pta_dir, workdir) if d and d.exists()]:
         csv_files = sorted(d.glob(f"{tol_id}*.chromosome.list.csv"))
         if csv_files:
-            try:
-                all_sex_ids: list[str] = []
-                for i, csv_path in enumerate(csv_files):
+            all_sex_ids: list[str] = []
+            parsed_any = False
+            for csv_path in csv_files:
+                try:
                     autosomes, sex_ids = parse_chromosome_list(csv_path)
-                    if i == 0:
-                        r.autosomes = autosomes  # use first hap for autosome count
-                    all_sex_ids.extend(sex_ids)
+                except Exception as e:
+                    log.warning("Failed to parse chromosome list %s: %s", csv_path, e)
+                    continue
+                if not parsed_any:
+                    r.autosomes = autosomes  # use first successfully parsed hap
+                    parsed_any = True
+                all_sex_ids.extend(sex_ids)
+            if parsed_any:
                 r.allosomes = _build_allosome_string(all_sex_ids)
-            except Exception:
-                pass
             break
 
     # --- pretext_to_asm log (cuts / breaks / joins) ---
@@ -197,8 +204,8 @@ def collect_curation_results(
                 parsed = parse_pta_log(log_files[0])
                 if parsed:
                     r.cuts, r.breaks, r.joins = parsed
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Failed to parse pretext_to_asm log %s: %s", log_files[0], e)
 
     # --- pretext_to_asm_micro log (birds microchromosome workflow) ---
     # If the ticket went through microchromosome-second-shot/-combine, add its
@@ -216,8 +223,10 @@ def collect_curation_results(
                         r.cuts += micro_cuts
                         r.breaks += micro_breaks
                         r.joins += micro_joins
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning(
+                        "Failed to parse pretext_to_asm_micro log %s: %s", micro_log_files[0], e
+                    )
 
     # --- sex matcher ---
     for d in [d for d in (sex_dir, workdir) if d and d.exists()]:
@@ -225,8 +234,8 @@ def collect_curation_results(
         if best_files:
             try:
                 r.sex_matches = parse_sex_matcher(best_files[0])
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Failed to parse sex matcher output %s: %s", best_files[0], e)
             break
 
     # --- QV and completeness: tracker outputs first, curated_dir/merquryk fallback ---
@@ -249,13 +258,13 @@ def collect_curation_results(
     if qv_path and qv_path.exists():
         try:
             r.qv_text = read_tabular(qv_path)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Failed to read QV file %s: %s", qv_path, e)
 
     if comp_path and comp_path.exists():
         try:
             r.completeness_text = read_tabular(comp_path)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Failed to read completeness file %s: %s", comp_path, e)
 
     return r

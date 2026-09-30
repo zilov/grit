@@ -77,6 +77,7 @@ def _run_pretext_to_asm_core(
     agp_glob: str | None = None,
     output_transform: Callable[[Path], None] | None = None,
     agp_validators: Sequence[Callable[[Path], None]] = (),
+    required_output: str | None = None,
 ) -> Path:
     """
     Runs pretext-to-asm for one (original_fa, agp) pair under a tracked step.
@@ -86,7 +87,9 @@ def _run_pretext_to_asm_core(
     caller write extra files into run_dir before outputs are collected, and
     records outputs via *output_specs* under *step_name*. Each callable in
     *agp_validators* (plus the always-applied ``primary`` tag check) is handed the
-    resolved AGP before anything is run, and may fail the step. Returns the run_dir
+    resolved AGP before anything is run, and may fail the step. A
+    *required_output* key missing from the collected outputs fails the run
+    instead of recording success. Returns the run_dir
     (which may be a prior run's dir if the step was skipped as already done).
 
     Shared by ``run_pretext_to_asm`` (main assembly), ``run_microchromosome_combine``
@@ -176,6 +179,11 @@ def _run_pretext_to_asm_core(
             outputs = collect_outputs(
                 output_specs, run_dir, ctx.tol_id, hap1=ctx.hap1_prefix, hap2=ctx.hap2_prefix
             )
+            if required_output and required_output not in outputs and not ctx.print_only:
+                raise FileNotFoundError(
+                    f"{step_name} produced no curated FASTA ({required_output!r}) in {run_dir} "
+                    "— canonical file resolution would silently fall back to older output."
+                )
             ctx.tracker.finish(
                 step_name, run_dir, "success", outputs=outputs or None, untracked=ctx.untracked
             )
@@ -186,6 +194,18 @@ def _run_pretext_to_asm_core(
 
     print_done(f"Curated FASTA → {out_fa}")
     return run_dir
+
+
+def _dry_run_chr_list(ctx: CurationContext) -> bytes:
+    """Build a chromosome list from the sandbox AGP's SUPERs; a painted tag names the chromosome."""
+    agps = sorted(ctx.workdir.glob(f"{ctx.tol_id}*.agp*"), key=lambda p: p.stat().st_mtime)
+    rows: dict[str, str] = {}
+    for line in agps[-1].read_text().splitlines() if agps else []:
+        parts = line.split("\t")
+        if parts[0].startswith("SUPER_") and parts[0] not in rows:
+            tag = parts[10] if len(parts) > 10 else parts[0].removeprefix("SUPER_")
+            rows[parts[0]] = f"SUPER_{tag},{tag},yes\n"
+    return "".join(rows.values()).encode() or b"SUPER_1,1,yes\n"
 
 
 def run_pretext_to_asm(ctx: CurationContext) -> None:
@@ -218,6 +238,7 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
         run_dir = ctx.tracker.start(
             "pretext_to_asm", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
         )
+        chr_list = _dry_run_chr_list(ctx)
         outputs = write_fake_outputs(
             "pretext_to_asm",
             run_dir,
@@ -227,7 +248,12 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
             content={
                 "hap1_fa": b">SCAFFOLD_1\nACGTACGTACGT\n>SCAFFOLD_2\nACGTACGTACGT\n",
                 "hap2_fa": b">HAP_SCAFFOLD_1\nACGTACGTACGT\n",
+                "hap1_chr_list": chr_list,
+                "hap2_chr_list": chr_list,
             },
+        )
+        (run_dir / f"{ctx.tol_id}.1.log").write_text(
+            "Curation made 2 cuts in contigs, 5 breaks at gaps and 14 joins\n"
         )
         if is_single_hap(ctx):
             # write_fake_outputs writes every _OUTPUT_SPECS entry regardless of

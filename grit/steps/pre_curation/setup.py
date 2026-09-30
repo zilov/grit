@@ -111,7 +111,7 @@ def setup_curation(ctx: CurationContext) -> None:
     Notebook source: ``pre_and_post_curation()`` — pre-curation section.
 
     Steps:
-        1. ``mkdir -p {ctx.workdir}``
+        1. ``mkdir -p {ctx.workdir} {ctx.recurate_dir}``
         2. Decompress and concatenate hap1 + hap2 decontaminated FASTA::
 
                zcat {decont_hap1} [{decont_hap2}] > {ctx.workdir}/original.fa
@@ -130,8 +130,8 @@ def setup_curation(ctx: CurationContext) -> None:
     log.info("setup-curation | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Setup curation")
 
-    # 1. Create workdir
-    mkdir_cmd = f"mkdir -p {ctx.workdir}"
+    # 1. Create workdir and the recurate AGP drop dir
+    mkdir_cmd = f"mkdir -p {ctx.workdir} {ctx.recurate_dir}"
     _run(mkdir_cmd, ctx.print_only)
     log.info("Workdir: %s", ctx.workdir)
 
@@ -344,7 +344,7 @@ def run_setup(ctx: CurationContext) -> None:
     if ctx.dry_run:
         from grit.core.registry import RegistryManager, dry_run_root
 
-        ctx.workdir.mkdir(parents=True, exist_ok=True)
+        ctx.recurate_dir.mkdir(parents=True, exist_ok=True)
         RegistryManager(registry_dir=dry_run_root()).add_ticket(
             ctx.ticket_id,
             ctx.tol_id,

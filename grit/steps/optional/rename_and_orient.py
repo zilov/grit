@@ -17,6 +17,7 @@ from grit.utils.helpers import (
     build_bsub_opts,
     find_canonical_fa,
     find_latest_dir,
+    refuse_hap2_on_single_hap,
     write_fake_outputs,
 )
 from grit.utils.output import console, print_done, print_step_header
@@ -159,6 +160,9 @@ def run_rename_and_orient(
     Output files land in each run's own tracked run_dir under
     ``{workdir}/rename_and_orient/`` (hap1) or ``{workdir}/rename_and_orient_hap2/`` (hap2).
     """
+    if run_hap2:
+        refuse_hap2_on_single_hap(ctx)
+
     log.info("rename-and-orient | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Rename and orient to reference")
 
@@ -237,7 +241,7 @@ def run_rename_and_orient(
     "run_hap2",
     is_flag=True,
     default=False,
-    help="Also rename and orient hap2 using the mapping table from hap1 run.",
+    help="Run hap2 as well as hap1 (hap2 reuses hap1's mapping table).",
 )
 @click.option(
     "--mapping-table",

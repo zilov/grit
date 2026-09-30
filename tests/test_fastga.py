@@ -67,8 +67,7 @@ def test_fastga_stats_output_specs_include_top_targets():
     from grit.steps.optional.fastga import _OUTPUT_SPECS_STATS
 
     keys = [spec[0] for spec in _OUTPUT_SPECS_STATS]
-    assert "top1_targets" in keys
-    assert "top_targets_summary" in keys
+    assert keys == ["top1_targets"]
 
 
 def test_is_super():
@@ -318,7 +317,8 @@ def test_run_fastga_stats_dry_run_top1_targets_content_is_parseable(mock_ctx, tm
     top1_path = Path(mock_ctx.tracker.get_output("fastga_stats", "top1_targets"))
     rows = _read_top1_table(top1_path)
 
-    assert rows == [("SUPER_1", "chr1", "1000000", "100.00")]
+    assert len(rows) == 10
+    assert ("SUPER_7", "chrX") in {row[:2] for row in rows}
     assert all(_is_super(row[0]) for row in rows)
     assert "SUPER_1" in capsys.readouterr().out
 

@@ -104,6 +104,15 @@ def test_pending_jobs_returns_started_with_job_id(tracker):
     assert pending[0]["job_id"] == "12345"
 
 
+def test_untracked_bsub_run_is_not_pending_again(tracker):
+    run_dir = tracker.start("busco_curated", "RC-1234", "sDipInt39")
+    tracker.record_job("busco_curated", run_dir, "12345")
+    tracker.finish("busco_curated", run_dir, "success")
+    tracker.untrack("busco_curated", run_dir)
+
+    assert tracker.pending_jobs() == []
+
+
 def test_print_only_does_not_write_history(tmp_path, reg):
     reg.add_ticket("RC-1234", "sDipInt39", "species", tmp_path)
     tracker = RunTracker(tmp_path, print_only=True, registry=reg)
@@ -167,6 +176,26 @@ def test_get_output_skips_untracked(tracker):
 
     tracker.untrack("pretext_to_asm")  # untracks r2
     assert tracker.get_output("pretext_to_asm", "fa") == "/path/to/r1.fa"
+
+
+def test_get_output_does_not_substitute_an_older_run(tracker):
+    """The latest success recorded no outputs: an older run of the step must not stand in."""
+    r1 = tracker.start("rename_and_orient", "RC-1234", "sDipInt39", suffix="a")
+    tracker.finish("rename_and_orient", r1, "success", outputs={"fa": "/path/to/r1.fa"})
+    r2 = tracker.start("rename_and_orient", "RC-1234", "sDipInt39", suffix="b")
+    tracker.finish("rename_and_orient", r2, "success", outputs=None)
+
+    assert tracker.get_output("rename_and_orient", "fa") is None
+
+
+def test_get_output_reads_an_earlier_record_of_the_same_run(tracker):
+    """A later success for the same run dir without outputs (a retrack, a re-finish)
+    keeps the outputs that run recorded."""
+    r1 = tracker.start("rename_and_orient", "RC-1234", "sDipInt39")
+    tracker.finish("rename_and_orient", r1, "success", outputs={"fa": "/path/to/r1.fa"})
+    tracker.finish("rename_and_orient", r1, "success")
+
+    assert tracker.get_output("rename_and_orient", "fa") == "/path/to/r1.fa"
 
 
 def test_start_untracked_never_canonical(tracker):

@@ -151,7 +151,6 @@ from grit.steps.post_curation.pretext_to_asm_recurate import (  # noqa: E402
 from grit.steps.post_curation.qv import qv_cmd  # noqa: E402
 
 # Not yet tested via CLI / not current — disabled for initial release.
-# from grit.steps.post_curation.validate_files import validate_files_cmd  # noqa: E402
 # from grit.steps.pre_curation.add_pretext_view_tracks import (  # noqa: E402
 #     add_bedgraph_track_cmd,
 #     add_gap_track_cmd,
@@ -229,22 +228,38 @@ def state_update_cmd(workdir, step, run_dir, status, job_id, untracked):
     """[Internal] Called by bsub -Ep epilogue to record job completion."""
     from grit.core.registry import RegistryManager
     from grit.core.run_tracker import RunTracker
-    from grit.utils.helpers import _get_step_specs, collect_outputs
+    from grit.utils.helpers import finished_run_outputs
 
     workdir_path = Path(workdir)
     tracker = RunTracker(workdir_path)
     outputs = None
     if status == "success":
         ticket = RegistryManager().find_ticket_by_workdir(workdir_path)
-        if ticket:
-            tol_id = ticket.get("tol_id", "")
-            hap1 = ticket.get("hap1_prefix", "hap1")
-            hap2 = ticket.get("hap2_prefix", "hap2")
-            specs = _get_step_specs(step)
-            if specs and tol_id:
-                outputs = (
-                    collect_outputs(specs, Path(run_dir), tol_id, hap1=hap1, hap2=hap2) or None
-                )
+        tol_id = ticket.get("tol_id", "") if ticket else ""
+        complete, found = (
+            finished_run_outputs(
+                tracker,
+                step,
+                Path(run_dir),
+                tol_id,
+                hap1=ticket.get("hap1_prefix", "hap1"),
+                hap2=ticket.get("hap2_prefix", "hap2"),
+            )
+            if tol_id
+            else (False, {})
+        )
+        if not complete:
+            # exit 0 without the outputs proves neither outcome; leave the run
+            # `started` so `grit status`'s bjobs sweep re-checks it later
+            log.warning(
+                "_state-update: step=%s job_id=%s exited 0 but its outputs are incomplete "
+                "in %s; not recording success",
+                step,
+                job_id,
+                run_dir,
+            )
+            return
+        outputs = found or None
     tracker.finish(step, Path(run_dir), status, job_id=job_id, outputs=outputs, untracked=untracked)
     log.info(
         "_state-update: step=%s status=%s job_id=%s outputs=%s",
@@ -274,7 +289,6 @@ cli.add_command(post_curation_recurate_cmd)
 cli.add_command(pretext_to_asm_cmd)
 cli.add_command(pretext_to_asm_recurate_cmd)
 cli.add_command(qv_cmd)
-# cli.add_command(validate_files_cmd)  # disabled for initial release, not yet tested via CLI
 cli.add_command(blast_contaminants_cmd)
 cli.add_command(busco_curated_cmd)
 cli.add_command(busco_synteny_cmd)
@@ -286,8 +300,10 @@ cli.add_command(super_to_scaffold_cmd)
 
 
 from grit.core.cleanup import cleanup_cmd  # noqa: E402
+from grit.core.tutorial import tutorial_cmd  # noqa: E402
 
 cli.add_command(cleanup_cmd)
+cli.add_command(tutorial_cmd)
 
 
 def _resolve_tracker(ctx, ticket):
@@ -307,21 +323,48 @@ def _resolve_tracker(ctx, ticket):
     return RunTracker(workdir, registry=reg)
 
 
-@cli.command("untrack")
-@click.option("--ticket", "-t", required=True, help="Ticket ID.")
-@click.option("--step", "-s", required=True, help="Step name to untrack (e.g. rename_and_orient).")
-@click.pass_context
-def untrack_cmd(ctx, ticket, step):
-    """Mark the latest run of a step as non-canonical. Undo with `grit retrack`."""
-    from grit.utils.output import print_done
+def _resolve_run(ctx, ticket: str, run: str):
+    """Return (tracker, step, run_dir) for the run whose ID starts with *run*."""
+    from grit.core.run_tracker import run_id
 
     tracker = _resolve_tracker(ctx, ticket)
-    if not tracker.untrack(step):
-        click.echo(f"No successful run found for step {step!r} in {ticket}.", err=True)
-        raise SystemExit(1)
-    run_dir = tracker.latest_run_dir(step)
-    console_hint = f" → canonical is now: {run_dir.name}" if run_dir else ""
-    print_done(f"Untracked latest {step!r} run{console_hint}")
+    runs = {(r["step"], r["run_dir"]) for r in tracker.history() if r.get("run_dir")}
+    matches = sorted((s, rd) for s, rd in runs if run_id(rd).startswith(run))
+    if len(matches) != 1:
+        pool = matches or sorted(runs)
+        listing = "\n".join(f"  {run_id(rd)}  {s}  {Path(rd).name}" for s, rd in pool)
+        what = "is ambiguous" if matches else "matches no run"
+        raise click.UsageError(f"Run ID {run!r} {what} in {ticket}. Candidates:\n{listing}")
+    step, run_dir = matches[0]
+    return tracker, step, Path(run_dir)
+
+
+_RUN_OPTION = click.option(
+    "--run",
+    "-r",
+    required=True,
+    help="Run ID (or a unique prefix of it) from `grit status -t`'s ID column.",
+)
+
+
+@cli.command("untrack")
+@click.option("--ticket", "-t", required=True, help="Ticket ID.")
+@_RUN_OPTION
+@click.pass_context
+def untrack_cmd(ctx, ticket, run):
+    """Mark a run as non-canonical. Undo with `grit retrack`."""
+    from grit.core.run_tracker import run_id
+    from grit.utils.output import print_done
+
+    tracker, step, run_dir = _resolve_run(ctx, ticket, run)
+    tracker.untrack(step, run_dir)
+    latest = tracker.latest_run_dir(step)
+    hint = (
+        f" → latest tracked {step} run: {run_id(latest)} ({latest.name})"
+        if latest
+        else f" → no tracked {step} run left"
+    )
+    print_done(f"Untracked {step!r} run {run_id(run_dir)}{hint}")
 
 
 cli.add_command(untrack_cmd)
@@ -329,31 +372,31 @@ cli.add_command(untrack_cmd)
 
 @cli.command("retrack")
 @click.option("--ticket", "-t", required=True, help="Ticket ID.")
-@click.option("--step", "-s", required=True, help="Step name to retrack (e.g. rename_and_orient).")
+@_RUN_OPTION
 @click.pass_context
-def retrack_cmd(ctx, ticket, step):
-    """Promote the latest untracked run of a step back to canonical.
+def retrack_cmd(ctx, ticket, run):
+    """Promote an untracked run back to canonical.
 
     Works whether the run was marked untracked after the fact (`grit untrack`)
     or run with `--untracked` from the start.
     """
+    from grit.core.run_tracker import run_id
     from grit.utils.output import print_done
 
-    tracker = _resolve_tracker(ctx, ticket)
-    runs = tracker.history(step)
-    untracked_runs = [r for r in runs if r.get("status") == "untracked" and r.get("run_dir")]
-    if not untracked_runs:
-        click.echo(f"No untracked runs found for step {step!r}.", err=True)
-        raise SystemExit(1)
-    run_dir = Path(untracked_runs[-1]["run_dir"])
-    outputs = untracked_runs[-1].get("outputs")
-    if outputs is None:
-        success_before = [
-            r for r in runs if r.get("status") == "success" and r.get("run_dir") == str(run_dir)
-        ]
-        outputs = success_before[-1].get("outputs") if success_before else None
+    tracker, step, run_dir = _resolve_run(ctx, ticket, run)
+    own = [r for r in tracker.history(step) if r.get("run_dir") == str(run_dir)]
+    if own[-1].get("status") != "untracked":
+        raise click.UsageError(f"Run {run_id(run_dir)} ({step}) is not untracked.")
+    outputs = next(
+        (
+            r["outputs"]
+            for r in reversed(own)
+            if r.get("status") in ("untracked", "success") and r.get("outputs") is not None
+        ),
+        None,
+    )
     tracker.finish(step, run_dir, "success", outputs=outputs)
-    print_done(f"Retracked {step!r} run: {run_dir.name}")
+    print_done(f"Retracked {step!r} run {run_id(run_dir)}: {run_dir.name}")
 
 
 cli.add_command(retrack_cmd)

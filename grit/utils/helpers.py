@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import glob
 import logging
 import os
 import re
+import shlex
+import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +25,17 @@ log = logging.getLogger(__name__)
 def is_single_hap(ctx: CurationContext) -> bool:
     """True if this ticket's assembly has no genuine second haplotype (primary/paternal)."""
     return ctx.hap1_prefix in ("primary", "paternal")
+
+
+def refuse_hap2_on_single_hap(ctx: CurationContext) -> None:
+    """Raise UsageError for a ``--hap2`` request on a ticket with no second haplotype."""
+    if is_single_hap(ctx):
+        import rich_click as click
+
+        raise click.UsageError(
+            f"{ctx.tol_id} is a single-haplotype ({ctx.hap1_prefix}) assembly — "
+            f"there is no {ctx.hap2_prefix!r} haplotype, so --hap2 does not apply."
+        )
 
 
 def require_workdir(ctx: CurationContext) -> None:
@@ -40,7 +55,47 @@ def require_workdir(ctx: CurationContext) -> None:
         raise SystemExit(1)
 
 
-def _run(cmd: str, print_only: bool = False, *, capture: bool = True) -> str:
+_STDERR_TAIL_LINES = 40
+
+
+def _stderr_tail(stderr: str | None) -> str:
+    """Return the last _STDERR_TAIL_LINES lines of *stderr*, stripped."""
+    return "\n".join((stderr or "").strip().splitlines()[-_STDERR_TAIL_LINES:])
+
+
+class CommandError(subprocess.CalledProcessError):
+    """A failed `_run` command whose message ends with the tail of the tool's stderr."""
+
+    def __str__(self) -> str:
+        tail = _stderr_tail(self.stderr)
+        return f"{super().__str__()}\n{tail}" if tail else super().__str__()
+
+
+def _run_with_timeout(
+    cmd: str, capture: bool, timeout: float
+) -> tuple[int, str | None, str | None]:
+    """Run *cmd* in its own process group and kill the whole group if *timeout* expires."""
+    pipe = subprocess.PIPE if capture else None
+    proc = subprocess.Popen(
+        cmd, shell=True, stdout=pipe, stderr=pipe, text=True, start_new_session=True
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except BaseException as exc:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        stdout, stderr = proc.communicate()
+        if not isinstance(exc, subprocess.TimeoutExpired):
+            raise
+        tail = _stderr_tail(stderr)
+        log.error("Command timed out after %ss%s", timeout, f", stderr:\n{tail}" if tail else "")
+        raise subprocess.TimeoutExpired(cmd, timeout, output=stdout, stderr=stderr) from None
+    return proc.returncode, stdout, stderr
+
+
+def _run(
+    cmd: str, print_only: bool = False, *, capture: bool = True, timeout: float | None = None
+) -> str:
     """
     Print *cmd*; execute it unless print_only is True.
 
@@ -48,16 +103,39 @@ def _run(cmd: str, print_only: bool = False, *, capture: bool = True) -> str:
     When *capture* is ``False``, stdout and stderr are passed through to the
     terminal so the caller can see live output; the return value is ``""``.
 
-    Returns stdout (stripped) when captured, otherwise an empty string.
+    Returns stdout (stripped) when captured, otherwise an empty string. A captured
+    command that fails raises CommandError carrying its stderr, which is also logged.
+    With *timeout* (seconds), the command and its children are killed and
+    TimeoutExpired is raised once it expires; the default waits indefinitely.
     """
     console.print(f"\n[yellow]Command:[/yellow] [green]{escape(cmd)}[/green]")
     if print_only:
         return ""
-    if capture:
-        result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
-        return result.stdout.strip()
-    subprocess.run(cmd, shell=True, check=True)
-    return ""
+    if timeout is not None:
+        returncode, stdout, stderr = _run_with_timeout(cmd, capture, timeout)
+    elif capture:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        returncode, stdout, stderr = result.returncode, result.stdout, result.stderr
+    else:
+        subprocess.run(cmd, shell=True, check=True)
+        return ""
+    if returncode != 0:
+        if not capture:
+            raise subprocess.CalledProcessError(returncode, cmd)
+        tail = _stderr_tail(stderr)
+        if tail:
+            log.error("Command failed (exit %d), stderr:\n%s", returncode, tail)
+        raise CommandError(returncode, cmd, output=stdout, stderr=stderr)
+    if stderr and stderr.strip():
+        log.debug("stderr: %s", stderr.strip())
+    return stdout.strip() if capture and stdout else ""
+
+
+_JOB_SUBMITTED_RE = re.compile(r"^Job <(\d+)> is submitted", re.MULTILINE)
+
+
+class BsubSubmissionError(RuntimeError):
+    """bsub returned without a parseable numeric job ID."""
 
 
 def _submit_bsub(
@@ -68,7 +146,9 @@ def _submit_bsub(
     epilogue_cmd: str | None = None,
 ) -> str:
     """
-    Wrap *inner_cmd* in a bsub call, submit it, and return the job ID string.
+    Wrap *inner_cmd* in a bsub call, submit it, and return the numeric job ID string.
+
+    Returns ``""`` in print_only mode; raises BsubSubmissionError when bsub prints no job ID.
 
     *bsub_opts* is inserted between ``bsub`` and the quoted command, e.g.
     ``'-q oversubscribed -M 1200'``.
@@ -76,33 +156,62 @@ def _submit_bsub(
     *epilogue_cmd*: when provided, appended as ``-Ep '...'`` so LSF runs it
     after the job completes. Typically used to call ``grit _state-update``.
     """
-    epilogue_part = f" -Ep '{epilogue_cmd}'" if epilogue_cmd else ""
+    epilogue_part = f" -Ep {shlex.quote(epilogue_cmd)}" if epilogue_cmd else ""
     bsub_cmd = f'bsub{epilogue_part} {bsub_opts} "{inner_cmd}"'
     output = _run(bsub_cmd, print_only)
-    # bsub outputs: Job <12345> is submitted to queue ...
-    if output and "Job <" in output:
-        job_id = output.split("<")[1].split(">")[0]
-        log.info("Job ID: %s", job_id)
-        return job_id
-    return output
+    if print_only:
+        return ""
+    match = _JOB_SUBMITTED_RE.search(output)
+    if not match:
+        raise BsubSubmissionError(
+            "bsub exited 0 but printed no job ID, so grit cannot track this job; "
+            f"check bjobs before resubmitting. bsub said: {output!r}"
+        )
+    job_id = match.group(1)
+    log.info("Job ID: %s", job_id)
+    return job_id
+
+
+def _grit_executable() -> str:
+    """Return an absolute path to the running grit executable, else `grit` from $PATH."""
+    argv0 = os.path.abspath(sys.argv[0]) if sys.argv and sys.argv[0] else ""
+    if argv0 and os.path.isfile(argv0) and os.access(argv0, os.X_OK):
+        return argv0
+    on_path = shutil.which("grit")
+    if on_path:
+        return os.path.abspath(on_path)
+    log.warning("No grit executable found for the bsub epilogue; relying on $PATH on the node")
+    return "grit"
 
 
 def _state_update_epilogue(workdir: Path, step: str, run_dir: Path, untracked: bool = False) -> str:
     """
     Build the bsub -Ep epilogue command that calls `grit _state-update` when a job finishes.
 
-    Uses $LSB_JOBEXIT_STAT (set by LSF in epilogue environment) to determine success vs failed.
-    The `grit` command must be on $PATH on compute nodes.
+    Reports success/failed from $LSB_JOBEXIT_STAT, and calls nothing when it is unset
+    or non-numeric, leaving the run for the bjobs sweep.
 
     Pass ``untracked=True`` when the job was submitted for a run started with
     ``tracker.start(untracked=True)``, so the epilogue's `finish()` call doesn't
     clobber the untracked marker with 'success'/'failed'.
     """
-    grit_bin = sys.argv[0]  # full path — ensures grit is found in bsub epilogue environment
+    call = shlex.join(
+        [
+            _grit_executable(),
+            "_state-update",
+            "--workdir",
+            str(workdir),
+            "--step",
+            step,
+            "--run-dir",
+            str(run_dir),
+            "--status",
+        ]
+    )
     untracked_flag = " --untracked" if untracked else ""
     return (
-        f"{grit_bin} _state-update --workdir {workdir} --step {step} --run-dir {run_dir} "
-        f"--status $([ $LSB_JOBEXIT_STAT -eq 0 ] && echo success || echo failed){untracked_flag}"
+        'case "${LSB_JOBEXIT_STAT:-}" in 0) s=success ;; ""|*[!0-9]*) s= ;; *) s=failed ;; esac; '
+        f'[ -z "$s" ] || {call} "$s"{untracked_flag}'
     )
 
 
@@ -247,26 +356,6 @@ def build_scp_tip(
     return f"Download {label}:\n[bold cyan]{cmds}[/bold cyan]"
 
 
-def build_less_tip(file: str | None, label: str) -> str | None:
-    """
-    Build a print_tip string suggesting the curator read *file* on the farm
-    with ``less``, or None if *file* is falsy.
-
-    Args:
-        file:  Absolute remote file path to inspect, or None/empty if not
-               yet available.
-        label: Short description of what's in the file, e.g.
-               ``"top alignment targets"``.
-
-    Returns:
-        A ``"Check {label}:\\n[bold cyan]less ...[/bold cyan]"`` string, or
-        None if *file* is falsy (nothing to print a tip for).
-    """
-    if not file:
-        return None
-    return f"Check {label}:\n[bold cyan]less {file}[/bold cyan]"
-
-
 def inputs_newer_than_curated_fa(
     workdir: Path,
     tol_id: str,
@@ -314,6 +403,14 @@ def pta_curated_fa_exists(pta_dir: Path, tol_id: str, hap_token: str) -> bool:
     )
 
 
+def _refuse_missing_hap2(ctx: "CurationContext", hap_prefix: str, what: str) -> None:
+    """Raise FileNotFoundError when *hap_prefix* is the absent hap2 of a single-hap ticket."""
+    if hap_prefix == ctx.hap2_prefix and is_single_hap(ctx):
+        raise FileNotFoundError(
+            f"{ctx.tol_id} is a single-haplotype assembly — no {hap_prefix!r} {what}."
+        )
+
+
 def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     """
     Find the primary curated FASTA for *hap_prefix* in the latest pretext_to_asm run dir.
@@ -337,7 +434,8 @@ def find_curated_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
         "maternal": "hap2",
     }
 
-    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+    _refuse_missing_hap2(ctx, hap_prefix, "curated FASTA")
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm", settled_only=True)
 
     def _search(token: str) -> list[str]:
         return [
@@ -377,24 +475,40 @@ def _recurate_step_name(ctx: "CurationContext", hap_prefix: str) -> str:
     return "pretext_to_asm_recurate"
 
 
+def _stat(path: Path) -> os.stat_result | None:
+    """*path*'s stat, or None when it cannot be stat'ed (missing, stale NFS handle, …)."""
+    try:
+        return path.stat()
+    except OSError:
+        return None
+
+
+def _rename_and_orient_step_name(ctx: "CurationContext", hap_prefix: str) -> str:
+    """Tracker step name recording this haplotype's rename-and-orient run."""
+    if hap_prefix == ctx.hap2_prefix:
+        return "rename_and_orient_hap2"
+    return "rename_and_orient"
+
+
 def _step_output(
     ctx: "CurationContext", step: str, key_variants: list[str], hap_prefix: str
 ) -> Path | None:
     """
     Path *step* currently offers for any of *key_variants*, or None.
 
-    Falls back to re-globbing the step's latest run dir with its output specs
-    when the tracked outputs hold no such key, so a run whose outputs were
-    recorded incompletely still competes with its real on-disk files instead of
-    handing the canonical slot to an older step.
+    Falls back to re-globbing the step's latest successful run dir with its
+    output specs when the tracked outputs hold no such key, so a run whose
+    outputs were recorded incompletely still competes with its real on-disk
+    files instead of handing the canonical slot to an older step. A run still
+    in flight never competes: its files may be mid-write.
     """
     for k in key_variants:
         val = ctx.tracker.get_output(step, k)
-        if val and Path(val).exists():
+        if val and _stat(Path(val)) is not None:
             return Path(val)
 
-    run_dir = ctx.tracker.latest_run_dir(step)
-    if not run_dir or not run_dir.exists():
+    run_dir = ctx.tracker.latest_run_dir(step, include_started=False)
+    if not run_dir or _stat(run_dir) is None:
         return None
     if step.startswith("pretext_to_asm_recurate"):
         from grit.steps.post_curation.pretext_to_asm_recurate import _output_specs_for_hap
@@ -409,7 +523,7 @@ def _step_output(
     )
     for k in key_variants:
         val = outputs.get(k)
-        if val and Path(val).exists():
+        if val and _stat(Path(val)) is not None:
             return Path(val)
     return None
 
@@ -431,8 +545,9 @@ def _latest_tracked_output(
     best: tuple[float, int, Path] | None = None  # (mtime, -priority_index, path)
     for idx, step in enumerate(steps):
         p = _step_output(ctx, step, key_variants, hap_prefix)
-        if p:
-            candidate = (p.stat().st_mtime, -idx, p)
+        st = _stat(p) if p else None
+        if st is not None:
+            candidate = (st.st_mtime, -idx, p)
             if best is None or candidate[:2] > best[:2]:
                 best = candidate
     return best[2] if best else None
@@ -445,8 +560,8 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     Resolution order:
       1. Tracker outputs across a single ordered pool (``pretext_to_asm``,
          ``microchromosome_combine``, ``blast_contaminants``,
-         ``rename_and_orient``, ``rename_and_orient_hap2``, this haplotype's
-         ``pretext_to_asm_recurate``), compared by mtime — the freshest
+         and this haplotype's ``rename_and_orient`` and
+         ``pretext_to_asm_recurate`` steps), compared by mtime — the freshest
          existing file wins outright, ties going to the first-listed step.
       2. Filesystem glob in {workdir}/rename_and_orient*/*/{tol_id}.{hap_prefix}.*.fa
       3. ``pretext_to_asm`` output via find_curated_fa (excludes haplotig files)
@@ -462,14 +577,14 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
         "maternal": "hap2",
     }
 
+    _refuse_missing_hap2(ctx, hap_prefix, "assembly FASTA")
     if ctx.tracker:
         keys = [f"{hap_prefix}_fa", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_fa"]
         pool = [
             "pretext_to_asm",
             "microchromosome_combine",
             "blast_contaminants",
-            "rename_and_orient",
-            "rename_and_orient_hap2",
+            _rename_and_orient_step_name(ctx, hap_prefix),
             _recurate_step_name(ctx, hap_prefix),
         ]
         canonical = _latest_tracked_output(ctx, pool, keys, hap_prefix)
@@ -479,7 +594,9 @@ def find_canonical_fa(ctx: "CurationContext", hap_prefix: str) -> Path:
     def _rao_search(token: str) -> list[str]:
         rao_pattern = ctx.workdir / "rename_and_orient*" / "*" / f"{ctx.tol_id}.{token}.*.fa"
         return [
-            f for f in glob.glob(str(rao_pattern)) if not any(kw in f for kw in _HAPLOTIG_KEYWORDS)
+            f
+            for f in _settled_matches(ctx, glob.glob(str(rao_pattern)))
+            if not any(kw in f for kw in _HAPLOTIG_KEYWORDS)
         ]
 
     matches = _rao_search(hap_prefix)
@@ -511,6 +628,8 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
 
     Hap-specific patterns are tried first (dot-delimited token + alias); no-prefix
     patterns are only tried for ``hap1_prefix`` to avoid double-copying the same file.
+    An empty hap-specific file (haplotig-files' placeholder) yields to a non-empty
+    no-prefix file in the same directory.
 
     Raises FileNotFoundError if nothing is found.
     """
@@ -521,6 +640,37 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
         "maternal": "hap2",
     }
 
+    _refuse_missing_hap2(ctx, hap_prefix, "haplotig FASTA")
+
+    def _combined(directory: Path, *, non_empty: bool = False) -> Path | None:
+        # No-hap-prefix files — assigned to hap1 only, to avoid double-copying
+        if hap_prefix != ctx.hap1_prefix:
+            return None
+        for pattern in (
+            f"{ctx.tol_id}*.haplotigs.fa",  # dual hap combined
+            f"{ctx.tol_id}*.all_haplotigs.curated.fa",  # merged
+            f"{ctx.tol_id}*.additional_haplotigs.curated.fa",  # single hap
+        ):
+            combined = [
+                m
+                for m in glob.glob(str(directory / pattern))
+                if "hap1" not in Path(m).name
+                and "hap2" not in Path(m).name
+                and ctx.hap1_prefix not in Path(m).name
+                and ctx.hap2_prefix not in Path(m).name
+                and (not non_empty or ((st := _stat(Path(m))) and st.st_size))
+            ]
+            if combined:
+                return Path(sorted(combined)[-1])
+        return None
+
+    def _real(candidate: Path) -> Path:
+        # haplotig-files' empty placeholder never hides the real haplotigs beside it
+        st = _stat(candidate)
+        if st and st.st_size == 0:
+            return _combined(candidate.parent, non_empty=True) or candidate
+        return candidate
+
     if ctx.tracker:
         keys = [
             f"{hap_prefix}_haplotigs",
@@ -529,9 +679,9 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
         pool = ["pretext_to_asm", _recurate_step_name(ctx, hap_prefix)]
         canonical = _latest_tracked_output(ctx, pool, keys, hap_prefix)
         if canonical:
-            return canonical
+            return _real(canonical)
 
-    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm", settled_only=True)
 
     def _hap_specific(token: str) -> Path | None:
         for pattern in (
@@ -543,35 +693,17 @@ def find_canonical_haplotigs(ctx: "CurationContext", hap_prefix: str) -> Path:
                 return Path(sorted(matches)[-1])
         return None
 
-    # 1. Exact token
+    # 1. Exact token, then 2. alias (primary→hap1, alternate→hap2)
     result = _hap_specific(hap_prefix)
+    if not result and hap_prefix in _PTA_ALIASES:
+        result = _hap_specific(_PTA_ALIASES[hap_prefix])
+    if result:
+        return _real(result)
+
+    # 3. No-hap-prefix patterns
+    result = _combined(pta_dir)
     if result:
         return result
-    # 2. Alias (primary→hap1, alternate→hap2)
-    if hap_prefix in _PTA_ALIASES:
-        result = _hap_specific(_PTA_ALIASES[hap_prefix])
-        if result:
-            return result
-
-    # 3. No-hap-prefix patterns — assign to hap1 only to avoid double-copying
-    if hap_prefix == ctx.hap1_prefix:
-        for pattern in (
-            str(pta_dir / f"{ctx.tol_id}*.haplotigs.fa"),  # dual hap combined
-            str(pta_dir / f"{ctx.tol_id}*.all_haplotigs.curated.fa"),  # merged
-            str(pta_dir / f"{ctx.tol_id}*.additional_haplotigs.curated.fa"),  # single hap
-        ):
-            matches = glob.glob(pattern)
-            # Exclude any file that is already hap-specific (contains hap1 or hap2 token)
-            combined = [
-                m
-                for m in matches
-                if "hap1" not in Path(m).name
-                and "hap2" not in Path(m).name
-                and ctx.hap1_prefix not in Path(m).name
-                and ctx.hap2_prefix not in Path(m).name
-            ]
-            if combined:
-                return Path(sorted(combined)[-1])
 
     raise FileNotFoundError(f"No haplotig FASTA for {hap_prefix!r} found in {pta_dir}.")
 
@@ -582,10 +714,10 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
 
     Resolution order:
       1. Tracker outputs across a single ordered pool (``pretext_to_asm``,
-         ``microchromosome_combine``, ``rename_and_orient``,
-         ``rename_and_orient_hap2``, this haplotype's
-         ``pretext_to_asm_recurate``), compared by mtime — the freshest
-         existing file wins outright, ties going to the first-listed step.
+         ``microchromosome_combine``, and this haplotype's
+         ``rename_and_orient`` and ``pretext_to_asm_recurate`` steps), compared
+         by mtime — the freshest existing file wins outright, ties going to the
+         first-listed step.
       2. ``rename_and_orient`` output —
          {workdir}/rename_and_orient*/*/{tol_id}.{hap_prefix}.*.chromosome.list.csv
       3. ``pretext_to_asm`` output — {tol_id}.{hap_prefix}.*.chromosome.list.csv
@@ -606,13 +738,13 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
         "maternal": "hap2",
     }
 
+    _refuse_missing_hap2(ctx, hap_prefix, "chromosome list")
     if ctx.tracker:
         keys = [f"{hap_prefix}_chr_list", f"{_PTA_ALIASES.get(hap_prefix, hap_prefix)}_chr_list"]
         pool = [
             "pretext_to_asm",
             "microchromosome_combine",
-            "rename_and_orient",
-            "rename_and_orient_hap2",
+            _rename_and_orient_step_name(ctx, hap_prefix),
             _recurate_step_name(ctx, hap_prefix),
         ]
         canonical = _latest_tracked_output(ctx, pool, keys, hap_prefix)
@@ -626,7 +758,7 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
         rao_pattern = (
             ctx.workdir / "rename_and_orient*" / "*" / f"{ctx.tol_id}.{token}.*.chromosome.list.csv"
         )
-        return glob.glob(str(rao_pattern))
+        return _settled_matches(ctx, glob.glob(str(rao_pattern)))
 
     matches = _search_rao(hap_prefix)
     if not matches and hap_prefix in _PTA_ALIASES:
@@ -634,7 +766,7 @@ def find_canonical_chr_list(ctx: "CurationContext", hap_prefix: str) -> Path:
     if matches:
         return Path(sorted(matches)[-1])
 
-    pta_dir = find_latest_dir(ctx, "pretext_to_asm")
+    pta_dir = find_latest_dir(ctx, "pretext_to_asm", settled_only=True)
     matches = _search_dir(pta_dir, hap_prefix)
     if not matches and hap_prefix in _PTA_ALIASES:
         matches = _search_dir(pta_dir, _PTA_ALIASES[hap_prefix])
@@ -668,11 +800,8 @@ def find_canonical_map(ctx: "CurationContext", hap_prefix: str) -> Path:
 
     Raises FileNotFoundError if nothing is found.
     """
+    _refuse_missing_hap2(ctx, hap_prefix, "Pretext map")
     is_hap2 = hap_prefix == ctx.hap2_prefix
-    if is_hap2 and is_single_hap(ctx):
-        raise FileNotFoundError(
-            f"{ctx.tol_id} is a single-haplotype assembly — no {hap_prefix!r} Pretext map."
-        )
     step = "hic_remapping_hap2" if is_hap2 else "hic_remapping"
     key = "hap2_normal_pretext" if is_hap2 else "hap1_normal_pretext"
 
@@ -682,13 +811,19 @@ def find_canonical_map(ctx: "CurationContext", hap_prefix: str) -> Path:
             return canonical
 
     pattern = ctx.workdir / step / "*" / "pretext_maps_processed" / f"{ctx.tol_id}*normal.pretext"
-    matches = glob.glob(str(pattern))
+    excluded = _excluded_run_dirs(ctx, step, settled_only=True)
+    stats = {
+        m: _stat(Path(m))
+        for m in glob.glob(str(pattern))
+        if Path(m).parent.parent.name not in excluded
+    }
+    matches = [m for m, st in stats.items() if st is not None]
     if not matches:
         raise FileNotFoundError(
             f"No remapped Pretext map for {hap_prefix!r} found under "
             f"{ctx.workdir / step}. Run hic-remapping first."
         )
-    return Path(max(matches, key=lambda f: Path(f).stat().st_mtime))
+    return Path(max(matches, key=lambda f: stats[f].st_mtime))
 
 
 def find_hap_agp(ctx: "CurationContext", hap_prefix: str) -> Path:
@@ -755,7 +890,31 @@ def parse_agp_tags(agp_path: Path) -> dict[str, set[str]]:
     return tags
 
 
-def find_latest_dir(ctx: "CurationContext", step: str) -> Path:
+def _excluded_run_dirs(ctx: "CurationContext", step: str, *, settled_only: bool) -> set[str]:
+    """Names of *step*'s run dirs marked untracked (and, if *settled_only*, in flight)."""
+    if not ctx.tracker:
+        return set()
+    excluded = {"untracked", "started"} if settled_only else {"untracked"}
+    return {
+        name for name, status in ctx.tracker.run_dir_statuses(step).items() if status in excluded
+    }
+
+
+def _settled_matches(ctx: "CurationContext", matches: list[str]) -> list[str]:
+    """Drop globbed ``{workdir}/<step>/<run_dir>/<file>`` paths from untracked or in-flight runs."""
+    excluded: dict[str, set[str]] = {}
+    kept = []
+    for m in matches:
+        run_dir = Path(m).parent
+        step = run_dir.parent.name
+        if step not in excluded:
+            excluded[step] = _excluded_run_dirs(ctx, step, settled_only=True)
+        if run_dir.name not in excluded[step]:
+            kept.append(m)
+    return kept
+
+
+def find_latest_dir(ctx: "CurationContext", step: str, *, settled_only: bool = False) -> Path:
     """
     Return the output directory for *step*, trying locations in priority order:
       1. Alphabetically-last subdir of workdir/step/ that exists on filesystem,
@@ -766,20 +925,25 @@ def find_latest_dir(ctx: "CurationContext", step: str) -> Path:
       3. workdir / step / "untracked"    — run before tracking was introduced.
       4. workdir                          — last resort.
 
+    Run dirs the tracker marks untracked are never returned; with
+    ``settled_only=True`` neither are runs still in flight (latest record
+    ``started``), whose files may be mid-write.
+
     In print-only mode the tracker path is accepted even if it does not exist yet
     (so printed commands show the expected real path rather than a fallback).
     """
     # Filesystem scan: pick the alphabetically-last (newest timestamp) subdir
     step_dir = ctx.workdir / step
+    excluded = _excluded_run_dirs(ctx, step, settled_only=settled_only)
     fs_latest: Path | None = None
     if step_dir.is_dir():
-        subdirs = sorted(d for d in step_dir.iterdir() if d.is_dir())
+        subdirs = sorted(d for d in step_dir.iterdir() if d.is_dir() and d.name not in excluded)
         if subdirs:
             fs_latest = subdirs[-1]
 
     tracked: Path | None = None
     if ctx.tracker:
-        tracked = ctx.tracker.latest_run_dir(step)
+        tracked = ctx.tracker.latest_run_dir(step, include_started=not settled_only)
         if tracked and not tracked.exists() and not ctx.print_only:
             tracked = None  # stale tracker entry
 
@@ -965,6 +1129,7 @@ def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
         "busco_curated": ("grit.steps.optional.busco_curated", "_OUTPUT_SPECS"),
         "busco_synteny": ("grit.steps.optional.busco_synteny", "_OUTPUT_SPECS"),
         "fastga_synteny": ("grit.steps.optional.fastga_synteny", "_OUTPUT_SPECS"),
+        "find_reference": ("grit.steps.pre_curation.find_reference", "_OUTPUT_SPECS"),
         "microchromosome_second_shot": (
             "grit.steps.pre_curation.microchromosome_second_shot",
             "_OUTPUT_SPECS",
@@ -989,6 +1154,21 @@ def _get_step_specs(step: str) -> list[tuple[str, str, list[str]]]:
         return getattr(import_module(mod_path), attr, [])
     except ImportError:
         return []
+
+
+def finished_run_outputs(
+    tracker, step: str, run_dir: Path, tol_id: str, *, hap1: str = "hap1", hap2: str = "hap2"
+) -> tuple[bool, dict[str, str]]:
+    """Return (complete, outputs) for a finished run, judged by STEP_MANIFESTS where one exists."""
+    specs = _get_step_specs(step)
+    outputs = collect_outputs(specs, run_dir, tol_id, hap1=hap1, hap2=hap2) if specs else {}
+    if step == "sex_matcher":
+        # its manifest names the workdir, but sex-matcher.sh writes into the run dir
+        return run_dir.is_dir() and any(run_dir.glob("Best_match*")), outputs
+    verdict = tracker.verify_outputs(step, tol_id, run_dir)
+    if verdict == "not_tracked":
+        return bool(outputs), outputs
+    return verdict in ("ok", "no_files"), outputs
 
 
 def _sort_by_mtime(files: list[str]) -> list[str]:

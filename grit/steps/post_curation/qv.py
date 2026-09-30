@@ -1,4 +1,4 @@
-"""Step: submit QV and k-mer completeness analysis via bsub."""
+"""Step: run QV and k-mer completeness analysis (blocks until its MerquryFK job finishes)."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def run_qv(ctx: CurationContext) -> None:
 
     Prints:
         Step header, command, done message.
-    Next step hint: ``validate_curated_files(ctx)``
+    Next step hint: ``finalize_for_qc(ctx)``
     """
     log.info("qv | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "QV analysis")
@@ -69,8 +69,18 @@ def run_qv(ctx: CurationContext) -> None:
         )
         qv_dir = ctx.assembly_curated_dir / "merquryk"
         qv_dir.mkdir(parents=True, exist_ok=True)
-        (qv_dir / f"{ctx.tol_id}.qv").write_text("fake\n")
-        (qv_dir / f"{ctx.tol_id}.completeness.stats").write_text("fake\n")
+        (qv_dir / f"{ctx.tol_id}.qv").write_text(
+            "Assembly\tNo Support\tTotal\tError %\tQV\n"
+            f"{ctx.tol_id}.{ctx.hap1_prefix}\t1204\t412345678\t0.0003\t65.4\n"
+            f"{ctx.tol_id}.{ctx.hap2_prefix}\t1350\t405678123\t0.0003\t64.9\n"
+            "Both\t2554\t818023801\t0.0003\t65.1\n"
+        )
+        (qv_dir / f"{ctx.tol_id}.completeness.stats").write_text(
+            "Assembly\tRegion\tFound\tTotal\t% Covered\n"
+            f"{ctx.tol_id}.{ctx.hap1_prefix}\tall\t402123456\t425678901\t94.47\n"
+            f"{ctx.tol_id}.{ctx.hap2_prefix}\tall\t398765432\t425678901\t93.68\n"
+            "Both\tall\t421234567\t425678901\t98.96\n"
+        )
         if ctx.tracker and run_dir:
             outputs = _find_qv_outputs(ctx) or None
             ctx.tracker.finish("qv", run_dir, "success", outputs=outputs, untracked=ctx.untracked)
@@ -87,10 +97,22 @@ def run_qv(ctx: CurationContext) -> None:
         f"{module_cmd('GRIT')} && cd {ctx.workdir} && "
         f"kmer_completeness.bash {ctx.tol_id} {ctx.release_version}"
     )
-    _run(cmd, ctx.print_only)
+    try:
+        # the wrapper blocks on its MerquryFK job (bsub -K) but exits 0 even when it fails
+        _run(cmd, ctx.print_only)
+        outputs = None if ctx.print_only else _find_qv_outputs(ctx)
+        if outputs is not None and set(outputs) != {"qv", "completeness_stats"}:
+            raise RuntimeError(
+                "kmer_completeness.bash finished without writing "
+                f"{ctx.tol_id}.qv and {ctx.tol_id}.completeness.stats to "
+                f"{ctx.assembly_curated_dir / 'merquryk'}; see merqury.out there"
+            )
+    except Exception:
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("qv", run_dir, "failed", untracked=ctx.untracked)
+        raise
 
     if ctx.tracker and run_dir:
-        outputs = None if ctx.print_only else (_find_qv_outputs(ctx) or None)
         ctx.tracker.finish("qv", run_dir, "success", outputs=outputs, untracked=ctx.untracked)
 
     print_done("QV analysis done")
@@ -104,7 +126,7 @@ def run_qv(ctx: CurationContext) -> None:
 @click.command("qv", cls=GritCommand)
 @click.pass_context
 def qv_cmd(ctx):
-    """Submit QV and k-mer completeness analysis via bsub."""
+    """Run QV and k-mer completeness analysis; waits for the MerquryFK job."""
     from grit.core.click_cli import build_context
 
     curation_ctx = build_context(ctx.obj)

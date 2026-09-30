@@ -32,6 +32,24 @@ log = logging.getLogger(__name__)
 # tol_id prefixes that typically require sex-matching (insects, nematodes, and similar)
 _INSECT_PREFIXES = ("ic", "il", "id", "n")
 
+# Tutorial example: Z-linked BUSCO counts per scaffold, both haplotypes; scaffold 12 is the Z.
+_DRY_RUN_BEST_MATCH = "Sequence,count\n" + "".join(
+    f"{hap}_SCAFFOLD_{n},{count}\n"
+    for n, counts in [
+        (12, (181, 168)),
+        (4, (58, 55)),
+        (1, (47, 49)),
+        (7, (44, 41)),
+        (2, (40, 42)),
+        (9, (38, 36)),
+        (3, (35, 37)),
+        (5, (33, 31)),
+        (6, (29, 30)),
+        (15, (24, 22)),
+    ]
+    for hap, count in zip(("HAP1", "HAP2"), counts)
+)
+
 # Path to the bundled sex-matcher script
 _SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
 _SEX_MATCHER_SCRIPT = _SCRIPTS_DIR / "sex-matcher.sh"
@@ -78,10 +96,10 @@ def run_sex_matcher(ctx: CurationContext) -> None:
         run_dir = ctx.tracker.start(
             "sex_matcher", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
         )
-        placeholder = run_dir / "Best_match_1"
-        placeholder.write_text("fake\n")
+        best_match = run_dir / "Best_match_to_Z_is_HAP1_SCAFFOLD_12"
+        best_match.write_text(_DRY_RUN_BEST_MATCH)
         ctx.tracker.finish("sex_matcher", run_dir, "success", untracked=ctx.untracked)
-        print_done(f"[dry-run] Sex-matcher → {run_dir}")
+        print_done(f"[dry-run] Sex-matcher → {best_match}")
         return
 
     tol_id_lower = ctx.tol_id.lower()
@@ -163,10 +181,14 @@ def run_sex_matcher(ctx: CurationContext) -> None:
         if run_dir
         else None
     )
-    job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
-
-    if ctx.tracker and run_dir and job_id:
-        ctx.tracker.record_job("sex_matcher", run_dir, job_id)
+    try:
+        job_id = _submit_bsub(inner_cmd, bsub_opts, ctx.print_only, epilogue_cmd=epilogue)
+        if ctx.tracker and run_dir and job_id:
+            ctx.tracker.record_job("sex_matcher", run_dir, job_id)
+    except Exception:
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("sex_matcher", run_dir, "failed", untracked=ctx.untracked)
+        raise
 
     if not ctx.print_only:
         matches = glob.glob(str(work_dir / "Best_match*"))

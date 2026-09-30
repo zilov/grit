@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 _RECURATE_TIP = (
     "This uses the current canonical FASTA as input.\n"
     "To remove this recurate output from the canonical pool: "
-    "grit untrack --step {step_name} -t <ticket>"
+    "grit untrack -t {ticket} -r <ID of its {step_name} row in `grit status -t {ticket}`>"
 )
 
 _NEW_HAPLOTIGS_GLOBS = (
@@ -154,7 +154,7 @@ def run_pretext_to_asm_recurate(ctx: CurationContext, hap_prefix: str, step_name
         hap_prefix,
     )
     print_step_header(ctx.ticket_id, ctx.tol_id, f"Pretext to ASM recurate ({hap_prefix})")
-    print_tip(_RECURATE_TIP.format(step_name=step_name))
+    print_tip(_RECURATE_TIP.format(step_name=step_name, ticket=ctx.ticket_id))
 
     if ctx.dry_run:
         run_dir = ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
@@ -171,7 +171,7 @@ def run_pretext_to_asm_recurate(ctx: CurationContext, hap_prefix: str, step_name
         prior_haplotigs = None
 
     original_fa = find_canonical_fa(ctx, hap_prefix)
-    agp_search_dir = ctx.workdir / "recurate"
+    agp_search_dir = ctx.recurate_dir
     if not ctx.print_only:
         agp_search_dir.mkdir(parents=True, exist_ok=True)
     print_tip(
@@ -181,6 +181,12 @@ def run_pretext_to_asm_recurate(ctx: CurationContext, hap_prefix: str, step_name
     )
 
     merged_name = _merged_haplotigs_name(ctx, hap_prefix)
+    missing_fa_msg = (
+        f"pretext-to-asm-recurate produced no curated FASTA for {hap_prefix!r}. "
+        f"Expected {ctx.tol_id}.{hap_prefix}.*.curated.fa or "
+        f"{ctx.tol_id}.*.primary.curated.fa — canonical file resolution would "
+        "silently fall back to pre-recuration output."
+    )
     run_dir = _run_pretext_to_asm_core(
         ctx,
         step_name,
@@ -192,18 +198,14 @@ def run_pretext_to_asm_recurate(ctx: CurationContext, hap_prefix: str, step_name
         agp_glob=f"{ctx.tol_id}*{hap_prefix}*.agp*",
         output_transform=_merge_haplotigs_transform(merged_name, prior_haplotigs),
         agp_validators=(_check_unloc_tags,),
+        # without it canonical resolution silently stays on pre-recuration data
+        required_output=f"{hap_prefix}_fa",
     )
 
-    # A missing FASTA output would silently leave canonical resolution pointing at
-    # pre-recuration data while this step reports success — fail loudly instead.
+    # a skipped "already done" run was never checked by the core
     if not ctx.print_only and ctx.tracker:
         if not ctx.tracker.get_output(step_name, f"{hap_prefix}_fa"):
-            raise FileNotFoundError(
-                f"pretext-to-asm-recurate produced no curated FASTA for {hap_prefix!r} in "
-                f"{run_dir}. Expected {ctx.tol_id}.{hap_prefix}.*.curated.fa or "
-                f"{ctx.tol_id}.*.primary.curated.fa — canonical file resolution would "
-                "silently fall back to pre-recuration output."
-            )
+            raise FileNotFoundError(f"{missing_fa_msg} (run dir: {run_dir})")
 
     return run_dir
 

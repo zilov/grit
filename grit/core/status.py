@@ -171,7 +171,7 @@ def _resolve_canonical_files(ctx, haps: list[str]) -> dict[str, dict[str, Path |
     """
     Resolve the canonical fa/haplotigs/chr_list/map path per haplotype, keyed by
     hap then by "fa"/"haplotigs"/"chr_list"/"map". A value is None when the
-    corresponding finder raised FileNotFoundError (nothing resolved yet).
+    corresponding finder found nothing, or hit an unreadable path (e.g. ESTALE).
     """
     from grit.utils.helpers import (
         find_canonical_chr_list,
@@ -193,7 +193,7 @@ def _resolve_canonical_files(ctx, haps: list[str]) -> dict[str, dict[str, Path |
         for key, finder in finders.items():
             try:
                 resolved[hap][key] = finder(ctx, hap)
-            except FileNotFoundError:
+            except OSError:  # FileNotFoundError, or a stale NFS handle
                 resolved[hap][key] = None
     return resolved
 
@@ -421,7 +421,6 @@ def _auto_step_outputs(
 # than the latest run's output. It is offered from `canonical_maps` below.
 _SCP_TIP_STEPS = [
     ("fastga", "FastGA results", None),
-    ("fastga_stats", "fastga-stats results", None),
     ("busco_synteny", "busco-synteny plot", None),
     ("fastga_synteny", "fastga-synteny plot", None),
 ]
@@ -461,27 +460,6 @@ def _print_scp_tips(
             print_tip(tip)
 
 
-# Steps whose recorded `outputs` hold a specific text file worth reading
-# directly on the farm (via `less`) rather than downloading.
-_LESS_TIP_STEPS = [
-    ("fastga_stats", "top_targets_summary", "top alignment targets"),
-]
-
-
-def _print_less_tips(step_latest: dict[str, dict]) -> None:
-    """Print a `less`-on-the-farm tip for each successful step in `_LESS_TIP_STEPS`."""
-    from grit.utils.helpers import build_less_tip
-
-    for step, output_key, label in _LESS_TIP_STEPS:
-        entry = step_latest.get(step)
-        if not entry or entry.get("status") != "success":
-            continue
-        file = (entry.get("outputs") or {}).get(output_key)
-        tip = build_less_tip(file, label)
-        if tip:
-            print_tip(tip)
-
-
 def show_ticket_history(
     registry,
     ticket_id: str,
@@ -495,8 +473,8 @@ def show_ticket_history(
     bypasses the real Jira fetch when building the CurationContext — required
     for a synthetic dry-run ticket that has no real Jira issue to look up.
     """
-    from grit.core.run_tracker import RunTracker
-    from grit.utils.helpers import _check_bjobs
+    from grit.core.run_tracker import RunTracker, run_id
+    from grit.utils.helpers import _check_bjobs, lsf_cluster
 
     ticket = registry.find_ticket(ticket_id)
     if ticket is None:
@@ -598,8 +576,9 @@ def show_ticket_history(
         show_header=True,
         header_style="bold cyan",
     )
-    table.add_column("Step")
-    table.add_column("Last Run")
+    table.add_column("Step", no_wrap=True)
+    table.add_column("ID", no_wrap=True)
+    table.add_column("Last Run", overflow="fold")
     table.add_column("Status")
     table.add_column("Canonical", justify="center", no_wrap=True)
     table.add_column("Job ID")
@@ -637,7 +616,13 @@ def show_ticket_history(
                         entry["status"] = "success"
                         status = "success"
                     else:
-                        status = "done (check)" if bjobs_status == "DONE" else "unknown (gone)"
+                        job_cluster = entry.get("cluster")
+                        if bjobs_status == "DONE":
+                            status = "done (check)"
+                        elif job_cluster and job_cluster != lsf_cluster():
+                            status = f"unknown (job on {job_cluster})"
+                        else:
+                            status = "unknown (gone)"
                 elif bjobs_status == "EXIT":
                     status = "failed (job exited)"
                 elif bjobs_status in ("RUN", "PEND"):
@@ -670,6 +655,7 @@ def show_ticket_history(
 
             table.add_row(
                 step,
+                run_id(run_dir) if run_dir else "",
                 ts,
                 f"[{style}]{status}[/{style}]" if style else status,
                 canonical_mark,
@@ -681,9 +667,9 @@ def show_ticket_history(
         agp_mtime = datetime.datetime.fromtimestamp(agp_files[-1].stat().st_mtime).strftime(
             "%Y-%m-%dT%H:%M:%S"
         )
-        table.add_row("agp_copied", agp_mtime, "[green]found[/green]", "", "")
+        table.add_row("agp_copied", "", agp_mtime, "[green]found[/green]", "", "")
     else:
-        table.add_row("agp_copied", "", "[yellow]missing[/yellow]", "", "")
+        table.add_row("agp_copied", "", "", "[yellow]missing[/yellow]", "", "")
 
     console.print(table)
     console.print()
@@ -707,13 +693,13 @@ def show_ticket_history(
         curated_dirs = sorted(curated_base.glob(f"{tol_id}.*")) if curated_base.exists() else []
         curated_dir = curated_dirs[0] if curated_dirs else None
 
+    console.print()
     print_curation_results(tracker, workdir, tol_id, curated_dir=curated_dir)
     console.print()
 
     farm_host = user_config.get("farm_host", "<farm_host>")
 
     _print_scp_tips(step_latest, farm_host, tol_id, canonical_maps=canonical_maps)
-    _print_less_tips(step_latest)
 
     print_tip(
         f"To copy AGP from your local machine:\n"

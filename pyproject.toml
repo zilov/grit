@@ -4,20 +4,19 @@ build-backend = "hatchling.build"
 
 [project]
 name = "grit"
-version = "0.4.3"
+version = "0.5.0"
 description = "Genome curation pipeline CLI"
 requires-python = ">=3.10"
 dependencies = [
-    "biopython>=1.80",
-    "pymysql>=1.0",
     "pyyaml>=6.0",
-    "requests>=2.28",
     "rich-click>=1.8.0",
     "rename-and-orient>=1.2.2",
+    # Not imported by grit itself: GritJiraIssue and its sibling modules, loaded
+    # from `gritjiraissue_path` via sys.path, need these in grit's environment.
+    "biopython>=1.80",
+    "pymysql>=1.0",
+    "requests>=2.28",
 ]
-
-[tool.uv.sources]
-rename-and-orient = { git = "https://github.com/zilov/rename-and-orient" }
 
 [tool.uv]
 package = true

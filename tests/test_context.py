@@ -4,10 +4,18 @@ Tests for CurationContext and build_context().
 
 from pathlib import Path
 
+import click
 import pytest
 
-from grit.core.context import CurationContext, _derive_workdir, _detect_assembly_type
+from grit.core.context import (
+    CurationContext,
+    UnsupportedAssemblyTypeError,
+    _derive_workdir,
+    _detect_assembly_type,
+)
 from tests.conftest import TEST_USER_CONFIG, TEST_YAML_HAP1, TEST_YAML_PRIMARY
+
+_NOT_SUPPORTED = "paternal/maternal assemblies are not supported yet"
 
 # --- _detect_assembly_type ---
 
@@ -29,6 +37,39 @@ def test_detect_assembly_type_primary():
 def test_detect_assembly_type_unknown():
     with pytest.raises(ValueError, match="Cannot detect assembly type"):
         _detect_assembly_type({"unknown_key": "..."})
+
+
+def test_detect_assembly_type_paternal_raises_not_supported():
+    """CORR-14: paternal/maternal keys are recognised (not treated as unknown)
+    but fail loudly — grit has no working paternal/maternal support yet."""
+    with pytest.raises(UnsupportedAssemblyTypeError, match=_NOT_SUPPORTED):
+        _detect_assembly_type({"paternal": "...", "maternal": "..."})
+
+
+def test_detect_assembly_type_maternal_only_raises_not_supported():
+    with pytest.raises(UnsupportedAssemblyTypeError, match=_NOT_SUPPORTED):
+        _detect_assembly_type({"maternal": "..."})
+
+
+def test_unsupported_assembly_type_error_is_a_click_exception():
+    """Must surface to the curator as a clean message + exit 1, not a traceback."""
+    assert issubclass(UnsupportedAssemblyTypeError, click.ClickException)
+
+
+def test_build_context_paternal_maternal_yaml_fails_loudly_not_silently():
+    """A trio-style ticket YAML using paternal/maternal keys must fail at context
+    build with a clear, actionable error — not a raw KeyError/ValueError traceback,
+    and not silent mishandling that lets the ticket proceed."""
+    yaml_data = {
+        **TEST_YAML_HAP1,
+        "paternal": TEST_YAML_HAP1["hap1"],
+        "maternal": TEST_YAML_HAP1["hap2"],
+    }
+    del yaml_data["hap1"]
+    del yaml_data["hap2"]
+
+    with pytest.raises(UnsupportedAssemblyTypeError, match=_NOT_SUPPORTED):
+        CurationContext.from_yaml("RC-trio", yaml_data, TEST_USER_CONFIG)
 
 
 # --- _derive_workdir ---
@@ -102,6 +143,24 @@ def test_build_context_bsub_ram_override():
 
 
 # --- build_context (primary) ---
+
+
+# --- read_type (CORR-16) ---
+
+
+def test_build_context_read_type_defaults_to_hifi_when_pacbio_read_type_missing():
+    """No pacbio_read_type key in the YAML — read_type still defaults to hifi."""
+    yaml_data = {k: v for k, v in TEST_YAML_HAP1.items() if k != "pacbio_read_type"}
+    ctx = CurationContext.from_yaml("RC-1234", yaml_data, TEST_USER_CONFIG)
+    assert ctx.read_type == "hifi"
+
+
+def test_build_context_read_type_respects_non_hifi_pacbio_read_type():
+    """The YAML's pacbio_read_type field must actually take effect, not be
+    collapsed to 'hifi' regardless of its value (CORR-16)."""
+    yaml_data = {**TEST_YAML_HAP1, "pacbio_read_type": "clr"}
+    ctx = CurationContext.from_yaml("RC-1234", yaml_data, TEST_USER_CONFIG)
+    assert ctx.read_type == "clr"
 
 
 def test_build_context_primary_type(mock_ctx_primary):
@@ -214,9 +273,9 @@ def test_dry_run_workdir_isolated_from_real_workdir(tmp_path, monkeypatch):
 
 
 def test_print_only_takes_precedence_over_dry_run(tmp_path, monkeypatch):
-    """Per the binding global constraint: if both --print-only and --dry-run are
-    set, --print-only wins — dry_run resolves to False and the real (non-sandboxed)
-    workdir is used, not dry_run_root()."""
+    """If both --print-only and --dry-run are set, --print-only wins: dry_run
+    resolves to False so no step fakes outputs, but paths stay in the sandbox so
+    the printed commands resolve against the sandbox's state."""
     monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
 
     ctx = CurationContext.from_ticket(
@@ -228,8 +287,9 @@ def test_print_only_takes_precedence_over_dry_run(tmp_path, monkeypatch):
     )
 
     assert ctx.dry_run is False
-    assert "assembly/draft" not in str(ctx.workdir)
-    assert tmp_path not in ctx.workdir.parents and ctx.workdir != tmp_path
+    assert ctx.print_only is True
+    assert tmp_path in ctx.workdir.parents
+    assert ctx.tracker._registry.dir == tmp_path
 
 
 def test_dry_run_isolates_every_writable_path(tmp_path, monkeypatch):

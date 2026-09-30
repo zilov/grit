@@ -4,6 +4,8 @@ Follows the CliRunner + _DEFAULT_DIR-monkeypatch pattern established in
 tests/test_remove_cmd.py.
 """
 
+from pathlib import Path
+
 import pytest
 import yaml
 from click.testing import CliRunner
@@ -89,9 +91,10 @@ def test_untrack_dry_run_targets_dry_run_registry(tmp_path, dry_run_dir, _patch_
     tracker = RunTracker(workdir, registry=reg)
     run_dir = tracker.start("rename_and_orient", "RC-DRY", "xbDry1")
     tracker.finish("rename_and_orient", run_dir, "success")
+    from grit.core.run_tracker import run_id
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["--dry-run", "untrack", "-t", "RC-DRY", "-s", "rename_and_orient"])
+    result = runner.invoke(cli, ["--dry-run", "untrack", "-t", "RC-DRY", "-r", run_id(run_dir)])
 
     assert result.exit_code == 0, result.output
     runs = reg.get_steps(workdir, "rename_and_orient")
@@ -110,21 +113,13 @@ def test_retrack_promotes_a_run_started_as_untracked(tmp_path, dry_run_dir, _pat
     tracker.finish("qv", run_dir, "success", outputs={"qv_report": "/path/qv.txt"}, untracked=True)
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["--dry-run", "retrack", "-t", "RC-DRY", "-s", "qv"])
+    from grit.core.run_tracker import run_id
+
+    result = runner.invoke(cli, ["--dry-run", "retrack", "-t", "RC-DRY", "-r", run_id(run_dir)])
 
     assert result.exit_code == 0, result.output
     assert tracker.latest_run_dir("qv") == run_dir
     assert tracker.get_output("qv", "qv_report") == "/path/qv.txt"
-
-
-def test_retrack_no_untracked_run_errors(tmp_path, dry_run_dir, _patch_registry_dir):
-    _seed_ticket(dry_run_dir, tmp_path, ticket_id="RC-DRY", tol_id="xbDry1")
-
-    runner = CliRunner()
-    result = runner.invoke(cli, ["--dry-run", "retrack", "-t", "RC-DRY", "-s", "qv"])
-
-    assert result.exit_code == 1
-    assert "No untracked runs found" in result.output
 
 
 def test_untrack_dry_run_does_not_touch_default_registry(
@@ -134,7 +129,7 @@ def test_untrack_dry_run_does_not_touch_default_registry(
     _seed_ticket(_patch_registry_dir, tmp_path, ticket_id="RC-REAL", tol_id="xbReal1")
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["--dry-run", "untrack", "-t", "RC-REAL", "-s", "qv"])
+    result = runner.invoke(cli, ["--dry-run", "untrack", "-t", "RC-REAL", "-r", "abc"])
 
     assert result.exit_code == 1
     assert "not found" in result.output
@@ -246,3 +241,60 @@ def test_status_reports_an_unreadable_registry_without_a_traceback(tmp_path, _pa
     rendered = plain(result.output)
     assert "could not be read" in rendered
     assert "Refusing to continue" in rendered
+
+
+def _two_runs(tmp_path, dry_run_dir):
+    from grit.core.run_tracker import RunTracker
+
+    reg, workdir = _seed_ticket(dry_run_dir, tmp_path, ticket_id="RC-DRY", tol_id="xbDry1")
+    tracker = RunTracker(workdir, registry=reg)
+    old = tracker.start("qv", "RC-DRY", "xbDry1", suffix="a")
+    tracker.finish("qv", old, "success")
+    new = tracker.start("qv", "RC-DRY", "xbDry1", suffix="b")
+    tracker.finish("qv", new, "success")
+    return tracker, old, new
+
+
+def test_run_id_is_stable_and_short():
+    from grit.core.run_tracker import run_id
+
+    assert run_id("/w/qv/2026-01-01T00_00_00") == run_id(Path("/w/qv/2026-01-01T00_00_00"))
+    assert len(run_id("/w/qv/x")) == 8
+    assert run_id("/w/qv/x") != run_id("/w/qv/y")
+
+
+def test_untrack_and_retrack_by_run_id(tmp_path, dry_run_dir, _patch_registry_dir):
+    from grit.core.run_tracker import run_id
+
+    tracker, old, new = _two_runs(tmp_path, dry_run_dir)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["--dry-run", "untrack", "-t", "RC-DRY", "-r", run_id(old)[:5]])
+    assert result.exit_code == 0, result.output
+    assert tracker.run_dir_statuses("qv") == {old.name: "untracked", new.name: "success"}
+
+    result = runner.invoke(cli, ["--dry-run", "retrack", "-t", "RC-DRY", "--run", run_id(old)])
+    assert result.exit_code == 0, result.output
+    assert tracker.run_dir_statuses("qv") == {old.name: "success", new.name: "success"}
+
+
+def test_run_id_errors(tmp_path, dry_run_dir, _patch_registry_dir, monkeypatch):
+    from grit.core.run_tracker import run_id
+
+    tracker, old, new = _two_runs(tmp_path, dry_run_dir)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["--dry-run", "untrack", "-t", "RC-DRY", "-r", "zzzz"])
+    assert result.exit_code == 2
+    assert "matches no run" in plain(result.output) and run_id(new) in result.output
+
+    result = runner.invoke(cli, ["--dry-run", "retrack", "-t", "RC-DRY", "-r", run_id(new)])
+    assert result.exit_code == 2 and "is not untracked" in plain(result.output)
+
+    result = runner.invoke(cli, ["--dry-run", "untrack", "-t", "RC-DRY"])
+    assert result.exit_code == 2 and "--run" in plain(result.output)
+
+    monkeypatch.setattr("grit.core.run_tracker.run_id", lambda rd: "abc" + Path(rd).name)
+    result = runner.invoke(cli, ["--dry-run", "untrack", "-t", "RC-DRY", "-r", "abc"])
+    assert result.exit_code == 2 and "is ambiguous" in plain(result.output)
+    assert tracker.run_dir_statuses("qv") == {old.name: "success", new.name: "success"}

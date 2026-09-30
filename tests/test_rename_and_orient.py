@@ -1,5 +1,6 @@
 """Tests for rename_and_orient step."""
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -406,6 +407,7 @@ def test_chained_dry_run_forward_chain_through_canonical_pool(mock_ctx, tmp_path
 
     run_pretext_to_asm(mock_ctx)
     pretext_output = Path(mock_ctx.tracker.get_output("pretext_to_asm", "hap1_fa"))
+    os.utime(pretext_output, (1000, 1000))
     assert find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix) == pretext_output
 
     run_blast_contaminants(mock_ctx)
@@ -413,6 +415,7 @@ def test_chained_dry_run_forward_chain_through_canonical_pool(mock_ctx, tmp_path
         mock_ctx.tracker.get_output("blast_contaminants", f"{mock_ctx.hap1_prefix}_fa")
     )
     assert blast_output != pretext_output
+    os.utime(blast_output, (2000, 2000))
     assert find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix) == blast_output
 
     with patch("grit.steps.optional.rename_and_orient._submit_bsub") as mock_bsub:
@@ -421,6 +424,7 @@ def test_chained_dry_run_forward_chain_through_canonical_pool(mock_ctx, tmp_path
 
     rename_output = Path(mock_ctx.tracker.get_output("rename_and_orient", "hap1_fa"))
     assert rename_output != blast_output
+    os.utime(rename_output, (3000, 3000))
     assert find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix) == rename_output
 
 
@@ -527,3 +531,43 @@ def test_plot_alignments_dropped_in_mapping_table_mode(mock_find_fa, mock_bsub, 
     run_rename_and_orient(mock_ctx, mapping_table=mapping_tsv, plot_alignments=True)
 
     assert "--plot-alignments" not in mock_bsub.call_args[0][0]
+
+
+@patch("grit.utils.helpers._run", return_value="Warning: licence server slow")
+@patch("grit.steps.optional.rename_and_orient.glob.glob")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_unparseable_bsub_output_fails_the_run_without_storing_a_job_id(
+    mock_find_fa, mock_glob, mock_run, mock_ctx, tmp_path
+):
+    from grit.utils.helpers import BsubSubmissionError
+
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.print_only = False
+    mock_find_fa.return_value = tmp_path / "sDipInt39.hap1.primary.curated.fa"
+    mock_glob.return_value = [str(tmp_path / "fastga" / "x.FastGA.paf")]
+
+    with pytest.raises(BsubSubmissionError):
+        run_rename_and_orient(mock_ctx)
+
+    history = mock_ctx.tracker.history("rename_and_orient")
+    assert history[-1]["status"] == "failed"
+    assert all(record.get("job_id") is None for record in history)
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+@patch("grit.steps.optional.rename_and_orient._submit_bsub")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_hap2_is_refused_on_a_single_hap_ticket(
+    mock_find_fa, mock_bsub, mock_ctx_primary, tmp_path, dry_run
+):
+    """A primary/alternate ticket has no hap2: refuse before submitting anything."""
+    import click
+
+    mock_ctx_primary.workdir = tmp_path
+    mock_ctx_primary.dry_run = dry_run
+
+    with pytest.raises(click.UsageError, match="single-haplotype"):
+        run_rename_and_orient(mock_ctx_primary, run_hap2=True)
+
+    mock_bsub.assert_not_called()
+    mock_find_fa.assert_not_called()

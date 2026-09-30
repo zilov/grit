@@ -10,6 +10,7 @@ from rich.table import Table
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
 from grit.utils.helpers import (
+    MULTI_OUTPUT_SEP,
     _run,
     _state_update_epilogue,
     _submit_bsub,
@@ -18,7 +19,6 @@ from grit.utils.helpers import (
     find_canonical_fa,
     find_latest_dir,
     find_reheadered_reference,
-    write_fake_outputs,
 )
 from grit.utils.modules import module_cmd
 from grit.utils.output import (
@@ -47,13 +47,34 @@ _OUTPUT_SPECS: list[tuple[str, str, list[str]] | tuple[str, str, list[str], bool
 # bsub job.
 _OUTPUT_SPECS_STATS: list[tuple[str, str, list[str]]] = [
     ("top1_targets", "*.top1_targets.tsv", []),
-    ("top_targets_summary", "*.top_targets_summary.txt", []),
 ]
 
 
 def _is_super(name: str) -> bool:
     """True for curated chromosome-level scaffolds (SUPER_*), false for unloc/contig-level ones."""
     return name.startswith("SUPER_")
+
+
+# Tutorial example: ten chromosomes, SUPER_7 not yet named but aligning to the reference's X.
+_DRY_RUN_TOP1_TABLE = (
+    "curated_fa_chr\tref_fa_chr\taligned_length\tprc_of_ref_length\n"
+    "SUPER_1\tchr1\t41823114\t96.41\n"
+    "SUPER_2\tchr2\t38107452\t95.87\n"
+    "SUPER_3\tchr4\t33950281\t94.12\n"
+    "SUPER_4\tchr3\t32644019\t93.58\n"
+    "SUPER_5\tchr5\t29318876\t95.03\n"
+    "SUPER_6\tchr6\t26502337\t92.76\n"
+    "SUPER_7\tchrX\t24187905\t88.34\n"
+    "SUPER_8\tchr7\t21566140\t94.90\n"
+    "SUPER_9\tchr8\t18234771\t93.21\n"
+    "SUPER_10\tchr9\t15098342\t91.67\n"
+).encode()
+
+
+def _write_placeholder(path: Path, data: bytes = b"placeholder\n") -> str:
+    """Write a dry-run placeholder file named as the real tool names it; return its path."""
+    path.write_bytes(data)
+    return str(path)
 
 
 def _read_top1_table(top1_file: Path) -> list[tuple[str, str, str, str]]:
@@ -94,7 +115,14 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
 
     if ctx.dry_run:
         run_dir = ctx.tracker.start("fastga", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
-        outputs = write_fake_outputs("fastga", run_dir, ctx.tol_id)
+        idx = [
+            _write_placeholder(run_dir / "reference_reheader.fna.idx"),
+            _write_placeholder(run_dir / f"{ctx.tol_id}.{ctx.hap1_prefix}.1.primary.curated.idx"),
+        ]
+        outputs = {
+            "idx": MULTI_OUTPUT_SEP.join(idx),
+            "paf": _write_placeholder(run_dir / f"reference_vs_{ctx.tol_id}_FastGA.paf"),
+        }
         ctx.tracker.finish("fastga", run_dir, "success", outputs=outputs, untracked=ctx.untracked)
         print_done(f"[dry-run] FastGA → {outputs.get('paf', run_dir)}")
         return
@@ -170,17 +198,12 @@ def run_fastga_stats(ctx: CurationContext) -> None:
         run_dir = ctx.tracker.start(
             "fastga_stats", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked
         )
-        outputs = write_fake_outputs(
-            "fastga_stats",
-            run_dir,
-            ctx.tol_id,
-            content={
-                "top1_targets": (
-                    b"curated_fa_chr\tref_fa_chr\taligned_length\tprc_of_ref_length\n"
-                    b"SUPER_1\tchr1\t1000000\t100.00\n"
-                )
-            },
-        )
+        prefix = run_dir / f"reference_vs_{ctx.tol_id}"
+        outputs = {
+            "top1_targets": _write_placeholder(
+                Path(f"{prefix}.top1_targets.tsv"), _DRY_RUN_TOP1_TABLE
+            ),
+        }
         ctx.tracker.finish(
             "fastga_stats", run_dir, "success", outputs=outputs, untracked=ctx.untracked
         )
@@ -210,15 +233,13 @@ def run_fastga_stats(ctx: CurationContext) -> None:
         else ctx.workdir / "fastga_stats" / "untracked"
     )
     top1_file = run_dir / f"{prefix}.top1_targets.tsv"
-    summary_file = run_dir / f"{prefix}.top_targets_summary.txt"
 
     if not ctx.print_only:
         run_dir.mkdir(parents=True, exist_ok=True)
 
     cmd = (
         f"{module_cmd('GRIT')} && "
-        f"python3 {_PAF_TOP_TARGETS_SCRIPT} {paf_file} --top1-out {top1_file} "
-        f"--top_longest > {summary_file}"
+        f"python3 {_PAF_TOP_TARGETS_SCRIPT} {paf_file} --top1-out {top1_file}"
     )
     try:
         _run(cmd, ctx.print_only)

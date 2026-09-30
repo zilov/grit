@@ -1,0 +1,589 @@
+"""Interactive `grit tutorial` — a guided --dry-run walkthrough of a curation."""
+
+import functools
+import logging
+import shlex
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
+
+try:
+    import readline  # noqa: F401  — gives input() arrow-key movement and history
+except ImportError:
+    pass
+
+import rich_click as click
+from rich.panel import Panel
+from rich.text import Text
+
+from grit.core.tutorial_lessons import SCENARIOS, Lesson, Scenario, find_scenario
+from grit.utils.output import console
+
+# Short options the learner may type, and the long name they normalise to.
+_ALIASES = {"-t": "--ticket", "-u": "--untracked"}
+# Plumbing the tutorial supplies itself — consumed and ignored when matching.
+_IGNORED_VALUE_OPTS = {"--config", "--yaml", "--logging-level"}
+
+
+@dataclass(frozen=True)
+class Parsed:
+    """A grit command line reduced to the parts that decide whether it is the right one."""
+
+    subcommand: str | None
+    ticket: str | None
+    flags: frozenset[str]
+
+
+@functools.cache
+def _value_opts() -> frozenset[str]:
+    """Every grit option that consumes a following value, read from the CLI itself."""
+    from grit.core.click_cli import cli
+
+    return frozenset(
+        name
+        for command in [cli, *cli.commands.values()]
+        for param in command.params
+        if isinstance(param, click.Option) and not param.is_flag
+        for name in param.opts
+        if name.startswith("--")
+    )
+
+
+@functools.cache
+def _long_opt(subcommand: str | None, opt: str) -> str:
+    """Return *subcommand*'s long name for the short option *opt*, else *opt* unchanged."""
+    from grit.core.click_cli import cli
+
+    for param in getattr(cli.commands.get(subcommand or ""), "params", []):
+        if opt in param.opts:
+            return next((o for o in param.opts if o.startswith("--")), opt)
+    return opt
+
+
+def parse_command(tokens: list[str]) -> Parsed:
+    """Normalise *tokens* into the (subcommand, ticket, flags) triple used for matching."""
+    toks = list(tokens)
+    if toks and toks[0] == "grit":
+        toks = toks[1:]
+
+    subcommand: str | None = None
+    ticket: str | None = None
+    flags: set[str] = set()
+
+    i = 0
+    while i < len(toks):
+        tok = toks[i]
+        if tok.startswith("-"):
+            name, eq, inline = tok.partition("=")
+            name = _ALIASES.get(name) or _long_opt(subcommand, name)
+            if name in _IGNORED_VALUE_OPTS or name in _value_opts():
+                if eq:
+                    value = inline
+                else:
+                    value = toks[i + 1] if i + 1 < len(toks) else ""
+                    i += 1
+                if name == "--ticket":
+                    ticket = value
+                elif name not in _IGNORED_VALUE_OPTS:
+                    flags.add(f"{name}={value}")
+            elif name != "--dry-run":
+                # --dry-run is supplied by the tutorial, so typing it is neither
+                # required nor wrong.
+                flags.add(name)
+        elif subcommand is None:
+            subcommand = tok
+        i += 1
+
+    return Parsed(subcommand, ticket, frozenset(flags))
+
+
+def _sandbox_run_id(ticket: str, step: str) -> str:
+    """Return the ID of *step*'s latest run in the tutorial sandbox, or <id> before one exists."""
+    from grit.core.registry import RegistryManager, dry_run_root
+    from grit.core.run_tracker import RunTracker, run_id
+
+    reg = RegistryManager(registry_dir=dry_run_root())
+    entry = reg.find_ticket(ticket)
+    run_dir = entry and RunTracker(Path(entry["workdir"]), registry=reg).latest_run_dir(step)
+    return run_id(run_dir) if run_dir else "<id>"
+
+
+def _answer_tokens(lesson: Lesson, ticket: str) -> list[str]:
+    """Return the grit arguments *lesson* is asking for."""
+    ticket_args = ["-t", ticket] if lesson.needs_ticket else []
+    run_args = ["-r", _sandbox_run_id(ticket, lesson.run_of)] if lesson.run_of else []
+    return [lesson.command, *ticket_args, *run_args, *lesson.args]
+
+
+def expected_command(lesson: Lesson, ticket: str) -> Parsed:
+    """Return the Parsed form of the command *lesson* is asking for."""
+    return parse_command(_answer_tokens(lesson, ticket))
+
+
+def expected_line(lesson: Lesson, ticket: str) -> str:
+    """Return the answer as a command line, for `??`."""
+    return " ".join(["grit", *_answer_tokens(lesson, ticket)])
+
+
+def _flag_name(flag: str) -> str:
+    """Return a flag's bare name, dropping any =value part."""
+    return flag.split("=", 1)[0]
+
+
+def hint_for(got: Parsed, lesson: Lesson, ticket: str, known: set[str]) -> str:
+    """Return one sentence naming what is actually wrong with *got*."""
+    want = expected_command(lesson, ticket)
+
+    if got.subcommand is None:
+        return "That has no command in it — start with `grit`, then the step name."
+    if got.subcommand not in known:
+        return f"grit has no command called {got.subcommand!r}. `grit --help` lists them all."
+    if got.subcommand == "status" != want.subcommand:
+        return f"status only runs for this scenario's ticket here: grit status -t {ticket}."
+    if got.subcommand != want.subcommand:
+        return (
+            f"{got.subcommand!r} is another grit command, but this lesson is "
+            f"about {want.subcommand!r}."
+        )
+    for flag in sorted(got.flags):
+        name, _, value = flag.partition("=")
+        if value.startswith("-") or (flag != name and not value):
+            wanted = next((f for f in want.flags if _flag_name(f) == name), "")
+            example = f": {name} {wanted.partition('=')[2]}" if wanted else ""
+            return f"{name} takes a value right after it{example}."
+    if not lesson.needs_ticket:
+        if got.ticket is not None:
+            return "This one is the global view: drop -t so status lists every ticket."
+    elif got.ticket is None:
+        return f"Every grit step needs to know which ticket it is working on: add -t {ticket}."
+    elif got.ticket != ticket:
+        return f"The sandbox ticket for this scenario is {ticket}, not {got.ticket!r}."
+
+    for flag in sorted(want.flags - got.flags):
+        name = _flag_name(flag)
+        if name in lesson.flag_hints:
+            return lesson.flag_hints[name]
+        return f"Something is missing: this step also needs {flag}."
+
+    for flag in sorted(got.flags - want.flags):
+        return (
+            f"{_flag_name(flag)} is not needed here — see `grit {want.subcommand} --help` "
+            "for what this step takes."
+        )
+
+    return "Close. Compare what you typed with `??`."
+
+
+def matches(got: Parsed, lesson: Lesson, ticket: str) -> bool:
+    """True when *got* is the command the lesson asked for."""
+    return got == expected_command(lesson, ticket)
+
+
+def _known_commands() -> set[str]:
+    from grit.core.click_cli import cli
+
+    return {name for name in cli.commands if not name.startswith("_")}
+
+
+def _run_grit(argv: list[str]) -> bool:
+    """Run grit's own CLI in-process with *argv*; True when it completed cleanly."""
+    from grit.core.click_cli import cli
+
+    try:
+        cli.main(args=argv, prog_name="grit", standalone_mode=False)
+    except click.ClickException as exc:
+        exc.show()
+        return False
+    except SystemExit as exc:
+        return exc.code in (0, None)
+    except Exception as exc:  # a step blowing up should not end the lesson
+        console.print(f"[bold red]Error:[/bold red] {exc}")
+        return False
+    return True
+
+
+def _print_only_base(base: list[str]) -> list[str]:
+    """Return *base* plus --print-only: real commands printed against the sandbox's state."""
+    return [*base, "--print-only"]
+
+
+def _show_farm_preview(lesson: Lesson, base: list[str], command_tokens: list[str]) -> bool:
+    """Print what the command runs on the farm via a muted --print-only pass, else lesson.shows."""
+    from grit.core.base_command import GritCommand
+    from grit.core.click_cli import cli
+
+    captured = ""
+    # only steps honour --print-only; status/untrack/retrack would write the registry
+    if isinstance(cli.commands.get(lesson.command), GritCommand):
+        logging.disable(logging.CRITICAL)
+        try:
+            with console.capture() as cap:
+                _run_grit([*_print_only_base(base), *command_tokens])
+        finally:
+            logging.disable(logging.NOTSET)
+        captured = cap.get().strip()
+
+    if "Command" in captured:
+        text = Text.from_ansi(captured)  # captured output is already rendered
+    elif lesson.shows.strip():
+        text = lesson.shows.strip()
+    else:
+        return False
+
+    console.print("\n[bold]What this runs on the farm:[/bold]")
+    console.print(text)
+    return True
+
+
+def _drop_step_headers(captured: str) -> str:
+    """Remove print_step_header panels, which the farm preview has already shown."""
+    kept: list[str] = []
+    panel: list[str] = []
+    for line in captured.splitlines():
+        plain = Text.from_ansi(line).plain
+        if panel or plain.startswith("╭"):
+            panel.append(line)
+            if plain.startswith("╰"):
+                if "| Step: " not in "".join(Text.from_ansi(p).plain for p in panel):
+                    kept.extend(panel)
+                panel = []
+            continue
+        kept.append(line)
+    return "\n".join(kept + panel)
+
+
+def _run_lesson_command(lesson: Lesson, base: list[str], command_tokens: list[str]) -> bool:
+    """Preview *command_tokens* on the farm, then run them in the sandbox; True on success."""
+    if not _show_farm_preview(lesson, base, command_tokens):
+        return _run_grit([*base, *command_tokens])
+    # the preview already showed headers and logs; keep only what the step prints
+    # beyond its "Done:" lines (fastga-stats and super-to-scaffold tables, errors)
+    logging.disable(logging.INFO)
+    try:
+        with console.capture() as cap:
+            ok = _run_grit([*base, *command_tokens])
+    finally:
+        logging.disable(logging.NOTSET)
+    paragraphs = _drop_step_headers(cap.get()).split("\n\n")
+    kept = [p for p in paragraphs if not Text.from_ansi(p).plain.strip().startswith("Done:")]
+    results = "\n\n".join(kept).strip()
+    if results:
+        console.print(Text.from_ansi(results))
+    return ok
+
+
+def _reset_sandbox(ticket: str) -> None:
+    """Delete *ticket*'s dry-run workdir and registry entry, so a scenario starts clean."""
+    from grit.core.registry import RegistryManager, dry_run_root
+
+    workdir = dry_run_root() / ticket
+    if workdir.exists():
+        shutil.rmtree(workdir)
+    reg = RegistryManager(registry_dir=dry_run_root())
+    if reg.find_ticket(ticket):
+        reg.delete_ticket(ticket)
+
+
+def _ask(prompt: str = "") -> str:
+    return click.prompt(prompt, default="", show_default=False, prompt_suffix="> ").strip()
+
+
+def _header(lesson: Lesson, n: int, total: int) -> None:
+    console.print(Panel(f"  {n}/{total}  {lesson.title}  ", style="bold magenta"))
+    console.print(lesson.why)
+
+
+def _explain(lesson: Lesson, n: int, total: int) -> None:
+    _header(lesson, n, total)
+    if lesson.task:
+        console.print(f"\n[bold]Your turn:[/bold] {lesson.task}")
+    if lesson.manual_action is not None:
+        console.print("\n[dim]Enter=continue  r=re-read  s=skip  q=quit[/dim]")
+        return
+    console.print(
+        "[dim]Type the command. Other grit commands work too and won't skip ahead. "
+        "?=hint  ??=answer  r=re-read  s=skip  q=quit[/dim]"
+    )
+
+
+def _check_phase(lesson: Lesson, base: list[str], ticket: str) -> str:
+    """Nudge the learner to look at status; returns 'next' or 'quit'."""
+    console.print(
+        f"\n[bold yellow]Check it:[/bold yellow] run [bold]grit status -t {ticket}[/bold] "
+        f"and find — {lesson.check}"
+    )
+    while True:
+        raw = _ask()
+        if raw.lower() == "q":
+            return "quit"
+        if not raw or raw.lower() in {"s", "?", "??", "r"}:
+            return "next"
+        tokens = _safe_tokens(raw)
+        if tokens is None:
+            continue
+        got = parse_command(tokens)
+        if _safe_to_run(got, lesson, ticket, tokens):
+            _run_grit([*base, *tokens])
+        else:
+            console.print(
+                f"[yellow]Not run — {hint_for(got, lesson, ticket, _known_commands())}[/yellow]"
+            )
+        console.print("[dim]Enter to move on.[/dim]")
+
+
+def _is_help(tokens: list[str]) -> bool:
+    return "--help" in tokens or "-h" in tokens
+
+
+def _safe_to_run(got: Parsed, lesson: Lesson, ticket: str, tokens: list[str]) -> bool:
+    """True when a non-answer command is read-only: `--help`, or status for this ticket."""
+    if _is_help(tokens):
+        return True
+    return got.subcommand == "status" and got.ticket == ticket
+
+
+def _safe_tokens(raw: str) -> list[str] | None:
+    """Split *raw* into grit arguments, or None (with a message) when it is not runnable."""
+    try:
+        tokens = shlex.split(raw)
+    except ValueError:
+        console.print("[yellow]Unbalanced quotes — try again.[/yellow]")
+        return None
+    if not tokens:
+        return None
+    if tokens[0] != "grit":
+        console.print("[yellow]Commands start with `grit`. Type ? for a hint, q to quit.[/yellow]")
+        return None
+    rest = tokens[1:]
+    if rest and rest[0] == "init":
+        console.print(
+            "[yellow]`grit init` writes your real config, so the tutorial won't run it. "
+            "Everything else is sandboxed.[/yellow]"
+        )
+        return None
+    return rest
+
+
+def _run_lesson(lesson: Lesson, scenario: Scenario, base: list[str], n: int, total: int) -> str:
+    """Drive one lesson to completion; returns 'next' or 'quit'."""
+    _explain(lesson, n, total)
+    known = _known_commands()
+    last: Parsed | None = None
+
+    while True:
+        raw = _ask()
+        low = raw.lower()
+
+        if low == "q":
+            return "quit"
+        if low == "s":
+            console.print("[dim]skipped[/dim]")
+            return "next"
+        if low == "r":
+            _explain(lesson, n, total)
+            continue
+        if lesson.manual_action is not None:
+            if raw:
+                console.print("[dim]Nothing to type — press Enter once you've done it.[/dim]")
+                continue
+            lesson.manual_action(scenario.ticket)
+            return "next"
+        if low == "??":
+            console.print(f"  [bold green]{expected_line(lesson, scenario.ticket)}[/bold green]")
+            continue
+        if low == "?":
+            if last is None:
+                ticket_hint = "Don't forget -t." if lesson.needs_ticket else "No -t this time."
+                console.print(
+                    f"[bold yellow]Hint:[/bold yellow] the step you want is "
+                    f"[bold]{lesson.command}[/bold]. {ticket_hint}"
+                )
+            else:
+                console.print(
+                    f"[bold yellow]Hint:[/bold yellow] "
+                    f"{hint_for(last, lesson, scenario.ticket, known)}"
+                )
+            continue
+        if not raw:
+            continue
+
+        tokens = _safe_tokens(raw)
+        if tokens is None:
+            continue
+
+        if _is_help(tokens):
+            # Reading a step's --help is never a wrong answer, so it gets no hint.
+            _run_grit([*base, *tokens])
+            continue
+
+        got = parse_command(tokens)
+        if not matches(got, lesson, scenario.ticket):
+            if _safe_to_run(got, lesson, scenario.ticket, tokens):
+                # Looking things up is encouraged, so it gets a reminder, not a hint.
+                _run_grit([*base, *tokens])
+                console.print(
+                    "[dim]Still on this lesson — type the command it asks for (? for a hint).[/dim]"
+                )
+                continue
+            last = got
+            console.print(
+                f"\n[bold yellow]Still on this lesson:[/bold yellow] "
+                f"{hint_for(got, lesson, scenario.ticket, known)}"
+            )
+            continue
+
+        if not _run_lesson_command(lesson, base, tokens):
+            console.print(
+                "[bold red]That step failed.[/bold red] Quit with q and re-run the "
+                "scenario to start clean."
+            )
+        if lesson.check:
+            return _check_phase(lesson, base, scenario.ticket)
+        return "next"
+
+
+def _run_scenario_auto(scenario: Scenario, base: list[str]) -> None:
+    """Run every lesson's expected command unprompted (used by --auto and the smoke test)."""
+    for n, lesson in enumerate(scenario.lessons, start=1):
+        _header(lesson, n, len(scenario.lessons))
+
+        if lesson.manual_action is not None:
+            lesson.manual_action(scenario.ticket)
+            continue
+
+        line = expected_line(lesson, scenario.ticket)
+        console.print(f"\n  [bold green]$[/bold green] [bold]{line}[/bold]\n")
+        command_tokens = _answer_tokens(lesson, scenario.ticket)
+        _run_lesson_command(lesson, base, command_tokens)
+        if lesson.check:
+            console.print(f"\n[dim]$ grit status -t {scenario.ticket}[/dim]")
+            _run_grit([*base, "status", "-t", scenario.ticket])
+            console.print(f"\n[bold yellow]Check it:[/bold yellow] {lesson.check}")
+
+
+def run_scenario(scenario: Scenario, config_path: Path, auto: bool) -> None:
+    """Reset the scenario's sandbox (unless it's the overview) and walk its lessons."""
+    if scenario.is_overview:
+        base: list[str] = []
+        console.print(
+            Panel(f"[bold]{scenario.title}[/bold]\n\n{scenario.blurb}", style="bold cyan")
+        )
+    else:
+        _reset_sandbox(scenario.ticket)
+        base = ["--config", str(config_path), "--yaml", str(scenario.yaml_path), "--dry-run"]
+        console.print(
+            Panel(
+                f"[bold]{scenario.title}[/bold]\n\n{scenario.blurb}\n\n"
+                f"Sandbox ticket: [bold]{scenario.ticket}[/bold] — every command runs for "
+                "real but under --dry-run, so nothing reaches Jira, LSF, lustre or your real "
+                f"registry. Outputs are placeholders under ~/.grit/dry_run/{scenario.ticket}/.",
+                style="bold cyan",
+            )
+        )
+
+    if auto:
+        _run_scenario_auto(scenario, base)
+    else:
+        total = len(scenario.lessons)
+        for n, lesson in enumerate(scenario.lessons, start=1):
+            if _run_lesson(lesson, scenario, base, n, total) == "quit":
+                console.print("\nStopped. Re-run `grit tutorial` any time — it starts clean.")
+                return
+
+    if scenario.is_overview:
+        rows = "\n".join(
+            f"  grit tutorial --scenario {s.key:<18} {s.title} ({s.difficulty})"
+            for s in SCENARIOS
+            if not s.is_overview
+        )
+        console.print(
+            Panel(
+                "That's the shape of it. Five scenarios put it into practice, easiest first:\n\n"
+                f"{rows}\n\nOr run `grit tutorial` with no flags for the menu.",
+                style="bold cyan",
+            )
+        )
+        return
+    if auto:
+        return
+
+    console.print(
+        Panel(
+            "Scenario finished.\n\n"
+            + (f"{scenario.outro}\n\n" if scenario.outro else "")
+            + f"The sandbox is at ~/.grit/dry_run/{scenario.ticket}/ — poke around, then "
+            "`rm -rf ~/.grit/dry_run` to clear it.\n\n"
+            "`grit tutorial` again for another scenario; `grit --help` for everything else.",
+            style="bold cyan",
+        )
+    )
+
+
+def _choose_scenario() -> Scenario | None:
+    """Show the scenario menu; None when the learner quits."""
+    console.print(
+        Panel(
+            "[bold]grit tutorial[/bold] — learn the CLI by driving it.\n\n"
+            "Each scenario is a real curation run against a fictional ticket with "
+            "[bold]--dry-run[/bold]: no HPC job, no lustre path, no Jira, and a throwaway "
+            "registry. You type the commands; the tutorial explains each one first and "
+            "tells you what to look for afterwards.",
+            style="bold cyan",
+        )
+    )
+    for scenario in SCENARIOS:
+        difficulty = f"  [dim]({scenario.difficulty})[/dim]" if scenario.difficulty else ""
+        console.print(
+            f"  [bold]{scenario.title}[/bold]{difficulty}\n     [dim]{scenario.blurb}[/dim]"
+        )
+    console.print("  [bold]q[/bold]  quit\n")
+
+    while True:
+        raw = _ask("Pick a scenario")
+        if raw.lower() == "q":
+            return None
+        if raw.isdigit() and int(raw) < len(SCENARIOS):
+            return SCENARIOS[int(raw)]
+        console.print(f"[yellow]Enter 0-{len(SCENARIOS) - 1}, or q.[/yellow]")
+
+
+@click.command("tutorial")
+@click.option(
+    "--scenario",
+    "scenario_key",
+    default=None,
+    help=f"Run one scenario directly: {', '.join(s.key for s in SCENARIOS)}.",
+)
+@click.option("--auto", is_flag=True, help="Run every lesson's command without prompting.")
+@click.option("--all", "run_all", is_flag=True, help="With --auto, run every scenario.")
+@click.pass_context
+def tutorial_cmd(ctx, scenario_key, auto, run_all):
+    """Guided --dry-run walkthrough of a curation, for learning the CLI."""
+    config_path = Path(ctx.obj.config_path)
+    if not config_path.exists():
+        console.print(
+            f"[bold red]No grit config at {config_path}.[/bold red]\n"
+            "Run [bold]grit init[/bold] first — it writes one pre-filled with your username."
+        )
+        raise SystemExit(1)
+
+    if run_all:
+        for scenario in SCENARIOS:
+            run_scenario(scenario, config_path, auto=True)
+        return
+
+    if scenario_key:
+        scenario = find_scenario(scenario_key)
+        if scenario is None:
+            raise click.UsageError(
+                f"Unknown scenario {scenario_key!r} — "
+                f"choose from: {', '.join(s.key for s in SCENARIOS)}"
+            )
+    elif auto:
+        scenario = SCENARIOS[0]
+    else:
+        scenario = _choose_scenario()
+        if scenario is None:
+            return
+
+    run_scenario(scenario, config_path, auto=auto)

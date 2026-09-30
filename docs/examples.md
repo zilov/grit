@@ -27,10 +27,13 @@
 ## 1. Installation
 
 ```bash
-git clone https://github.com/zilov/grit.git
+git clone git@github.com:zilov/grit.git
 cd grit
 uv tool install .   # don't forget the trailing dot
 ```
+
+See the [README](../README.md#installation) for installing straight from git without
+cloning, and for the local-development (`uv sync`) path.
 
 If `uv` is not available:
 
@@ -75,7 +78,8 @@ grit post-curation -t RC-1234 --hap2
 grit pretext-to-asm -t RC-1234
 grit haplotig-files -t RC-1234
 grit hic-remapping -t RC-1234 # hap1 only
-grit hic-remapping -t RC-1234 --hap2 # hap2 only
+grit hic-remapping -t RC-1234 --hap2 # hap1 and hap2 (hap1 skipped if its map
+                                     # is newer than its canonical FASTA)
 
 # 3. Copying results to curated directory + run qv/completeness check
 grit finalize-qc -t RC-1234
@@ -172,10 +176,9 @@ For a single ticket this prints, in order:
 - **Step history** table — every step run for the ticket, with run count,
   last-run timestamp, live status, job ID, and an `agp_copied` row showing whether the
   curated `.agp` has landed in the workdir yet.
-- **scp / less tips** — ready-to-paste commands for pulling result files
+- **scp tips** — ready-to-paste commands for pulling result files
   (FastGA plots, BUSCO synteny plots, the canonical remapped Pretext map) down
-  to your local machine, or `less`-ing a summary file directly on the farm, for any
-  step that completed successfully.
+  to your local machine, for any step that completed successfully.
 - **AGP copy command** — the exact `scp` command to copy your locally-saved
   `.agp` from PretextView up to the workdir.
 - **Next-step tip** — one of:
@@ -276,10 +279,11 @@ Two places in that output answer the question:
 
 If one of these steps ran and you are not happy with the result, **you do not
 have to redo the pipeline**. The step's output is canonical only because it is
-the freshest one — demote it and the previous file takes over again:
+the freshest one — demote it (by the run ID in `grit status -t RC-1234`'s ID
+column) and the previous file takes over again:
 
 ```bash
-grit untrack -t RC-1234 --step blast_contaminants
+grit untrack -t RC-1234 --run 3f9a1c2e
 ```
 
 Nothing is deleted and no other step re-runs. See
@@ -290,11 +294,13 @@ The full decision path, including where each step takes its input from, is in
 
 ## 7. Undoing a step with `untrack` and `retrack`
 
-`untrack` marks a step's latest run as non-canonical, so the next-freshest
-output takes over as the canonical file:
+`untrack` marks one run as non-canonical, so the next-freshest output takes
+over as the canonical file. Every run has a short ID, shown in the ID column of
+`grit status -t`'s step-history table; pass it (or any unique prefix of it)
+with `--run`/`-r`:
 
 ```bash
-grit untrack -t RC-1234 --step blast_contaminants
+grit untrack -t RC-1234 --run 3f9a1c2e
 ```
 
 It changes nothing else: the files stay on disk, the run stays in the step
@@ -303,14 +309,15 @@ history, and no other step re-runs. Use it when a step made things worse —
 ran against the wrong reference — instead of re-running the chain from
 `pretext-to-asm`.
 
-The step name is the tracker name (underscores, as shown in the step-history
-table), and each haplotype's run is its own name — `rename_and_orient` and
-`rename_and_orient_hap2` are untracked separately.
+The ID picks the step as well as the run, so any run can be demoted, not just
+the latest. Each haplotype's run has its own ID — `rename_and_orient` and
+`rename_and_orient_hap2` rows are untracked separately. An unknown or ambiguous
+prefix is refused with the list of candidate runs.
 
 To bring it back:
 
 ```bash
-grit retrack -t RC-1234 --step blast_contaminants
+grit retrack -t RC-1234 --run 3f9a1c2e
 ```
 
 `retrack` promotes that run again using the outputs it recorded when it ran, so
@@ -319,9 +326,9 @@ it works even if the run has since scrolled far down the history.
 A typical loop is: check what's canonical now, demote, check again.
 
 ```bash
-grit status -t RC-1234                                  # Canonical column: fa(1) on blast_contaminants
-grit untrack -t RC-1234 --step blast_contaminants
-grit status -t RC-1234                                  # fa(1) moved back to the previous step
+grit status -t RC-1234                  # Canonical column: fa(1) on blast_contaminants, ID 3f9a1c2e
+grit untrack -t RC-1234 -r 3f9a
+grit status -t RC-1234                  # fa(1) moved back to the previous step
 ```
 
 ### What untrack does not cover: several `fastga` runs
@@ -376,7 +383,7 @@ grit pretext-to-asm-recurate -t RC-1234           # hap1 / primary
 grit pretext-to-asm-recurate -t RC-1234 --hap2    # hap2 / alternate
 
 # 4. Remap Hi-C against the new assembly
-grit hic-remapping -t RC-1234 [--hap2]
+grit hic-remapping -t RC-1234 [--hap2]   # --hap2: both; an up-to-date hap1 map is skipped
 
 # steps 3 and 4 in one go:
 grit post-curation-recurate -t RC-1234 [--hap2]
@@ -428,7 +435,7 @@ grit pp -t RC-1234
 grit setup -t RC-1234
 # curate both haplotypes, copy both AGPs into the workdir
 
-grit post-curation -t RC-1234 --hap2   # here --hap2 means ALSO hap2, hap1 still runs
+grit post-curation -t RC-1234 --hap2   # --hap2: hap1 and hap2
 #   hap1:  fa, chr, hap  ->  pretext_to_asm
 #   hap2:  fa, chr, hap  ->  pretext_to_asm
 
@@ -511,7 +518,7 @@ grit find-reference -t RC-1234               # or --local /path/to/reference.fa
 grit fastga -t RC-1234                       # rename-and-orient needs its PAF,
                                              # unless you pass --mapping-table
 
-grit rename-and-orient -t RC-1234 --hap2     # here --hap2 means ALSO hap2,
+grit rename-and-orient -t RC-1234 --hap2     # --hap2: hap1 and hap2,
                                              # reusing hap1's mapping table
 #   hap1:  fa, chr  ->  rename_and_orient
 #   hap2:  fa, chr  ->  rename_and_orient_hap2

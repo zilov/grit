@@ -13,8 +13,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import click
+
 if TYPE_CHECKING:
     from grit.core.run_tracker import RunTracker
+
+
+class UnsupportedAssemblyTypeError(click.ClickException):
+    """YAML declares an assembly type grit recognises but cannot yet handle.
+
+    A ClickException so the curator gets the message and exit code 1 rather than a
+    traceback; it is still an ordinary exception when raised outside the CLI.
+    """
 
 
 @dataclass
@@ -55,9 +65,9 @@ class CurationContext:
     species: str
 
     # --- assembly type ---
-    assembly_type: str  # 'hap1' | 'primary' | 'paternal'
-    hap1_prefix: str  # 'hap1' | 'primary' | 'paternal'
-    hap2_prefix: str  # 'hap2' | 'alternate' | 'maternal'
+    assembly_type: str  # 'hap1' | 'primary' (paternal/maternal rejected, see _detect_assembly_type)
+    hap1_prefix: str  # 'hap1' | 'primary'
+    hap2_prefix: str  # 'hap2' | 'alternate'
     combine_for_curation: bool  # merged map flag
 
     # --- sequencing data ---
@@ -101,6 +111,11 @@ class CurationContext:
         """Example: sDipInt39.1"""
         return f"{self.tol_id}.{self.release_version}"
 
+    @property
+    def recurate_dir(self) -> Path:
+        """Where the curator drops re-curated AGPs for pretext-to-asm-recurate."""
+        return self.workdir / "recurate"
+
     # ------------------------------------------------------------------
     # Constructors
     # ------------------------------------------------------------------
@@ -127,8 +142,10 @@ class CurationContext:
         cfg = UserConfig.from_dict(user_config)
 
         # print_only takes precedence over dry_run — resolved once, here, so every
-        # downstream dry_run-conditional branch (below, and in every step's
-        # `if ctx.dry_run:` check) automatically inherits the correct precedence.
+        # step's `if ctx.dry_run:` check inherits it. Paths still follow the
+        # requested dry_run: --dry-run --print-only prints the real commands
+        # against the sandbox's state.
+        sandbox = dry_run
         dry_run = dry_run and not print_only
 
         assembly_type, hap1_prefix, hap2_prefix = _detect_assembly_type(yaml_data)
@@ -143,7 +160,7 @@ class CurationContext:
 
         if pacbio_dir_raw:
             long_reads_dir = Path(pacbio_dir_raw)
-            read_type = "hifi" if pacbio_read_type else "hifi"
+            read_type = pacbio_read_type if pacbio_read_type else "hifi"
         elif ont_dir_raw:
             long_reads_dir = Path(ont_dir_raw.replace("fasta", ""))
             read_type = "ont"
@@ -164,7 +181,7 @@ class CurationContext:
         from grit.core.registry import RegistryManager, dry_run_root
         from grit.core.run_tracker import RunTracker
 
-        if dry_run:
+        if sandbox:
             # Keyed by ticket_id, not tol_id — two dry-run tickets sharing a
             # YAML fixture (same tol_id) must get independent sandboxes.
             workdir = dry_run_root() / ticket_id
@@ -273,6 +290,14 @@ def _detect_assembly_type(
         return "hap1", "hap1", "hap2"
     elif "primary" in yaml_data:
         return "primary", "primary", "alternate"
+    elif "paternal" in yaml_data or "maternal" in yaml_data:
+        # placeholder: paternal/maternal keys are recognised here, but nothing downstream
+        # (this function, is_single_hap, the canonical-resolution helpers) has real trio
+        # support yet — fail loudly instead of silently mishandling the ticket.
+        raise UnsupportedAssemblyTypeError(
+            "paternal/maternal assemblies are not supported yet — grit only "
+            "handles hap1/hap2 and primary/alternate assembly YAML today."
+        )
     else:
         raise ValueError(f"Cannot detect assembly type from YAML keys: {list(yaml_data.keys())}")
 

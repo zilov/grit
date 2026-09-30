@@ -1,0 +1,350 @@
+"""Unit tests for the tutorial's command matcher and hint generator (pure string logic)."""
+
+import pytest
+
+from grit.core.tutorial import (
+    _drop_step_headers,
+    _print_only_base,
+    _safe_to_run,
+    expected_line,
+    hint_for,
+    matches,
+    parse_command,
+)
+from grit.core.tutorial_lessons import SCENARIOS, Lesson, Scenario, find_scenario
+
+TICKET = "TUTORIAL-1"
+KNOWN = {"setup", "status", "pretext-to-asm", "blast-contaminants", "hic-remapping", "untrack"}
+
+PLAIN = Lesson(title="t", why="w", task="do it", command="pretext-to-asm")
+HAP2 = Lesson(
+    title="t",
+    why="w",
+    task="do it",
+    command="hic-remapping",
+    args=["--hap2"],
+    flag_hints={"--hap2": "hic-remapping runs one haplotype per invocation."},
+)
+GLOBAL = Lesson(title="t", why="w", task="do it", command="status", needs_ticket=False)
+STEP = Lesson(
+    title="t",
+    why="w",
+    task="do it",
+    command="untrack",
+    args=["-r", "abc12345"],
+    flag_hints={"--run": "untrack needs -r <id>."},
+)
+
+
+@pytest.fixture(autouse=True)
+def _sandbox(tmp_path, monkeypatch):
+    """Point the tutorial sandbox at tmp_path, so run-ID answers never read ~/.grit."""
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+    return tmp_path
+
+
+class TestParse:
+    def test_short_and_long_ticket_are_the_same(self):
+        assert parse_command(["grit", "setup", "-t", TICKET]) == parse_command(
+            ["grit", "setup", "--ticket", TICKET]
+        )
+
+    def test_equals_form_is_the_same(self):
+        assert parse_command(["grit", "setup", "--ticket=" + TICKET]).ticket == TICKET
+
+    def test_leading_grit_is_optional(self):
+        assert parse_command(["setup", "-t", TICKET]).subcommand == "setup"
+
+    def test_flag_order_does_not_matter(self):
+        a = parse_command(["grit", "hic-remapping", "-t", TICKET, "--hap2"])
+        b = parse_command(["grit", "hic-remapping", "--hap2", "-t", TICKET])
+        assert a == b
+
+    def test_dry_run_is_ignored(self):
+        assert parse_command(["grit", "setup", "-t", TICKET, "--dry-run"]) == parse_command(
+            ["grit", "setup", "-t", TICKET]
+        )
+
+    def test_tutorial_plumbing_is_ignored(self):
+        parsed = parse_command(
+            ["grit", "--config", "/x/y.yaml", "--yaml", "/a/b.yaml", "setup", "-t", TICKET]
+        )
+        assert parsed == parse_command(["grit", "setup", "-t", TICKET])
+
+    def test_run_value_is_part_of_the_answer(self):
+        assert parse_command(["grit", "untrack", "-r", "foo"]).flags == frozenset({"--run=foo"})
+
+    def test_short_options_resolve_per_command(self):
+        """-r is --run for untrack but --reference for fastga."""
+        assert parse_command(["grit", "fastga", "-r", "x"]).flags == frozenset({"--reference=x"})
+
+
+class TestMatches:
+    def test_exact(self):
+        assert matches(parse_command(["grit", "pretext-to-asm", "-t", TICKET]), PLAIN, TICKET)
+
+    def test_with_dry_run_typed_anyway(self):
+        got = parse_command(["grit", "pretext-to-asm", "-t", TICKET, "--dry-run"])
+        assert matches(got, PLAIN, TICKET)
+
+    def test_missing_flag_does_not_match(self):
+        assert not matches(parse_command(["grit", "hic-remapping", "-t", TICKET]), HAP2, TICKET)
+
+    def test_extra_flag_does_not_match(self):
+        got = parse_command(["grit", "pretext-to-asm", "-t", TICKET, "--hap2"])
+        assert not matches(got, PLAIN, TICKET)
+
+    def test_wrong_ticket_does_not_match(self):
+        assert not matches(parse_command(["grit", "pretext-to-asm", "-t", "RC-9"]), PLAIN, TICKET)
+
+    def test_global_lesson_matches_without_ticket(self):
+        assert matches(parse_command(["grit", "status"]), GLOBAL, TICKET)
+        assert not matches(parse_command(["grit", "status", "-t", TICKET]), GLOBAL, TICKET)
+        assert expected_line(GLOBAL, TICKET) == "grit status"
+
+    def test_run_value_must_match(self):
+        got = parse_command(["grit", "untrack", "-t", TICKET, "-r", "wrong_id"])
+        assert not matches(got, STEP, TICKET)
+
+    def test_run_of_answers_with_the_sandbox_run_id(self, _sandbox):
+        from grit.core.registry import RegistryManager
+        from grit.core.run_tracker import RunTracker, run_id
+
+        lesson = Lesson(title="t", why="w", task="do it", command="untrack", run_of="qv")
+        assert expected_line(lesson, TICKET) == f"grit untrack -t {TICKET} -r <id>"
+        reg = RegistryManager(registry_dir=_sandbox)
+        reg.add_ticket(TICKET, "xbTest1", "species", _sandbox / "wd")
+        tracker = RunTracker(_sandbox / "wd", registry=reg)
+        run_dir = tracker.start("qv", TICKET, "xbTest1")
+        tracker.finish("qv", run_dir, "success")
+        assert expected_line(lesson, TICKET) == f"grit untrack -t {TICKET} -r {run_id(run_dir)}"
+
+
+class TestHints:
+    def _hint(self, tokens, lesson=PLAIN):
+        return hint_for(parse_command(tokens), lesson, TICKET, KNOWN)
+
+    def test_unknown_command_points_at_help(self):
+        assert "--help" in self._hint(["grit", "pretext-to-agp", "-t", TICKET])
+
+    def test_wrong_step_names_both(self):
+        hint = self._hint(["grit", "setup", "-t", TICKET])
+        assert "setup" in hint and "pretext-to-asm" in hint
+
+    def test_missing_ticket_says_so(self):
+        assert "-t" in self._hint(["grit", "pretext-to-asm"])
+
+    def test_ticket_on_a_global_lesson_says_drop_it(self):
+        assert "drop -t" in self._hint(["grit", "status", "-t", TICKET], GLOBAL)
+
+    def test_status_for_another_ticket_names_the_sandbox_one(self):
+        assert f"status -t {TICKET}" in self._hint(["grit", "status", "-t", "T-1"])
+
+    def test_wrong_ticket_names_the_sandbox_one(self):
+        assert TICKET in self._hint(["grit", "pretext-to-asm", "-t", "RC-9"])
+
+    def test_missing_flag_uses_the_lesson_s_own_explanation(self):
+        hint = self._hint(["grit", "hic-remapping", "-t", TICKET], HAP2)
+        assert hint == "hic-remapping runs one haplotype per invocation."
+
+    def test_extra_flag_is_named(self):
+        assert "--hap2" in self._hint(["grit", "pretext-to-asm", "-t", TICKET, "--hap2"])
+
+    def test_wrong_run_value_falls_back_to_the_flag_hint(self):
+        hint = self._hint(["grit", "untrack", "-t", TICKET, "-r", "nope"], STEP)
+        assert hint == "untrack needs -r <id>."
+
+    def test_no_command_at_all(self):
+        assert "grit" in hint_for(parse_command(["grit"]), PLAIN, TICKET, KNOWN)
+
+
+class TestScenarios:
+    def test_every_lesson_names_a_registered_command(self):
+        from grit.core.click_cli import cli
+
+        for scenario in SCENARIOS:
+            for lesson in scenario.lessons:
+                if lesson.manual_action is not None:
+                    continue  # no command to type — see test_manual_lessons below
+                assert lesson.command in cli.commands, (
+                    f"{scenario.key}: {lesson.command!r} is not a registered grit command"
+                )
+
+    def test_every_scenario_yaml_exists(self):
+        for scenario in SCENARIOS:
+            assert scenario.yaml_path.exists(), scenario.yaml_path
+
+    def test_scenario_tickets_are_unique(self):
+        tickets = [s.ticket for s in SCENARIOS]
+        assert len(tickets) == len(set(tickets))
+
+    def test_expected_line_round_trips_through_the_matcher(self):
+        for scenario in SCENARIOS:
+            for lesson in scenario.lessons:
+                if lesson.manual_action is not None:
+                    continue  # no typed command — nothing to round-trip
+                line = expected_line(lesson, scenario.ticket).split()
+                assert matches(parse_command(line), lesson, scenario.ticket)
+
+    def test_every_lesson_explains_the_flags_it_asks_for(self):
+        """A lesson that demands a flag must be able to say why, or its hint is useless."""
+        for scenario in SCENARIOS:
+            for lesson in scenario.lessons:
+                flags = [*lesson.args, *(["--run"] if lesson.run_of else [])]
+                for flag in flags:
+                    if flag.startswith("-"):
+                        name = {"-r": "--run", "-u": "--untracked"}.get(flag, flag)
+                        assert name in lesson.flag_hints, f"{scenario.key}/{lesson.command}: {name}"
+
+    @pytest.mark.parametrize("key", [s.key for s in SCENARIOS])
+    def test_find_scenario(self, key):
+        assert find_scenario(key).key == key
+
+    def test_find_scenario_unknown(self):
+        assert find_scenario("nope") is None
+
+
+class TestSafeToRun:
+    """A non-matching command is executed only when running it can't teach the wrong thing."""
+
+    def _run(self, tokens, lesson=PLAIN):
+        rest = tokens[1:] if tokens and tokens[0] == "grit" else tokens
+        return _safe_to_run(parse_command(tokens), lesson, TICKET, rest)
+
+    def test_status_on_this_ticket_runs(self):
+        assert self._run(["grit", "status", "-t", TICKET])
+
+    def test_another_step_is_not_run(self):
+        """A stray mutating step would invalidate the next lesson's status claim."""
+        assert not self._run(["grit", "blast-contaminants", "-t", TICKET])
+
+    def test_help_runs_even_without_a_ticket(self):
+        assert self._run(["grit", "pretext-to-asm", "--help"])
+
+    def test_missing_ticket_is_not_run(self):
+        """--yaml makes -t optional, so grit would invent a ticket from the filename."""
+        assert not self._run(["grit", "pretext-to-asm"])
+
+    def test_foreign_ticket_is_not_run(self):
+        assert not self._run(["grit", "status", "-t", "RC-9999"])
+
+    def test_the_lesson_s_own_step_with_wrong_flags_is_not_run(self):
+        assert not self._run(["grit", "hic-remapping", "-t", TICKET], HAP2)
+
+
+class TestLessonAndScenarioFields:
+    """New Part A fields default sensibly and don't disturb existing lessons."""
+
+    def test_lesson_shows_defaults_empty(self):
+        assert PLAIN.shows == ""
+
+    def test_lesson_manual_action_defaults_none(self):
+        assert PLAIN.manual_action is None
+
+    def test_manual_lesson_can_carry_an_action(self):
+        seen = []
+        manual = Lesson(
+            title="t",
+            why="w",
+            task="copy the AGP in",
+            command="",
+            manual_action=lambda ticket: seen.append(ticket),
+        )
+        manual.manual_action(TICKET)
+        assert seen == [TICKET]
+
+    def test_scenario_difficulty_defaults_empty(self):
+        scenario = Scenario(
+            key="k", title="t", blurb="b", yaml_path=PLAIN, ticket=TICKET, lessons=[]
+        )
+        assert scenario.difficulty == ""
+
+    def test_scenario_difficulties_match_the_curriculum(self):
+        expected = {
+            "overview": "",
+            "basic": "easy",
+            "references": "medium",
+            "canonical-changes": "hard",
+            "recurate": "medium",
+            "other": "medium",
+        }
+        for scenario in SCENARIOS:
+            assert scenario.difficulty == expected[scenario.key], scenario.key
+
+    def test_manual_lessons_have_no_command_or_args(self):
+        """A lesson with a manual_action has nothing for the learner to type."""
+        for scenario in SCENARIOS:
+            for lesson in scenario.lessons:
+                if lesson.manual_action is not None:
+                    assert lesson.command == ""
+                    assert lesson.args == []
+
+    def test_typed_lessons_have_no_manual_action(self):
+        for scenario in SCENARIOS:
+            for lesson in scenario.lessons:
+                if lesson.command:
+                    assert lesson.manual_action is None
+
+    def test_manual_actions_do_not_crash(self, monkeypatch, tmp_path):
+        """Every manual_action in the curriculum runs cleanly given a ticket string.
+
+        Patch cli.main so this stays hermetic and never touches a real registry.
+        """
+        import grit.core.registry as registry_mod
+        from grit.core.click_cli import cli
+
+        monkeypatch.setattr(registry_mod, "dry_run_root", lambda: tmp_path)
+        monkeypatch.setattr(cli, "main", lambda **kwargs: None)
+
+        for scenario in SCENARIOS:
+            for lesson in scenario.lessons:
+                if lesson.manual_action is not None:
+                    lesson.manual_action(scenario.ticket)  # must not raise
+
+    def test_overview_is_the_only_overview_scenario(self):
+        overviews = [s for s in SCENARIOS if s.is_overview]
+        assert [s.key for s in overviews] == ["overview"]
+
+    def test_non_overview_scenarios_have_a_real_ticket_and_typed_lessons(self):
+        for scenario in SCENARIOS:
+            if scenario.is_overview:
+                continue
+            assert scenario.ticket
+            assert any(lesson.command for lesson in scenario.lessons)
+
+
+class TestPrintOnlyBase:
+    def test_adds_print_only_and_keeps_dry_run(self):
+        base = ["--config", "/x.yaml", "--yaml", "/y.yaml", "--dry-run"]
+        expected = ["--config", "/x.yaml", "--yaml", "/y.yaml", "--dry-run", "--print-only"]
+        assert _print_only_base(base) == expected
+
+    def test_leaves_config_and_yaml_untouched(self):
+        base = ["--config", "/x.yaml", "--yaml", "/y.yaml", "--dry-run"]
+        result = _print_only_base(base)
+        assert "--config" in result and "/x.yaml" in result
+        assert "--yaml" in result and "/y.yaml" in result
+
+
+def test_drop_step_headers_keeps_results_and_other_panels():
+    captured = (
+        "╭────╮\n│ T-2 | xxTutDemo1 | Step: Pretext to ASM │\n╰────╯\n"
+        "Done: Curated FASTA\n"
+        "╭────╮\n│ keep me │\n╰────╯"
+    )
+    assert _drop_step_headers(captured) == "Done: Curated FASTA\n╭────╮\n│ keep me │\n╰────╯"
+
+
+def test_a_value_option_swallows_its_value_not_the_ticket():
+    got = parse_command(["grit", "find-reference", "--local", "-t", "T-3"])
+    assert got.ticket is None and "--local=-t" in got.flags
+    got = parse_command(["grit", "find-reference", "-t", "T-3", "--local", "reference.fa"])
+    assert got.ticket == "T-3" and got.flags == {"--local=reference.fa"}
+
+
+def test_a_value_option_missing_its_value_is_named():
+    lesson = Lesson(title="", why="", task="", command="find-reference", args=["--local", "r.fa"])
+    got = parse_command(["grit", "find-reference", "--local", "-t", TICKET])
+    assert hint_for(got, lesson, TICKET, {"find-reference"}) == (
+        "--local takes a value right after it: --local r.fa."
+    )

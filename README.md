@@ -12,21 +12,39 @@ See [docs/examples.md](docs/examples.md) for a walkthrough of installation, the 
 
 ```bash
 # With uv (recommended) — installs the `grit` command globally as a uv tool
+git clone git@github.com:zilov/grit.git
+cd grit
+uv tool install .
+
+# Or straight from git, no local clone needed
 uv tool install "grit @ git+ssh://git@github.com/zilov/grit.git"
 
 # For local development instead (editable install into a project-local .venv;
 # `grit` is only on PATH after `source .venv/bin/activate` or via `uv run grit`)
 uv sync
-
-# Or with pip
-pip install -e .
 ```
+
+All dependencies, including `rename-and-orient`, come from PyPI, so plain
+`pip install .` (or `pip install -e .` for development) works too.
 
 To pick up a newer version:
 
 ```bash
 uv tool upgrade grit --reinstall
 ```
+
+## First steps: the tutorial
+
+New to grit? Right after installing, run the guided tutorial — no config,
+Jira, LSF or real data needed (every command runs in an isolated sandbox):
+
+```bash
+grit tutorial                        # pick a scenario from the menu
+grit tutorial --scenario overview    # tutorial 0: what curation and grit are
+grit tutorial --scenario basic       # tutorial 1: the standard post-curation chain
+```
+
+Start with `overview`, then `basic`. `grit tutorial --help` lists all scenarios.
 
 ## Configuration
 
@@ -74,7 +92,7 @@ grit super-to-scaffold -t RC-1234
 
 # Tickets and tracking
 grit status [-t RC-1234]
-grit untrack / retrack -t RC-1234 --step STEP
+grit untrack / retrack -t RC-1234 --run RUN_ID   # RUN_ID from the ID column of `grit status -t`
 grit done / reopen / remove / cleanup -t RC-1234
 
 # Use a local YAML instead of fetching from Jira (ticket_id is derived from the filename stem)

@@ -24,7 +24,7 @@ def run_post_curation_recurate(ctx, *, run_hap2: bool = False) -> None:
     hap_prefix = ctx.hap2_prefix if run_hap2 else ctx.hap1_prefix
     step_name = "pretext_to_asm_recurate_hap2" if run_hap2 else "pretext_to_asm_recurate"
     run_pretext_to_asm_recurate(ctx, hap_prefix, step_name)
-    run_hic_remapping(ctx, run_hap1=not run_hap2, run_hap2=run_hap2)
+    run_hic_remapping(ctx, run_hap1=not run_hap2, run_hap2=run_hap2, fresh_fasta=True)
 
 
 # ---------------------------------------------------------------------------
