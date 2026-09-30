@@ -4,6 +4,38 @@ All notable changes to this project are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.5.0] - 2026-09-30
+
+### Added
+
+- `grit tutorial`: a guided walkthrough for new curators, run straight after installing. Tutorial 0 (`--scenario overview`) is five text screens on what curation and grit are. Tutorials 1-5 (`basic`, `references`, `canonical-changes`, `recurate`, `other`) are typed lessons that each work one fictional ticket, in an isolated `--dry-run` sandbox: no Jira, LSF, lustre or real registry. Each opens with a "The case" screen, advances only when the learner types the right command (with hints naming the actual mistake), and shows what the step would run on the farm before it runs. `--auto` runs a scenario unprompted and `--all` runs every scenario.
+- Every run has a short ID (8 hex characters, derived from its run dir, so older records get one too), shown in a new `ID` column of `grit status -t`'s step history.
+- `_run(..., timeout=)` kills the command's whole process group when the timeout expires. There is no timeout by default.
+- `setup` creates the recurate AGP dir.
+
+### Changed
+
+- **Breaking:** `grit untrack` and `grit retrack` pick a run by ID with `-r/--run <id|prefix>`; `--step` is gone. A prefix that is unknown or matches more than one run is refused with a list of candidates, and `retrack` refuses a run that isn't untracked.
+- **Breaking:** `hic-remapping --hap2` remaps hap1 *and* hap2 (it used to remap only hap2), matching `post-curation` and `rename-and-orient`. It skips a haplotype whose latest run is still in flight, or whose canonical map is already newer than its canonical FASTA, so after a hap2-only change only hap2 is remapped. `--assembly` always remaps hap1.
+- A failing command's stderr tail is shown to the curator and logged, instead of only its exit code.
+- For a job submitted from another LSF cluster, `grit status` says `unknown (job on <cluster>)` rather than `unknown (gone)`.
+- `rename-and-orient` is installed from PyPI.
+- The unreachable `validate-files` step is removed.
+- Tutorial and install instructions are in the README.
+
+### Fixed
+
+- A run is recorded `success` only when its outputs are on disk. This applies to the bsub epilogue (`_state-update`), `qv` (the MerquryFK wrapper exits 0 whatever happened), `sex-matcher` (which now exits non-zero when there is no `Best_match`) and `pretext-to-asm-recurate` (which now fails when no curated FASTA exists).
+- A rejected `bsub` submission finishes the run `failed` instead of leaving it stuck as `started`. So does a `bsub` that exits 0 without printing a job ID.
+- The bsub epilogue no longer breaks when `$LSB_JOBEXIT_STAT` is unset, when grit wasn't started from an executable, or when a workdir contains spaces or quotes.
+- Canonical resolution: files from an in-flight run never become canonical, and an untracked run never becomes canonical just by being the newest dir on disk. A step's latest run is never swapped for an older run of the same step. A single-hap ticket never resolves hap2 to hap1's file. `rename-and-orient` competes only for its own haplotype, `haplotig-files`' empty placeholder no longer hides real haplotigs, and a stale NFS handle is treated as a missing file instead of crashing.
+- `find-reference` output checks point at the reheadered FASTA the step actually writes.
+- `pacbio_read_type` from the ticket YAML is used; grit had always passed `hifi` to curationpretext and microchromosome-second-shot.
+- A `paternal`/`maternal` (trio) YAML fails with a clear "unsupported" error instead of being mishandled.
+- The telomere track in `add-pretext-view-tracks` was never produced (its awk program was mis-escaped), and the failure was masked as success.
+- Result parsers log parse failures instead of silently swallowing them.
+- `requests`, `biopython` and `pymysql` are restored as dependencies: `GritJiraIssue` needs them, so without them every Jira-backed command failed with `ModuleNotFoundError`.
+
 ## [0.4.3] - 2026-09-25
 
 ### Changed
