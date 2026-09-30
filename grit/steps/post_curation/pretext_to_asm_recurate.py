@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 _RECURATE_TIP = (
     "This uses the current canonical FASTA as input.\n"
     "To remove this recurate output from the canonical pool: "
-    "grit untrack --step {step_name} -t <ticket>"
+    "grit untrack -t {ticket} -r <ID of its {step_name} row in `grit status -t {ticket}`>"
 )
 
 _NEW_HAPLOTIGS_GLOBS = (
@@ -154,7 +154,7 @@ def run_pretext_to_asm_recurate(ctx: CurationContext, hap_prefix: str, step_name
         hap_prefix,
     )
     print_step_header(ctx.ticket_id, ctx.tol_id, f"Pretext to ASM recurate ({hap_prefix})")
-    print_tip(_RECURATE_TIP.format(step_name=step_name))
+    print_tip(_RECURATE_TIP.format(step_name=step_name, ticket=ctx.ticket_id))
 
     if ctx.dry_run:
         run_dir = ctx.tracker.start(step_name, ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
