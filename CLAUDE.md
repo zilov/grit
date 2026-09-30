@@ -125,8 +125,8 @@ Six scenarios, in `SCENARIOS` (`grit/core/tutorial_lessons.py`), selected with
 - `recurate` (medium) — tutorial 4: `post-curation` then
   `post-curation-recurate` for hap1 (hap2 recuration is not supported yet).
 - `other` (medium) — tutorial 5: `sex-matcher`, `blast-contaminants --untracked`,
-  a `rename-and-orient` run that comes out wrong, `grit untrack` to back it out,
-  then a corrected `rename-and-orient --mapping-table` redo.
+  a `rename-and-orient` run that comes out wrong, `grit untrack -r <id>` (the ID
+  read off `grit status`) for each haplotype's run to back it out, then a corrected `rename-and-orient --mapping-table` redo.
 
 #### Tutorial 0 — the one non-sandboxed scenario
 
@@ -156,7 +156,8 @@ lessons are added, removed or reordered.
 
 The learner **types** each command; the lesson advances only on a match.
 `parse_command()` normalises both sides to `(subcommand, ticket, flags)` — short
-aliases expanded, `--dry-run` ignored, every option that takes a value (read from the click commands by `_value_opts()`, so a new one never needs listing) keeping it — and
+options expanded to that subcommand's long name (`_long_opt()`: `-r` is `--run`
+for `untrack` but `--reference` for `fastga`), `--dry-run` ignored, every option that takes a value (read from the click commands by `_value_opts()`, so a new one never needs listing) keeping it — and
 `hint_for()` names the actual fault. Both are pure string logic and are
 unit-tested in `tests/test_tutorial.py`, which also asserts that every typed
 lesson names a registered command and explains every flag it demands.
@@ -251,6 +252,15 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
 
 ## Key conventions
 
+- **Run IDs** — `run_id(run_dir)` (`grit/core/run_tracker.py`) is the first 8
+  hex of the sha1 of the run's absolute `run_dir`, derived on read, never
+  stored — so every record, old or new, has one. `grit status -t` shows it in
+  the step-history table's ID column; `grit untrack`/`grit retrack` take only
+  `-t` and `--run/-r <id or unique prefix>` (no `--step`: the ID names the step),
+  resolved by `_resolve_run()` in `click_cli.py`, which raises `UsageError`
+  listing candidates on an unknown or ambiguous prefix. A tutorial lesson that
+  needs one sets `Lesson.run_of=<step>`, and `_answer_tokens()` appends
+  `-r <that step's latest sandbox run ID>` (`<id>` before the run exists).
 - **`--untracked`** — injected into every step by `GritCommand` (same as
   `-t`/`--print-only`); all `tracker.start()` call sites pass
   `untracked=ctx.untracked`. Every
@@ -261,7 +271,7 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   — omitting it there lets the finish record silently overwrite the untracked
   marker with `success`/`failed`, making the run canonical the moment it
   completes (the exact bug fixed in `TODO/tiny.md`). Outputs are still
-  recorded on an untracked finish, so `grit retrack -t <ticket> -s <step>` can
+  recorded on an untracked finish, so `grit retrack -t <ticket> -r <run_id>` can
   later promote the run to canonical using its own recorded outputs. The
   recovery paths that finish *without* `untracked` (`_refresh_pending_jobs`,
   `_resolve_gone_job`, `status`'s bjobs fallback, `sex_matcher`'s resubmit

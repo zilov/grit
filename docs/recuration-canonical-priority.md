@@ -154,8 +154,9 @@ found" for `alternate` rather than handing back the primary's files.
 
    > If you want a *different* pool member to be canonical instead of whatever
    > is currently freshest, demote the freshest one with
-   > `grit untrack -t {ticket} --step <step_name>` — any pool step name works.
-   > `grit retrack -t {ticket} --step <step_name>` puts it back, and
+   > `grit untrack -t {ticket} --run <run_id>`, taking the run's ID from the
+   > step-history table of `grit status -t {ticket}` — any pool step's run works.
+   > `grit retrack -t {ticket} --run <run_id>` puts it back, and
    > `--untracked` on the original run keeps it out of the pool from the start.
    > See [`examples.md` §7](examples.md#7-undoing-a-step-with-untrack-and-retrack).
 
