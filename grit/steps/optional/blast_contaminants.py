@@ -43,6 +43,10 @@ _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
 ]
 
 
+# Tutorial example: two hap1 scaffolds blast flags as bacterial, in the real .bed layout.
+_DRY_RUN_BED = "HAP1_SCAFFOLD_123\t0\t10000\tREMOVE\nHAP1_SCAFFOLD_234\t0\t10000\tREMOVE\n"
+
+
 # ---------------------------------------------------------------------------
 # Public step functions
 # ---------------------------------------------------------------------------
@@ -98,6 +102,10 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
                 hap_dir = Path(path).parent
                 if hap_dir != run_dir and not any(hap_dir.iterdir()):
                     hap_dir.rmdir()
+        for key, hap in (("hap1_fa", ctx.hap1_prefix), ("hap2_fa", ctx.hap2_prefix)):
+            if key in outputs:
+                bed = Path(outputs[key]).parent / f"{ctx.tol_id}.{hap}.contaminated.bed"
+                bed.write_text(_DRY_RUN_BED if key == "hap1_fa" else "")
         ctx.tracker.finish(
             "blast_contaminants", run_dir, "success", outputs=outputs, untracked=ctx.untracked
         )

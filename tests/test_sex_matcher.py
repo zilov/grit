@@ -112,7 +112,7 @@ def test_dry_run_short_circuits_before_idempotency_and_tolid_checks(
 
     history = ctx.tracker.history("sex_matcher")
     assert history[-1]["status"] == "success"
-    placeholder = Path(history[-1]["run_dir"]) / "Best_match_1"
+    placeholder = Path(history[-1]["run_dir"]) / "Best_match_to_Z_is_HAP1_SCAFFOLD_12"
     assert placeholder.exists()
 
 

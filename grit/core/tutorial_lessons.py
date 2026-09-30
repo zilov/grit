@@ -6,11 +6,15 @@ from pathlib import Path
 
 _CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 DEMO_YAML_HAPS = _CONFIG_DIR / "tutorial_demo.yaml"
+DEMO_YAML_INSECT = _CONFIG_DIR / "tutorial_demo_insect.yaml"  # tutorial 5: sex-matcher
 
-# The demo YAML's `specimen` field — every tutorial ticket shares this fixture,
-# so the AGP filename a manual_action writes can be hardcoded rather than
-# re-parsed from the YAML each time.
-_TOL_ID = "xxTutDemo1"
+
+def _tol_id(ticket: str) -> str:
+    """Return the ToL ID (YAML `specimen`) of the scenario whose sandbox ticket is *ticket*."""
+    import yaml
+
+    yaml_path = next(sc.yaml_path for sc in SCENARIOS if sc.ticket == ticket)
+    return yaml.safe_load(yaml_path.read_text())["specimen"]
 
 
 @dataclass(frozen=True)
@@ -45,14 +49,15 @@ class Scenario:
 
 
 def _write_placeholder_agp(ticket: str, *, x_tagged: bool, name: str = "") -> None:
-    """Write a ten-SUPER placeholder AGP, with SUPER_7 painted X when *x_tagged*."""
+    """Write a ten-SUPER placeholder AGP, with SUPER_7 painted X (Z for a moth) when *x_tagged*."""
     from grit.core.registry import dry_run_root
 
-    agp_path = dry_run_root() / ticket / (name or f"{_TOL_ID}.pretext.agp_1")
+    agp_path = dry_run_root() / ticket / (name or f"{_tol_id(ticket)}.pretext.agp_1")
     agp_path.parent.mkdir(parents=True, exist_ok=True)
+    sex = "Z" if _tol_id(ticket).startswith("il") else "X"  # moths are ZW
     lines = []
     for n, scaffold in enumerate((4, 1, 7, 2, 9, 3, 12, 5, 6, 15), start=1):
-        tag = "\tPainted\tX" if x_tagged and n == 7 else ""
+        tag = f"\tPainted\t{sex}" if x_tagged and n == 7 else ""
         lines.append(f"SUPER_{n}\t1\t1000\t1\tW\tHAP1_SCAFFOLD_{scaffold}\t1\t1000\t+{tag}\n")
     agp_path.write_text("".join(lines))
 
@@ -69,7 +74,9 @@ def _copy_untagged_agp_into_workdir(ticket: str) -> None:
 
 def _copy_recurate_agp_into_workdir(ticket: str) -> None:
     """Write hap1's recurate AGP into the workdir's recurate/ dir."""
-    _write_placeholder_agp(ticket, x_tagged=True, name=f"recurate/{_TOL_ID}.hap1.recurate.agp")
+    _write_placeholder_agp(
+        ticket, x_tagged=True, name=f"recurate/{_tol_id(ticket)}.hap1.recurate.agp"
+    )
 
 
 _STATUS_LESSON = Lesson(
@@ -236,6 +243,16 @@ _TUTORIAL_1 = Scenario(
         "need to run qv on its own."
     ),
     lessons=[
+        _read(
+            "The case",
+            (
+                "A routine ticket: a two-haplotype assembly (hap1 + hap2) is ready for "
+                "curation. You set the ticket up, curate the map in PretextView, turn your "
+                "AGP back into an assembly, remap the Hi-C reads to check your edits, check "
+                "QV, and build the release for QC. Once QC passes, you run pp to prepare the "
+                "submission."
+            ),
+        ),
         Lesson(
             title="setup — claim the ticket and build the workdir",
             why=(
@@ -358,6 +375,17 @@ _TUTORIAL_2 = Scenario(
     ticket="T-2",
     difficulty="medium",
     lessons=[
+        _read(
+            "The case",
+            (
+                "This species has a close relative with a chromosome-level genome on NCBI. "
+                "You fetch it as a reference, curate, and compare your assembly against it: "
+                "BUSCO gene order, a FastGA alignment and its best-match table. The "
+                "comparison shows that one of your chromosomes, SUPER_7, matches the "
+                "reference's X. You name it X in PretextView, re-curate, remap both "
+                "haplotypes and send the ticket to QC."
+            ),
+        ),
         Lesson(
             title="setup",
             why="Same first step as always — build the workdir and stage the draft assembly.",
@@ -518,6 +546,18 @@ _TUTORIAL_3 = Scenario(
     difficulty="hard",
     lessons=[
         _read(
+            "The case",
+            (
+                "An assembly with many small chromosomes. After the first curation you take a"
+                " closer look at the small ones and merge them back in, then screen the "
+                "leftover scaffolds for contamination. Then the collaborators who sent the "
+                "sample ask for the chromosomes to be numbered and oriented like a reference "
+                "they already have, reference.fa. Each of these steps changes the assembly, "
+                "so the point of this tutorial is to watch which FASTA is canonical as you "
+                "go."
+            ),
+        ),
+        _read(
             "Why grit tracks canonical files",
             "Some steps change the assembly FASTA, and some the chromosome list too. "
             "grit has to track which version is current, so that the right files go "
@@ -667,6 +707,15 @@ _TUTORIAL_4 = Scenario(
     ticket="T-4",
     difficulty="medium",
     lessons=[
+        _read(
+            "The case",
+            (
+                "You curate and remap hap1 as usual. Then more fixes turn out to be needed on"
+                " hap1 (typically after QC feedback), and instead of continuing to curate in"
+                " the original map you make them directly in the remapped map from the first "
+                "round, and recurate hap1 on top of the current assembly."
+            ),
+        ),
         Lesson(
             title="setup",
             why="Same first step as always.",
@@ -698,7 +747,7 @@ _TUTORIAL_4 = Scenario(
             "as original.fa, and their output becomes canonical.\n\n"
             "Try not to use this often: part of the record of what changed relative to "
             "the original draft genome is lost. But some cases can't be done without "
-            "it, when re-curating the original map would take too long.\n\n"
+            "it, when continuing to curate in the original map would take too long.\n\n"
             "General advice: use it after you get QC feedback. Otherwise it's easy to "
             "get lost in genome versions.",
         ),
@@ -754,10 +803,23 @@ _TUTORIAL_5 = Scenario(
     key="other",
     title="5 — Other commands",
     blurb="sex-matcher, an untracked contaminant check, and recovering from a bad rename.",
-    yaml_path=DEMO_YAML_HAPS,
+    yaml_path=DEMO_YAML_INSECT,
     ticket="T-5",
     difficulty="medium",
     lessons=[
+        _read(
+            "The case",
+            (
+                "Here you curate a moth (Lepidoptera). First you run sex-matcher to find the "
+                "sex chromosomes. While curating you notice a few scaffolds that look like "
+                "contamination and decide to remove them straight from the Hi-C map, but "
+                "before that you check with blast-contaminants that they really are "
+                "contaminants. Then the colleagues who sent the sample ask for the "
+                "chromosomes to be renamed to match a reference they sent, reference.fa. You "
+                "do that with rename-and-orient, but it doesn't come out as expected, so you "
+                "roll the change back in grit and redo it."
+            ),
+        ),
         Lesson(
             title="setup",
             why="Same first step as always.",
@@ -769,17 +831,17 @@ _TUTORIAL_5 = Scenario(
             why=(
                 "Runs a BUSCO-based comparison to spot likely sex chromosomes before you "
                 "curate. grit only runs it for insects and nematodes, i.e. ToL IDs "
-                "starting ic, il, id or n. Its results show up as a Best_match file, and "
-                "`grit status` will list this run once it's done."
-            ),
-            shows=(
-                "Nothing: on the farm sex-matcher refuses this ticket, because xxTutDemo1 "
-                "doesn't start with an insect or nematode prefix, and it checks that "
-                "before submitting anything. The sandbox run below skips the check so "
-                "you can see what a finished run looks like."
+                "starting ic, il, id or n — this ticket is ilTutDemo1, a moth. Its results "
+                "show up as a Best_match file, and `grit status` will list this run once "
+                "it's done."
             ),
             task="Run sex-matcher.",
             command="sex-matcher",
+            check=(
+                "Sex matches under the curation results: HAP1_SCAFFOLD_12 and "
+                "HAP2_SCAFFOLD_12 carry far more Z-linked genes than any other scaffold, "
+                "so that scaffold is the Z. Keep it in mind while you curate"
+            ),
         ),
         _AGP_MANUAL_LESSON,
         Lesson(
@@ -815,11 +877,13 @@ _TUTORIAL_5 = Scenario(
             },
         ),
         Lesson(
-            title="Remove the flagged scaffold by hand, then copy the new AGP in",
+            title="Remove the flagged scaffolds by hand, then copy the new AGP in",
             why=(
-                "Having seen what blast-contaminants flagged, you delete that scaffold "
-                "in PretextView yourself, re-export, and copy the new AGP in — the same "
-                "action as always."
+                "blast-contaminants found that HAP1_SCAFFOLD_123 and HAP1_SCAFFOLD_234 are "
+                "bacterial contamination. They are listed in the run's BED file:\n"
+                "  <workdir>/blast_contaminants/<run>/hap1/<tol_id>.hap1.contaminated.bed\n"
+                "So you deleted them in PretextView yourself, re-exported, and now copy "
+                "the new AGP in — the same action as always."
                 "\n" + _PRESS_ENTER_FOR_AGP
             ),
             task="",
@@ -833,10 +897,20 @@ _TUTORIAL_5 = Scenario(
             command="post-curation",
         ),
         Lesson(
-            title="find-reference",
-            why="Get a reference to align and rename against.",
-            task="Find the closest reference genome.",
+            title="find-reference --local — the colleagues' reference",
+            why=(
+                "The colleagues sent their own reference, reference.fa, so skip the NCBI "
+                "search: --local preps that file to align and rename against."
+            ),
+            task="Prep the colleagues' reference, reference.fa.",
             command="find-reference",
+            args=["--local", "reference.fa"],
+            flag_hints={
+                "--local": (
+                    "find-reference --local reference.fa preps the reference FASTA you "
+                    "already have instead of downloading one from NCBI."
+                )
+            },
         ),
         Lesson(
             title="fastga",
@@ -877,11 +951,35 @@ _TUTORIAL_5 = Scenario(
                     "(underscores — that is the tracker's name for it)."
                 )
             },
-            check="canonical fell back to pretext_to_asm/",
+            check=(
+                "hap1's assembly FA fell back to pretext_to_asm/ — but hap2's still points "
+                "into rename_and_orient_hap2/, the bad run"
+            ),
             shows=(
                 "untrack runs nothing on the farm — no bsub, no tool. It appends a "
                 'status="untracked" record for this run straight to the registry, so '
                 "canonical resolution skips it from then on."
+            ),
+        ),
+        Lesson(
+            title="untrack — and hap2's run too",
+            why=(
+                "rename-and-orient --hap2 tracks each haplotype as its own step: hap2's "
+                "run is rename_and_orient_hap2. Untracking rename_and_orient only demoted "
+                "hap1, so the bad hap2 output is still canonical. Untrack it as well."
+            ),
+            task="Demote the bad hap2 rename-and-orient run.",
+            command="untrack",
+            args=["-s", "rename_and_orient_hap2"],
+            flag_hints={
+                "--step": (
+                    "this time the hap2 step: -s rename_and_orient_hap2 (the tracker "
+                    "names hap2's run with a _hap2 suffix)."
+                )
+            },
+            check="both haplotypes' assembly FA are back in pretext_to_asm/",
+            shows=(
+                "Again nothing runs on the farm: a registry record marks the hap2 run untracked."
             ),
         ),
         Lesson(
@@ -890,19 +988,23 @@ _TUTORIAL_5 = Scenario(
                 "With the coverage threshold or the reference sorted out, redo the "
                 "rename with a pre-built mapping table instead of a fresh FastGA PAF — "
                 "useful when you already know the correct chromosome-to-scaffold mapping "
-                "and don't want to re-run the alignment. --mapping-table is used for "
-                "every haplotype in the run, so no separate --hap2 pass is needed here."
+                "and don't want to re-run the alignment. --hap2 redoes hap2 with the same "
+                "table."
             ),
-            task="Redo the rename using a correct, pre-built mapping table.",
+            task="Redo the rename for both haplotypes using a correct, pre-built mapping table.",
             command="rename-and-orient",
-            args=["--mapping-table", "table.tsv"],
+            args=["--mapping-table", "table.tsv", "--hap2"],
             flag_hints={
                 "--mapping-table": (
                     "--mapping-table (-mt) <file> reuses a pre-built chromosome mapping "
                     "instead of a FastGA PAF — no fresh alignment needed."
-                )
+                ),
+                "--hap2": "--hap2 runs both haplotypes; without it grit runs hap1 only.",
             },
-            check="canonical is rename_and_orient/ again, this time the correct run",
+            check=(
+                "canonical is rename_and_orient/ and rename_and_orient_hap2/ again, this "
+                "time the correct runs"
+            ),
         ),
         Lesson(
             title="finalize-qc",

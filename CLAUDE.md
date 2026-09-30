@@ -99,10 +99,12 @@ grit [--yaml FILE] [--print-only] [--logging-level LEVEL] <COMMAND> -t RC-1234
 
 `grit tutorial` is the guided walkthrough new curators start with. The engine is
 `grit/core/tutorial.py`; the lesson and scenario prose lives in
-`grit/core/tutorial_lessons.py`, with one bundled fictional ticket YAML,
-`grit/config/tutorial_demo.yaml` (hap1/hap2) — every scenario shares it, single-hap
-tickets are only mentioned in tutorial 0's text, not modelled with a second
-fixture. Every scenario after tutorial 0 never touches Jira, LSF, lustre or the
+`grit/core/tutorial_lessons.py`, with a bundled fictional ticket YAML,
+`grit/config/tutorial_demo.yaml` (hap1/hap2, `xxTutDemo1`), shared by every
+scenario except tutorial 5, which uses `tutorial_demo_insect.yaml` (`ilTutDemo1`)
+because sex-matcher only runs for insect/nematode ToL IDs. `_tol_id(ticket)` reads
+a scenario's ToL ID from its YAML for the placeholder AGP names. Single-hap
+tickets are only mentioned in tutorial 0's text, not modelled with a fixture. Every scenario after tutorial 0 never touches Jira, LSF, lustre or the
 real registry — every command runs through grit's own CLI in-process
 (`cli.main(..., standalone_mode=False)`) with `--config`/`--yaml`/`--dry-run`
 injected, so a step is never re-implemented and a renamed command breaks the
@@ -147,6 +149,10 @@ screen, and "you press Enter once you've done a real-world action" — the
 dataclass field doesn't distinguish them, only the callable's body does.
 
 #### Typed lessons (tutorials 1-5)
+
+Each of tutorials 1-5 opens with a "The case" `_read()` screen: a short story of
+the ticket and what the scenario does, in lesson order. Keep it in step when
+lessons are added, removed or reordered.
 
 The learner **types** each command; the lesson advances only on a match.
 `parse_command()` normalises both sides to `(subcommand, ticket, flags)` — short
@@ -199,10 +205,9 @@ by the painted tag after its `+` column. Tutorial 2's first AGP
 the re-curation AGP paints SUPER_7 as X (9 autosomes, XX), matching the
 fastga-stats and super-to-scaffold example tables. The preview runs only for
 `GritCommand` steps: plain `@cli.command`s (`status`, `untrack`, `retrack`)
-ignore `--print-only` and would write the registry. Three lessons need
-`shows`: `untrack` (a direct registry edit, no shell command), `super-to-scaffold` (runs locally,
-submits nothing) and `sex-matcher` (refuses the tutorial's non-insect ToL ID
-under `--print-only`; its dry-run branch skips that check).
+ignore `--print-only` and would write the registry. Two lessons need
+`shows`: `untrack` (a direct registry edit, no shell command) and
+`super-to-scaffold` (runs locally, submits nothing).
 
 A `Lesson` with `manual_action` set (a `Callable[[str], None]` taking the
 ticket ID) has no command to type. Most uses are a real-world action with no
