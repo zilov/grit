@@ -104,6 +104,15 @@ def test_pending_jobs_returns_started_with_job_id(tracker):
     assert pending[0]["job_id"] == "12345"
 
 
+def test_untracked_bsub_run_is_not_pending_again(tracker):
+    run_dir = tracker.start("busco_curated", "RC-1234", "sDipInt39")
+    tracker.record_job("busco_curated", run_dir, "12345")
+    tracker.finish("busco_curated", run_dir, "success")
+    tracker.untrack("busco_curated", run_dir)
+
+    assert tracker.pending_jobs() == []
+
+
 def test_print_only_does_not_write_history(tmp_path, reg):
     reg.add_ticket("RC-1234", "sDipInt39", "species", tmp_path)
     tracker = RunTracker(tmp_path, print_only=True, registry=reg)

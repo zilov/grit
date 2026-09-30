@@ -26,6 +26,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 
 - A run is recorded `success` only when its outputs are on disk. This applies to the bsub epilogue (`_state-update`), `qv` (the MerquryFK wrapper exits 0 whatever happened), `sex-matcher` (which now exits non-zero when there is no `Best_match`) and `pretext-to-asm-recurate` (which now fails when no curated FASTA exists).
+- Untracking a finished bsub run no longer gets undone: the next `grit status` bjobs sweep treated the run as pending again and re-recorded it `success`.
 - A rejected `bsub` submission finishes the run `failed` instead of leaving it stuck as `started`. So does a `bsub` that exits 0 without printing a job ID.
 - The bsub epilogue no longer breaks when `$LSB_JOBEXIT_STAT` is unset, when grit wasn't started from an executable, or when a workdir contains spaces or quotes.
 - Canonical resolution: files from an in-flight run never become canonical, and an untracked run never becomes canonical just by being the newest dir on disk. A step's latest run is never swapped for an older run of the same step. A single-hap ticket never resolves hap2 to hap1's file. `rename-and-orient` competes only for its own haplotype, `haplotig-files`' empty placeholder no longer hides real haplotigs, and a stale NFS handle is treated as a missing file instead of crashing.

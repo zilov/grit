@@ -358,9 +358,13 @@ def untrack_cmd(ctx, ticket, run):
 
     tracker, step, run_dir = _resolve_run(ctx, ticket, run)
     tracker.untrack(step, run_dir)
-    canonical = tracker.latest_run_dir(step)
-    console_hint = f" → canonical is now: {canonical.name}" if canonical else ""
-    print_done(f"Untracked {step!r} run {run_id(run_dir)}{console_hint}")
+    latest = tracker.latest_run_dir(step)
+    hint = (
+        f" → latest tracked {step} run: {run_id(latest)} ({latest.name})"
+        if latest
+        else f" → no tracked {step} run left"
+    )
+    print_done(f"Untracked {step!r} run {run_id(run_dir)}{hint}")
 
 
 cli.add_command(untrack_cmd)
