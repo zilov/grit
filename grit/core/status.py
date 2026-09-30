@@ -473,7 +473,7 @@ def show_ticket_history(
     bypasses the real Jira fetch when building the CurationContext — required
     for a synthetic dry-run ticket that has no real Jira issue to look up.
     """
-    from grit.core.run_tracker import RunTracker
+    from grit.core.run_tracker import RunTracker, run_id
     from grit.utils.helpers import _check_bjobs, lsf_cluster
 
     ticket = registry.find_ticket(ticket_id)
@@ -576,8 +576,9 @@ def show_ticket_history(
         show_header=True,
         header_style="bold cyan",
     )
-    table.add_column("Step")
-    table.add_column("Last Run")
+    table.add_column("Step", no_wrap=True)
+    table.add_column("ID", no_wrap=True)
+    table.add_column("Last Run", overflow="fold")
     table.add_column("Status")
     table.add_column("Canonical", justify="center", no_wrap=True)
     table.add_column("Job ID")
@@ -654,6 +655,7 @@ def show_ticket_history(
 
             table.add_row(
                 step,
+                run_id(run_dir) if run_dir else "",
                 ts,
                 f"[{style}]{status}[/{style}]" if style else status,
                 canonical_mark,
@@ -665,9 +667,9 @@ def show_ticket_history(
         agp_mtime = datetime.datetime.fromtimestamp(agp_files[-1].stat().st_mtime).strftime(
             "%Y-%m-%dT%H:%M:%S"
         )
-        table.add_row("agp_copied", agp_mtime, "[green]found[/green]", "", "")
+        table.add_row("agp_copied", "", agp_mtime, "[green]found[/green]", "", "")
     else:
-        table.add_row("agp_copied", "", "[yellow]missing[/yellow]", "", "")
+        table.add_row("agp_copied", "", "", "[yellow]missing[/yellow]", "", "")
 
     console.print(table)
     console.print()

@@ -276,11 +276,13 @@ echo "--- Scenario 4: untrack/retrack round-trip ---"
 # pretext_to_asm_recurate's re-run) — so untracking it must fall back to the
 # next-freshest tracked output, pretext_to_asm_recurate, NOT all the way back
 # to rename_and_orient (which is older than the recurate re-run).
-run "[S4] untrack blast_contaminants (hap1)" $GRIT_DRY --dry-run untrack -t "$T1" --step blast_contaminants
+# untrack/retrack take a run ID; read the latest blast_contaminants run's from the sandbox.
+bc_run=$(python -c 'import sys; from grit.core.tutorial import _sandbox_run_id; print(_sandbox_run_id(*sys.argv[1:]))' "$T1" blast_contaminants)
+run "[S4] untrack blast_contaminants (hap1)" $GRIT_DRY --dry-run untrack -t "$T1" --run "$bc_run"
 s4=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s4" hap1 "assembly FA" "pretext_to_asm_recurate/" "[S4] hap1 canonical falls back to pretext_to_asm_recurate after untracking blast_contaminants"
 
-run "[S4] retrack blast_contaminants" $GRIT_DRY --dry-run retrack -t "$T1" --step blast_contaminants
+run "[S4] retrack blast_contaminants" $GRIT_DRY --dry-run retrack -t "$T1" --run "$bc_run"
 s4=$($GRIT_DRY --dry-run status -t "$T1")
 assert_canonical "$s4" hap1 "assembly FA" "blast_contaminants/" "[S4] hap1 canonical returns to blast_contaminants after retrack"
 

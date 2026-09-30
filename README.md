@@ -92,7 +92,7 @@ grit super-to-scaffold -t RC-1234
 
 # Tickets and tracking
 grit status [-t RC-1234]
-grit untrack / retrack -t RC-1234 --step STEP
+grit untrack / retrack -t RC-1234 --run RUN_ID   # RUN_ID from the ID column of `grit status -t`
 grit done / reopen / remove / cleanup -t RC-1234
 
 # Use a local YAML instead of fetching from Jira (ticket_id is derived from the filename stem)

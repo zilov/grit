@@ -31,6 +31,7 @@ class Lesson:
     shows: str = ""
     manual_action: Callable[[str], None] | None = None
     needs_ticket: bool = True  # False for a command typed without -t (global `grit status`)
+    run_of: str = ""  # step whose latest sandbox run ID the answer passes as -r
 
 
 @dataclass(frozen=True)
@@ -936,19 +937,19 @@ _TUTORIAL_5 = Scenario(
         Lesson(
             title="untrack — put canonical back",
             why=(
-                "`grit untrack` marks a step's latest run non-canonical without deleting "
-                "anything — the run dir, files and history all stay, they just stop "
-                "counting. Canonical falls back to the next-freshest tracked output. "
-                "It needs -s / --step, and takes the tracker's step name "
-                "(rename_and_orient), not the CLI command name."
+                "`grit untrack` marks one run non-canonical without deleting anything — "
+                "the run dir, files and history all stay, they just stop counting. "
+                "Canonical falls back to the next-freshest tracked output. It takes -r / "
+                "--run with the run's ID: run `grit status -t <ticket>` first and copy the "
+                "ID of the rename_and_orient row from the step-history table."
             ),
-            task="Demote the bad rename-and-orient run.",
+            task="Demote the bad hap1 rename-and-orient run.",
             command="untrack",
-            args=["-s", "rename_and_orient"],
+            run_of="rename_and_orient",
             flag_hints={
-                "--step": (
-                    "untrack needs to know which step to demote: -s rename_and_orient "
-                    "(underscores — that is the tracker's name for it)."
+                "--run": (
+                    "untrack needs the run's ID: -r <ID of the rename_and_orient row in "
+                    "grit status -t <ticket>>."
                 )
             },
             check=(
@@ -965,16 +966,17 @@ _TUTORIAL_5 = Scenario(
             title="untrack — and hap2's run too",
             why=(
                 "rename-and-orient --hap2 tracks each haplotype as its own step: hap2's "
-                "run is rename_and_orient_hap2. Untracking rename_and_orient only demoted "
-                "hap1, so the bad hap2 output is still canonical. Untrack it as well."
+                "run is rename_and_orient_hap2, with its own ID. Untracking the "
+                "rename_and_orient run only demoted hap1, so the bad hap2 output is still "
+                "canonical. Untrack it as well."
             ),
             task="Demote the bad hap2 rename-and-orient run.",
             command="untrack",
-            args=["-s", "rename_and_orient_hap2"],
+            run_of="rename_and_orient_hap2",
             flag_hints={
-                "--step": (
-                    "this time the hap2 step: -s rename_and_orient_hap2 (the tracker "
-                    "names hap2's run with a _hap2 suffix)."
+                "--run": (
+                    "this time the hap2 run: -r <ID of the rename_and_orient_hap2 row in "
+                    "grit status -t <ticket>>."
                 )
             },
             check="both haplotypes' assembly FA are back in pretext_to_asm/",

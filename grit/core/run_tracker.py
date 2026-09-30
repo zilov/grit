@@ -18,6 +18,7 @@ step's run_dir.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +28,11 @@ if TYPE_CHECKING:
     from grit.core.registry import RegistryManager
 
 log = logging.getLogger(__name__)
+
+
+def run_id(run_dir: str | Path) -> str:
+    """Return the short, stable ID of the run at *run_dir* (first 8 hex of its sha1)."""
+    return hashlib.sha1(str(run_dir).encode()).hexdigest()[:8]
 
 
 def _latest_statuses(records: list[dict], key=str) -> dict[str, str]:

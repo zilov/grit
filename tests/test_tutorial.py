@@ -31,9 +31,16 @@ STEP = Lesson(
     why="w",
     task="do it",
     command="untrack",
-    args=["-s", "blast_contaminants"],
-    flag_hints={"--step": "untrack needs -s <step>."},
+    args=["-r", "abc12345"],
+    flag_hints={"--run": "untrack needs -r <id>."},
 )
+
+
+@pytest.fixture(autouse=True)
+def _sandbox(tmp_path, monkeypatch):
+    """Point the tutorial sandbox at tmp_path, so run-ID answers never read ~/.grit."""
+    monkeypatch.setattr("grit.core.registry.dry_run_root", lambda: tmp_path)
+    return tmp_path
 
 
 class TestParse:
@@ -64,8 +71,12 @@ class TestParse:
         )
         assert parsed == parse_command(["grit", "setup", "-t", TICKET])
 
-    def test_step_value_is_part_of_the_answer(self):
-        assert parse_command(["grit", "untrack", "-s", "foo"]).flags == frozenset({"--step=foo"})
+    def test_run_value_is_part_of_the_answer(self):
+        assert parse_command(["grit", "untrack", "-r", "foo"]).flags == frozenset({"--run=foo"})
+
+    def test_short_options_resolve_per_command(self):
+        """-r is --run for untrack but --reference for fastga."""
+        assert parse_command(["grit", "fastga", "-r", "x"]).flags == frozenset({"--reference=x"})
 
 
 class TestMatches:
@@ -91,9 +102,22 @@ class TestMatches:
         assert not matches(parse_command(["grit", "status", "-t", TICKET]), GLOBAL, TICKET)
         assert expected_line(GLOBAL, TICKET) == "grit status"
 
-    def test_step_value_must_match(self):
-        got = parse_command(["grit", "untrack", "-t", TICKET, "-s", "wrong_step"])
+    def test_run_value_must_match(self):
+        got = parse_command(["grit", "untrack", "-t", TICKET, "-r", "wrong_id"])
         assert not matches(got, STEP, TICKET)
+
+    def test_run_of_answers_with_the_sandbox_run_id(self, _sandbox):
+        from grit.core.registry import RegistryManager
+        from grit.core.run_tracker import RunTracker, run_id
+
+        lesson = Lesson(title="t", why="w", task="do it", command="untrack", run_of="qv")
+        assert expected_line(lesson, TICKET) == f"grit untrack -t {TICKET} -r <id>"
+        reg = RegistryManager(registry_dir=_sandbox)
+        reg.add_ticket(TICKET, "xbTest1", "species", _sandbox / "wd")
+        tracker = RunTracker(_sandbox / "wd", registry=reg)
+        run_dir = tracker.start("qv", TICKET, "xbTest1")
+        tracker.finish("qv", run_dir, "success")
+        assert expected_line(lesson, TICKET) == f"grit untrack -t {TICKET} -r {run_id(run_dir)}"
 
 
 class TestHints:
@@ -126,9 +150,9 @@ class TestHints:
     def test_extra_flag_is_named(self):
         assert "--hap2" in self._hint(["grit", "pretext-to-asm", "-t", TICKET, "--hap2"])
 
-    def test_wrong_step_value_falls_back_to_the_flag_hint(self):
-        hint = self._hint(["grit", "untrack", "-t", TICKET, "-s", "nope"], STEP)
-        assert hint == "untrack needs -s <step>."
+    def test_wrong_run_value_falls_back_to_the_flag_hint(self):
+        hint = self._hint(["grit", "untrack", "-t", TICKET, "-r", "nope"], STEP)
+        assert hint == "untrack needs -r <id>."
 
     def test_no_command_at_all(self):
         assert "grit" in hint_for(parse_command(["grit"]), PLAIN, TICKET, KNOWN)
@@ -166,9 +190,10 @@ class TestScenarios:
         """A lesson that demands a flag must be able to say why, or its hint is useless."""
         for scenario in SCENARIOS:
             for lesson in scenario.lessons:
-                for flag in lesson.args:
+                flags = [*lesson.args, *(["--run"] if lesson.run_of else [])]
+                for flag in flags:
                     if flag.startswith("-"):
-                        name = {"-s": "--step", "-u": "--untracked"}.get(flag, flag)
+                        name = {"-r": "--run", "-u": "--untracked"}.get(flag, flag)
                         assert name in lesson.flag_hints, f"{scenario.key}/{lesson.command}: {name}"
 
     @pytest.mark.parametrize("key", [s.key for s in SCENARIOS])

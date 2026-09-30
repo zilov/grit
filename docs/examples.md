@@ -279,10 +279,11 @@ Two places in that output answer the question:
 
 If one of these steps ran and you are not happy with the result, **you do not
 have to redo the pipeline**. The step's output is canonical only because it is
-the freshest one — demote it and the previous file takes over again:
+the freshest one — demote it (by the run ID in `grit status -t RC-1234`'s ID
+column) and the previous file takes over again:
 
 ```bash
-grit untrack -t RC-1234 --step blast_contaminants
+grit untrack -t RC-1234 --run 3f9a1c2e
 ```
 
 Nothing is deleted and no other step re-runs. See
@@ -293,11 +294,13 @@ The full decision path, including where each step takes its input from, is in
 
 ## 7. Undoing a step with `untrack` and `retrack`
 
-`untrack` marks a step's latest run as non-canonical, so the next-freshest
-output takes over as the canonical file:
+`untrack` marks one run as non-canonical, so the next-freshest output takes
+over as the canonical file. Every run has a short ID, shown in the ID column of
+`grit status -t`'s step-history table; pass it (or any unique prefix of it)
+with `--run`/`-r`:
 
 ```bash
-grit untrack -t RC-1234 --step blast_contaminants
+grit untrack -t RC-1234 --run 3f9a1c2e
 ```
 
 It changes nothing else: the files stay on disk, the run stays in the step
@@ -306,14 +309,15 @@ history, and no other step re-runs. Use it when a step made things worse —
 ran against the wrong reference — instead of re-running the chain from
 `pretext-to-asm`.
 
-The step name is the tracker name (underscores, as shown in the step-history
-table), and each haplotype's run is its own name — `rename_and_orient` and
-`rename_and_orient_hap2` are untracked separately.
+The ID picks the step as well as the run, so any run can be demoted, not just
+the latest. Each haplotype's run has its own ID — `rename_and_orient` and
+`rename_and_orient_hap2` rows are untracked separately. An unknown or ambiguous
+prefix is refused with the list of candidate runs.
 
 To bring it back:
 
 ```bash
-grit retrack -t RC-1234 --step blast_contaminants
+grit retrack -t RC-1234 --run 3f9a1c2e
 ```
 
 `retrack` promotes that run again using the outputs it recorded when it ran, so
@@ -322,9 +326,9 @@ it works even if the run has since scrolled far down the history.
 A typical loop is: check what's canonical now, demote, check again.
 
 ```bash
-grit status -t RC-1234                                  # Canonical column: fa(1) on blast_contaminants
-grit untrack -t RC-1234 --step blast_contaminants
-grit status -t RC-1234                                  # fa(1) moved back to the previous step
+grit status -t RC-1234                  # Canonical column: fa(1) on blast_contaminants, ID 3f9a1c2e
+grit untrack -t RC-1234 -r 3f9a
+grit status -t RC-1234                  # fa(1) moved back to the previous step
 ```
 
 ### What untrack does not cover: several `fastga` runs

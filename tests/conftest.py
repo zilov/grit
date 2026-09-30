@@ -16,6 +16,14 @@ _ANSI = _re.compile(r"\x1b\[[0-9;]*m")
 _BOX = {ord(ch): " " for ch in "\u2502\u256d\u256e\u256f\u2570\u2500"}
 
 
+@pytest.fixture(autouse=True)
+def _wide_console(monkeypatch):
+    """Render rich tables at a curator-terminal width, not the 80-col non-tty default."""
+    from grit.utils.output import console
+
+    monkeypatch.setattr(console, "width", 120)
+
+
 def plain(output: str) -> str:
     """CLI output with colour codes and rich's panel decoration removed.
 
