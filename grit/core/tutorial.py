@@ -20,7 +20,7 @@ from grit.core.tutorial_lessons import SCENARIOS, Lesson, Scenario, find_scenari
 from grit.utils.output import console
 
 # Short options the learner may type, and the long name they normalise to.
-_ALIASES = {"-t": "--ticket", "-s": "--step", "-u": "--untracked"}
+_ALIASES = {"-t": "--ticket", "-u": "--untracked"}
 # Plumbing the tutorial supplies itself — consumed and ignored when matching.
 _IGNORED_VALUE_OPTS = {"--config", "--yaml", "--logging-level"}
 
@@ -49,6 +49,17 @@ def _value_opts() -> frozenset[str]:
     )
 
 
+@functools.cache
+def _long_opt(subcommand: str | None, opt: str) -> str:
+    """Return *subcommand*'s long name for the short option *opt*, else *opt* unchanged."""
+    from grit.core.click_cli import cli
+
+    for param in getattr(cli.commands.get(subcommand or ""), "params", []):
+        if opt in param.opts:
+            return next((o for o in param.opts if o.startswith("--")), opt)
+    return opt
+
+
 def parse_command(tokens: list[str]) -> Parsed:
     """Normalise *tokens* into the (subcommand, ticket, flags) triple used for matching."""
     toks = list(tokens)
@@ -64,7 +75,7 @@ def parse_command(tokens: list[str]) -> Parsed:
         tok = toks[i]
         if tok.startswith("-"):
             name, eq, inline = tok.partition("=")
-            name = _ALIASES.get(name, name)
+            name = _ALIASES.get(name) or _long_opt(subcommand, name)
             if name in _IGNORED_VALUE_OPTS or name in _value_opts():
                 if eq:
                     value = inline
@@ -86,10 +97,22 @@ def parse_command(tokens: list[str]) -> Parsed:
     return Parsed(subcommand, ticket, frozenset(flags))
 
 
+def _sandbox_run_id(ticket: str, step: str) -> str:
+    """Return the ID of *step*'s latest run in the tutorial sandbox, or <id> before one exists."""
+    from grit.core.registry import RegistryManager, dry_run_root
+    from grit.core.run_tracker import RunTracker, run_id
+
+    reg = RegistryManager(registry_dir=dry_run_root())
+    entry = reg.find_ticket(ticket)
+    run_dir = entry and RunTracker(Path(entry["workdir"]), registry=reg).latest_run_dir(step)
+    return run_id(run_dir) if run_dir else "<id>"
+
+
 def _answer_tokens(lesson: Lesson, ticket: str) -> list[str]:
     """Return the grit arguments *lesson* is asking for."""
     ticket_args = ["-t", ticket] if lesson.needs_ticket else []
-    return [lesson.command, *ticket_args, *lesson.args]
+    run_args = ["-r", _sandbox_run_id(ticket, lesson.run_of)] if lesson.run_of else []
+    return [lesson.command, *ticket_args, *run_args, *lesson.args]
 
 
 def expected_command(lesson: Lesson, ticket: str) -> Parsed:
