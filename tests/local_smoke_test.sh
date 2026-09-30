@@ -92,22 +92,35 @@ if grit --help > /dev/null; then ok "grit --help"; else fail "grit --help"; fi
 # fixtures are algae/fish — the step aborts by design on any ToL ID outside its
 # insect/nematode prefixes, so it needs a fixture it does not have yet.
 if [ -d /lustre ]; then
-    run "setup (hap, --print-only after subcommand)" $GRIT --yaml "$HAP_YAML" setup --print-only
-    run "find-reference"                             $GRIT --yaml "$HAP_YAML" find-reference
+    # --print-only creates nothing, so a chain of print-only steps finds none of
+    # its inputs. Each step is therefore previewed with --dry-run --print-only
+    # (real farm commands, inputs resolved in the dry-run sandbox) and then run
+    # with --dry-run alone, whose placeholder outputs feed the next step.
+    P1_HAP="print_only_hap"
+    P1_PRIMARY="print_only_primary"
+    preview() {
+        local desc="$1" yaml="$2" ticket="$3"
+        shift 3
+        run "$desc" grit --config "$CONFIG" --yaml "$yaml" "$@" -t "$ticket" --dry-run --print-only
+        grit --config "$CONFIG" --yaml "$yaml" "$@" -t "$ticket" --dry-run > /dev/null \
+            || fail "$desc (--dry-run seed for the next step)"
+    }
+    preview "setup"                     "$HAP_YAML"     "$P1_HAP"     setup
+    preview "find-reference"            "$HAP_YAML"     "$P1_HAP"     find-reference
 
-    run "setup (primary)"                            $GRIT --yaml "$PRIMARY_YAML" setup
-    run "find-reference (primary)"                   $GRIT --yaml "$PRIMARY_YAML" find-reference
+    preview "setup (primary)"           "$PRIMARY_YAML" "$P1_PRIMARY" setup
+    preview "find-reference (primary)"  "$PRIMARY_YAML" "$P1_PRIMARY" find-reference
 
-    run "pretext-to-asm"                             $GRIT --yaml "$HAP_YAML" pretext-to-asm
-    run "haplotig-files"                             $GRIT --yaml "$HAP_YAML" haplotig-files
-    run "hic-remapping"                              $GRIT --yaml "$HAP_YAML" hic-remapping
-    run "qv"                                         $GRIT --yaml "$HAP_YAML" qv
-    run "finalize-qc"                                $GRIT --yaml "$HAP_YAML" finalize-qc
+    preview "pretext-to-asm"            "$HAP_YAML"     "$P1_HAP"     pretext-to-asm
+    preview "haplotig-files"            "$HAP_YAML"     "$P1_HAP"     haplotig-files
+    preview "hic-remapping"             "$HAP_YAML"     "$P1_HAP"     hic-remapping
+    preview "qv"                        "$HAP_YAML"     "$P1_HAP"     qv
+    preview "finalize-qc"               "$HAP_YAML"     "$P1_HAP"     finalize-qc
 
-    run "fastga"                                     $GRIT --yaml "$HAP_YAML" fastga
-    run "blast-contaminants"                         $GRIT --yaml "$HAP_YAML" blast-contaminants
-    run "rename-and-orient"                          $GRIT --yaml "$HAP_YAML" rename-and-orient
-    run "busco-synteny"                              $GRIT --yaml "$HAP_YAML" busco-synteny --lineage stramenopiles_odb10
+    preview "fastga"                    "$HAP_YAML"     "$P1_HAP"     fastga
+    preview "blast-contaminants"        "$HAP_YAML"     "$P1_HAP"     blast-contaminants
+    preview "rename-and-orient"         "$HAP_YAML"     "$P1_HAP"     rename-and-orient
+    preview "busco-synteny"             "$HAP_YAML"     "$P1_HAP"     busco-synteny --lineage stramenopiles_odb10
 else
     skip "section 1 — needs real ToL paths, and /lustre is not mounted here"
 fi
