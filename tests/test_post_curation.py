@@ -1124,6 +1124,11 @@ def test_run_qv_runs_inline(mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
     mock_ctx.release_version = 1
+    mock_ctx.assembly_curated_dir = tmp_path / "curated"
+    merquryk = mock_ctx.assembly_curated_dir / "merquryk"
+    merquryk.mkdir(parents=True)
+    (merquryk / "sDipInt39.qv").write_text("")
+    (merquryk / "sDipInt39.completeness.stats").write_text("")
 
     run_qv(mock_ctx)
 
