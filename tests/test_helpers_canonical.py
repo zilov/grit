@@ -990,7 +990,7 @@ def test_filesystem_fallback_skips_a_newer_untracked_run(mock_ctx, tmp_path, fin
 
 
 def test_untracking_the_only_pretext_to_asm_run_takes_it_out_of_canonical(mock_ctx, tmp_path):
-    """Trace T4's second half: `grit untrack -s pretext_to_asm` must not be a no-op."""
+    """Trace T4's second half: untracking the only pretext_to_asm run must not be a no-op."""
     tracker = _make_tracker(tmp_path, mock_ctx)
     _pta_success(tmp_path, mock_ctx)
     tracker.untrack("pretext_to_asm")

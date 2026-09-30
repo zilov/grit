@@ -310,7 +310,7 @@ echo "--- Scenario 5: grit tutorial --auto ---"
 
 # final_canonical_table OUTPUT — the last "Canonical files" table in a transcript.
 final_canonical_table() {
-    echo "$1" | awk '/Canonical files/{buf=""} {buf=buf"\n"$0} END{print buf}'
+    echo "$1" | awk '/^[[:space:]]*Canonical files[[:space:]]*$/{buf=""} {buf=buf"\n"$0} END{print buf}'
 }
 
 run_tutorial_scenario() {
