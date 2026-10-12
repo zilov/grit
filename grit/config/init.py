@@ -37,5 +37,5 @@ def enable_completion(bashrc: Path | None = None) -> bool:
     if "_GRIT_COMPLETE=bash_source grit" in text:
         return False
     with bashrc.open("a") as f:
-        f.write(("\n" if text and not text.endswith("\n") else "") + COMPLETION_SNIPPET)
+        f.write("\n" + COMPLETION_SNIPPET)
     return True

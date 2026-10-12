@@ -181,10 +181,8 @@ def init_cmd():
         click.echo(f"Config already exists at {init.DEFAULT_CONFIG_PATH} — leaving it untouched.")
 
     if click.confirm("Enable Tab completion for grit in ~/.bashrc?", default=True):
-        if init.enable_completion():
-            click.echo("Added to ~/.bashrc; open a new shell to use it.")
-        else:
-            click.echo("Tab completion is already in ~/.bashrc.")
+        added = init.enable_completion()
+        click.echo("Added to ~/.bashrc; open a new shell." if added else "Already in ~/.bashrc.")
     else:
         click.echo(f"To enable it later, add to ~/.bashrc:\n{init.COMPLETION_SNIPPET}")
 
@@ -200,13 +198,10 @@ def init_cmd():
 @click.pass_context
 def status_cmd(ctx, ticket):
     """Show status of active curation tickets, or step history for a specific ticket."""
-    from grit.core.registry import RegistryManager, dry_run_root
+    from grit.core.registry import RegistryManager
     from grit.core.status import show_global_status, show_ticket_history
 
-    if getattr(ctx.obj, "dry_run", False):
-        registry = RegistryManager(registry_dir=dry_run_root())
-    else:
-        registry = RegistryManager()
+    registry = RegistryManager.for_run(getattr(ctx.obj, "dry_run", False))
     if ticket:
         ticket = registry.resolve_ticket(ticket)
     registry.refresh_statuses()
@@ -327,13 +322,10 @@ cli.add_command(tutorial_cmd)
 
 def _resolve_tracker(ctx, ticket):
     """Return the RunTracker for *ticket*, honoring --dry-run's isolated registry."""
-    from grit.core.registry import RegistryManager, dry_run_root
+    from grit.core.registry import RegistryManager
     from grit.core.run_tracker import RunTracker
 
-    if getattr(ctx.obj, "dry_run", False):
-        reg = RegistryManager(registry_dir=dry_run_root())
-    else:
-        reg = RegistryManager()
+    reg = RegistryManager.for_run(getattr(ctx.obj, "dry_run", False))
     ticket = reg.resolve_ticket(ticket)
     entry = reg.find_ticket(ticket)
     if entry is None:

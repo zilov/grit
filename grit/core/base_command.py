@@ -4,7 +4,7 @@ from pathlib import Path
 
 import rich_click as click
 
-from grit.core.registry import RegistryManager, complete_ticket, dry_run_root
+from grit.core.registry import RegistryManager, complete_ticket
 
 # Registered Click command names (the string passed to @click.command(...)) of
 # steps whose run_* function has an `if ctx.dry_run:` branch. Every other
@@ -145,8 +145,7 @@ class GritCommand(click.RichCommand):
                 ctx.obj.bsub_ram = bsub_ram
 
             if ticket:
-                reg = RegistryManager(dry_run_root()) if ctx.obj.dry_run else RegistryManager()
-                ctx.obj.ticket = reg.resolve_ticket(ticket)
+                ctx.obj.ticket = RegistryManager.for_run(ctx.obj.dry_run).resolve_ticket(ticket)
             elif ctx.obj.ticket is None:
                 # --ticket not given; try to derive from --yaml filename
                 if ctx.obj.yaml:

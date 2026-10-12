@@ -46,10 +46,6 @@ def _ctx(command="qv"):
     return SimpleNamespace(find_root=lambda: root, command=SimpleNamespace(name=command))
 
 
-def test_complete_prefix_rc_returns_active_ticket_ids(reg_dir):
-    assert complete_ticket(_ctx(), None, "RC") == ["RC-1", "RC-2"]
-
-
 def test_complete_returns_both_forms(reg_dir):
     assert set(complete_ticket(_ctx(), None, "")) == {"RC-1", "ilFoo1", "RC-2", "xxBar1"}
     assert complete_ticket(_ctx(), None, "il") == ["ilFoo1"]

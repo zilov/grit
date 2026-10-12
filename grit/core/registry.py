@@ -73,12 +73,9 @@ def dry_run_root() -> Path:
 def complete_ticket(ctx, param, incomplete: str) -> list[str]:
     """Shell-complete -t with registry ticket IDs and ToL IDs; never raises."""
     try:
-        dry_run = ctx.find_root().params.get("dry_run")
-        reg = RegistryManager(registry_dir=dry_run_root()) if dry_run else RegistryManager()
-        if ctx.command.name == "reopen":
-            tickets = reg.done_tickets(limit=None)
-        else:
-            tickets = reg.all_tickets()
+        reg = RegistryManager.for_run(ctx.find_root().params.get("dry_run"))
+        reopen = ctx.command.name == "reopen"
+        tickets = reg.done_tickets(limit=None) if reopen else reg.all_tickets()
         ids = dict.fromkeys(i for t in tickets for i in (t["ticket_id"], t.get("tol_id")) if i)
         return [i for i in ids if i.startswith(incomplete)]
     except Exception:
@@ -87,6 +84,11 @@ def complete_ticket(ctx, param, incomplete: str) -> list[str]:
 
 class RegistryManager:
     """Manages the global ticket registry in ~/.grit/grit_registry.json."""
+
+    @classmethod
+    def for_run(cls, dry_run: bool) -> "RegistryManager":
+        """Return the dry-run sandbox registry or the real one."""
+        return cls(registry_dir=dry_run_root()) if dry_run else cls()
 
     def __init__(self, registry_dir: Path | None = None) -> None:
         self.dir = registry_dir or _DEFAULT_DIR
@@ -196,9 +198,7 @@ class RegistryManager:
         pick = active if len(active) == 1 else matches
         if len(pick) > 1:
             listing = "\n".join(
-                f"  {t['ticket_id']} ({Path(t['workdir']).name}, "
-                f"{'done' if t.get('status') == 'done' else 'active'})"
-                for t in matches
+                f"  {t['ticket_id']} ({Path(t['workdir']).name}, {t['status']})" for t in matches
             )
             raise click.UsageError(f"ToL ID {value} matches several tickets:\n{listing}")
         if not pick:
