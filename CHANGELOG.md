@@ -10,6 +10,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - `grit target-blast -t RC-1234 --headers X`: blasts chosen draft scaffolds from `original.fa` (a comma-separated list or a file of headers, any haplotype) and writes a taxonomy table and a BED marking each KEEP/REMOVE/NO_HIT. Canonical is not changed.
 
+### Fixed
+
+- The release version is taken from the ticket's Jira `release_version` field instead of the YAML (where it never was), so a v2 ticket no longer writes v1-named files into `assembly/curated/<tol>.1/`. A v2+ ticket gets its own workdir, `<user>_curation/<tol>.<v>/`, and so its own step history; v1 workdirs are unchanged. `pretext-to-asm` and `pretext-to-asm-recurate` now pass `-o <tol>.<v>.fa`, so their output files carry the release version instead of always `.1`.
+
 ## [0.5.0] - 2026-09-30
 
 ### Added

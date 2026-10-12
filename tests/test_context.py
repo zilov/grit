@@ -3,6 +3,7 @@ Tests for CurationContext and build_context().
 """
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import click
 import pytest
@@ -322,3 +323,45 @@ def test_dry_run_workdir_is_keyed_by_ticket_id_not_tol_id(tmp_path, monkeypatch)
     assert ctx_a.workdir != ctx_b.workdir
     assert ctx_a.workdir == tmp_path / "scenario-a"
     assert ctx_a.assembly_curated_dir != ctx_b.assembly_curated_dir
+
+
+# --- release_version from Jira ---
+
+
+class _FakeJiraIssue:
+    release_version = "2"
+
+    def __init__(self, ticket_id):
+        self.yaml = dict(TEST_YAML_HAP1)
+        self.issue_json = {"fields": {}}
+
+    def get_custom_field(self, name):
+        return None
+
+    def get_release_version(self):
+        return str(int(self.release_version))
+
+
+def test_derive_workdir_v2_gets_version_suffix():
+    draft = Path("/lustre/scratch122/tol/data/3/5/f/Dipturus_intermedius/assembly/draft")
+    assert _derive_workdir(draft, "user1", "sDipInt39.1", 2).name == "sDipInt39.2"
+    assert _derive_workdir(draft, "user1", "sDipInt39.1", 1).name == "sDipInt39"
+
+
+def test_from_ticket_takes_release_version_from_jira():
+    module = SimpleNamespace(GritJiraIssue=_FakeJiraIssue)
+    ctx = CurationContext.from_ticket("RC-0002", TEST_USER_CONFIG, gritjiraissue_module=module)
+    assert ctx.release_version == 2
+    assert ctx.assembly_curated_dir.name == "sDipInt39.2"
+    assert ctx.workdir.name == "sDipInt39.2"
+
+
+def test_from_ticket_empty_jira_release_version_falls_back(caplog):
+    class _NoVersion(_FakeJiraIssue):
+        release_version = None
+
+    module = SimpleNamespace(GritJiraIssue=_NoVersion)
+    ctx = CurationContext.from_ticket("RC-0002", TEST_USER_CONFIG, gritjiraissue_module=module)
+    assert ctx.release_version == 1
+    assert ctx.workdir.name == "sDipInt39"
+    assert "release_version" in caplog.text

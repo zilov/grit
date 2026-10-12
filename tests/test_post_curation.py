@@ -125,6 +125,7 @@ def test_output_specs_resolve_haplotigs_and_chr_list_for_primary_assembly(tmp_pa
 def test_run_pretext_to_asm_builds_correct_command(mock_glob, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 2
 
     # create original.fa so existence check passes
     (tmp_path / "original.fa").write_text("")
@@ -139,6 +140,8 @@ def test_run_pretext_to_asm_builds_correct_command(mock_glob, mock_run, mock_ctx
     assert any("pretext-to-asm" in c for c in calls)
     assert any("original.fa" in c for c in calls)
     assert any(agp in c for c in calls)
+    # pretext-to-asm takes the release version from the -o name (<tol>.<v>.fa)
+    assert any("sDipInt39.2.fa" in c for c in calls)
 
 
 @patch("grit.steps.post_curation.pretext_to_asm._run")

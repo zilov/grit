@@ -18,7 +18,7 @@ ctx = CurationContext.from_ticket("RC-1234", user_config)
 ctx = CurationContext.from_yaml("RC-1234", yaml_data, user_config)
 ```
 
-**Workdir derivation:** computed from the draft assembly path by replacing `assembly/draft` → `working`, appending `/<username>_curation/<tol_id>/`. No separate `curations_dir` setting.
+**Workdir derivation:** computed from the draft assembly path by replacing `assembly/draft` → `working`, appending `/<username>_curation/<tol_id>/` — or `<tol_id>.<v>` for release version v ≥ 2, so a re-release gets its own workdir and registry entry. `from_ticket` takes the version from the Jira `release_version` custom field (`get_release_version()`), falling back to the YAML value / 1 with a warning when it is empty. No separate `curations_dir` setting.
 
 ### Step structure
 
