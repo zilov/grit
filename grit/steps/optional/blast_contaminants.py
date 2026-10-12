@@ -125,8 +125,9 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
 
     try:
         outputs: dict[str, str] = {}
+        phylum = target_phylum(ctx)
         for hap_prefix in haps_to_process:
-            dest = _blast_contaminants_for_hap(ctx, hap_prefix, run_dir)
+            dest = _blast_contaminants_for_hap(ctx, hap_prefix, run_dir, phylum)
             if dest is not None:
                 outputs[f"{hap_prefix}_fa"] = str(dest)
         if ctx.tracker and run_dir:
@@ -145,16 +146,10 @@ def run_blast_contaminants(ctx: CurationContext) -> None:
     print_done("Contaminant blasting completed")
 
 
-def _blast_contaminants_for_hap(
-    ctx: CurationContext, hap_prefix: str, run_dir: Path | None
-) -> Path | None:
-    """
-    Blast one haplotype's curated FASTA and return the decontaminated output path,
-    or ``None`` if no non-target-phylum hits were found (canonical is left untouched).
-    """
-    # Get target phylum from species lineage
+def target_phylum(ctx: CurationContext) -> str:
+    """Return the species' phylum (4th lineage element), or 'Unknown'."""
     cleaned_species = _clean_species_name(ctx.species)
-    log.info("[%s] Species: %s", hap_prefix, cleaned_species)
+    log.info("Species: %s", cleaned_species)
 
     lineage_cmd = f"{module_cmd('GRIT')} && {LINEAGE_SCRIPT} {cleaned_species}"
     lineage_out = _run(lineage_cmd, ctx.print_only)
@@ -163,13 +158,22 @@ def _blast_contaminants_for_hap(
     our_lineage = next(
         (line.strip() for line in reversed(lineage_out.splitlines()) if line.strip()), ""
     )
-    log.info("[%s] Species lineage: %s", hap_prefix, our_lineage)
+    log.info("Species lineage: %s", our_lineage)
 
     # Parse phylum (typically 4th element: Eukaryota; Metazoa; ...; Phylum; ...)
     lineage_parts = [part.strip() for part in our_lineage.split(";")]
-    target_phylum = lineage_parts[3] if len(lineage_parts) > 3 else "Unknown"
-    log.info("[%s] Target phylum: %s", hap_prefix, target_phylum)
+    phylum = lineage_parts[3] if len(lineage_parts) > 3 else "Unknown"
+    log.info("Target phylum: %s", phylum)
+    return phylum
 
+
+def _blast_contaminants_for_hap(
+    ctx: CurationContext, hap_prefix: str, run_dir: Path | None, phylum: str
+) -> Path | None:
+    """
+    Blast one haplotype's curated FASTA and return the decontaminated output path,
+    or ``None`` if no non-target-phylum hits were found (canonical is left untouched).
+    """
     # 1. Find this haplotype's currently canonical FASTA — whatever step most
     #    recently produced it (pretext_to_asm, microchromosome_combine, a previous
     #    rename_and_orient/blast_contaminants, or a recurate run).
@@ -197,7 +201,7 @@ def _blast_contaminants_for_hap(
     # 3. Create contaminated.bed (filter non-target phylum hits)
     contaminated_bed = hap_dir / f"{ctx.tol_id}.{hap_prefix}.contaminated.bed"
     bed_cmd = (
-        f"grep -v {target_phylum} {taxonomy_txt} | "
+        f"grep -v {phylum} {taxonomy_txt} | "
         "perl -anE 'say \"$F[0]\\t0\\t10000\\tREMOVE\"' "
         f">> {contaminated_bed}"
     )
