@@ -359,6 +359,9 @@ def _resolve_run(ctx, ticket: str, run: str):
     return tracker, step, Path(run_dir)
 
 
+_TICKET_OPTION = click.option(
+    "--ticket", "-t", required=True, shell_complete=complete_ticket, help="Ticket ID or ToL ID."
+)
 _RUN_OPTION = click.option(
     "--run",
     "-r",
@@ -368,9 +371,7 @@ _RUN_OPTION = click.option(
 
 
 @cli.command("untrack")
-@click.option(
-    "--ticket", "-t", required=True, shell_complete=complete_ticket, help="Ticket ID or ToL ID."
-)
+@_TICKET_OPTION
 @_RUN_OPTION
 @click.pass_context
 def untrack_cmd(ctx, ticket, run):
@@ -393,9 +394,7 @@ cli.add_command(untrack_cmd)
 
 
 @cli.command("retrack")
-@click.option(
-    "--ticket", "-t", required=True, shell_complete=complete_ticket, help="Ticket ID or ToL ID."
-)
+@_TICKET_OPTION
 @_RUN_OPTION
 @click.pass_context
 def retrack_cmd(ctx, ticket, run):
@@ -427,13 +426,7 @@ cli.add_command(retrack_cmd)
 
 
 @cli.command("done")
-@click.option(
-    "--ticket",
-    "-t",
-    required=True,
-    shell_complete=complete_ticket,
-    help="Ticket ID or ToL ID to mark as done.",
-)
+@_TICKET_OPTION
 @click.pass_context
 def done_cmd(ctx, ticket):
     """Mark a curation ticket as done and remove it from the active list."""
@@ -457,13 +450,7 @@ def done_cmd(ctx, ticket):
 
 
 @cli.command("reopen")
-@click.option(
-    "--ticket",
-    "-t",
-    required=True,
-    shell_complete=complete_ticket,
-    help="Ticket ID or ToL ID to reopen.",
-)
+@_TICKET_OPTION
 @click.pass_context
 def reopen_cmd(ctx, ticket):
     """Set a done ticket's status back to active curation."""
@@ -487,13 +474,7 @@ def reopen_cmd(ctx, ticket):
 
 
 @cli.command("remove")
-@click.option(
-    "--ticket",
-    "-t",
-    required=True,
-    shell_complete=complete_ticket,
-    help="Ticket ID or ToL ID to permanently remove.",
-)
+@_TICKET_OPTION
 @click.option("--yes", is_flag=True, default=False, help="Skip the confirmation prompt.")
 @click.pass_context
 def remove_cmd(ctx, ticket, yes):
