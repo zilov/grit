@@ -53,6 +53,16 @@ Sanger username and Sanger-wide defaults (NFS paths, farm host, `GritJiraIssue` 
 Review it and adjust anything that doesn't match your setup — no manual setup needed
 otherwise.
 
+`grit init` also offers to enable Tab completion (commands, flags, and `-t` ticket/ToL
+IDs from your registry). If you said no, add this to `~/.bashrc` later:
+
+```bash
+# grit tab completion
+command -v grit >/dev/null && eval "$(_GRIT_COMPLETE=bash_source grit)"
+```
+
+`-t` accepts a ToL ID too (`grit qv -t ilFoo1`), resolved to its ticket via the registry.
+
 ## Usage
 
 ### CLI

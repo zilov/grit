@@ -95,6 +95,8 @@ grit [--yaml FILE] [--print-only] [--logging-level LEVEL] <COMMAND> -t RC-1234
 
 `GlobalState` carries shared flags; `build_context()` constructs `CurationContext` from it. `GritCommand` (in `base_command.py`) is a shared Click base class that auto-injects `--ticket / -t`.
 
+`-t` accepts a ToL ID as well as a ticket ID everywhere (`RegistryManager.resolve_ticket()`; `UsageError` when a re-release makes it ambiguous, unknown values pass through to Jira), and Tab-completes both from the registry (`complete_ticket`, read-only, never raises). Completion is Click's built-in `_GRIT_COMPLETE=bash_source`, enabled by `grit init` appending a guarded `eval` line to `~/.bashrc`.
+
 ### Onboarding: `grit tutorial`
 
 `grit tutorial` is the guided walkthrough new curators start with. The engine is
