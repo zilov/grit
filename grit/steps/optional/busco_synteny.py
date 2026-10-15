@@ -104,7 +104,7 @@ def run_busco_synteny(
         else ctx.workdir / "busco_synteny" / "untracked"
     )
     inner_cmd = (
-        f"{module_cmd('GRIT')} && "
+        f"cd {run_dir} && {module_cmd('GRIT')} && "
         f"bash {_BUSCO_SYNTENY_SCRIPT} -r {ref_reheader} -q {query_fa} -l {lineage} -p {run_dir}"
     )
     bsub_opts = build_bsub_opts(
