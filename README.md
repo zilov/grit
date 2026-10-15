@@ -11,40 +11,20 @@ See [docs/examples.md](docs/examples.md) for a walkthrough of installation, the 
 ## Installation
 
 ```bash
-# With uv (recommended) — installs the `grit` command globally as a uv tool
-git clone git@github.com:zilov/grit.git
-cd grit
-uv tool install .
-
-# Or straight from git, no local clone needed
-uv tool install "grit @ git+ssh://git@github.com/zilov/grit.git"
-
-# For local development instead (editable install into a project-local .venv;
-# `grit` is only on PATH after `source .venv/bin/activate` or via `uv run grit`)
-uv sync
+uv tool install "grit @ git+https://github.com/zilov/grit.git"
 ```
 
-All dependencies, including `rename-and-orient`, come from PyPI, so plain
-`pip install .` (or `pip install -e .` for development) works too.
+If `uv` is not installed, install it first:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
 To pick up a newer version:
 
 ```bash
 uv tool upgrade grit --reinstall
 ```
-
-## First steps: the tutorial
-
-New to grit? Right after installing, run the guided tutorial — no config,
-Jira, LSF or real data needed (every command runs in an isolated sandbox):
-
-```bash
-grit tutorial                        # pick a scenario from the menu
-grit tutorial --scenario overview    # tutorial 0: what curation and grit are
-grit tutorial --scenario basic       # tutorial 1: the standard post-curation chain
-```
-
-Start with `overview`, then `basic`. `grit tutorial --help` lists all scenarios.
 
 ## Configuration
 
@@ -62,6 +42,19 @@ command -v grit >/dev/null && eval "$(_GRIT_COMPLETE=bash_source grit)"
 ```
 
 `-t` accepts a ToL ID too (`grit qv -t ilFoo1`), resolved to its ticket via the registry.
+
+## First steps: the tutorial
+
+New to grit? After `grit init`, run the guided tutorial — no
+Jira, LSF or real data needed (every command runs in an isolated sandbox):
+
+```bash
+grit tutorial                        # pick a scenario from the menu
+grit tutorial --scenario overview    # tutorial 0: what curation and grit are
+grit tutorial --scenario basic       # tutorial 1: the standard post-curation chain
+```
+
+Start with `overview`, then `basic`. `grit tutorial --help` lists all scenarios.
 
 ## Usage
 
