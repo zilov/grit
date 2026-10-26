@@ -166,9 +166,12 @@ Small fixes and improvements — close in one batch when still relevant.
   real use yet. It is a rare case, so tutorial 4 only recurates hap1; add a hap2
   lesson back once this works.
 
-- [ ] **Emails arrive with no content** — find out why the notification email
-  comes through empty when a normal run has a lot of information to put in it
-  (body dropped or truncated somewhere between the step output and the mail).
+- [x] **Emails arrive with no content** — nextflow pipes `-N` mail to
+  `sendmail -t` without `-i`, so exim ends the message at a line holding a single
+  ".". A long command line pushes the HTML part to quoted-printable, whose
+  wrapping leaves "implied." 's dot alone on a line: the HTML is cut after the
+  licence comment and Outlook shows an empty mail. `curationpretext.sh` puts
+  `grit/scripts/mail/sendmail` (`sendmail -i`) first on PATH.
 
 - [x] **`finalize-qc`: run `busco-curated`** — finalize-qc already runs `qv`
   when `merquryk/` is missing (`grit/steps/post_curation/finalize_qc.py`); do

@@ -2334,7 +2334,9 @@ def test_curationpretext_script_runs_main_nf_from_the_loaded_wrapper(tmp_path):
         f'nxf_run_command="nextflow run   {main_nf}"\nbsub ... $nxf_run_command\n'
     )
     (bin_dir / "curationpretext.sh").chmod(0o755)
-    (bin_dir / "nextflow").write_text('#!/bin/sh\necho "NEXTFLOW $*"\n')
+    (bin_dir / "nextflow").write_text(
+        '#!/bin/sh\necho "SENDMAIL $(command -v sendmail)"\necho "NEXTFLOW $*"\n'
+    )
     (bin_dir / "nextflow").chmod(0o755)
 
     env = {"PATH": f"{bin_dir}:/usr/bin:/bin"}
@@ -2349,6 +2351,7 @@ def test_curationpretext_script_runs_main_nf_from_the_loaded_wrapper(tmp_path):
     assert result.returncode == 0, result.stderr
     assert f"NEXTFLOW run {main_nf} -profile sanger,singularity -ansi-log false" in result.stdout
     assert result.stdout.rstrip().endswith("--sample x.hap1 -resume")
+    assert f"SENDMAIL {_CURATIONPRETEXT_SCRIPT.parent / 'mail' / 'sendmail'}" in result.stdout
 
 
 def test_curationpretext_script_fails_without_main_nf(tmp_path):
