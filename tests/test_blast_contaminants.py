@@ -275,3 +275,14 @@ def test_dry_run_output_resolves_via_find_canonical_fa(mock_ctx, tmp_path):
     expected = Path(mock_ctx.tracker.get_output("blast_contaminants", f"{mock_ctx.hap1_prefix}_fa"))
     resolved = find_canonical_fa(mock_ctx, mock_ctx.hap1_prefix)
     assert resolved == expected
+
+
+@patch("grit.steps.optional.blast_contaminants._run", return_value="")
+def test_lineage_script_gets_the_binomial_as_one_argument(mock_run, mock_ctx):
+    """Unquoted, 'Trifolium squamosum' reaches the script as 'Trifolium' — a
+    trematode genus — so every plant hit is flagged as a contaminant."""
+    from grit.steps.optional.blast_contaminants import target_phylum
+
+    mock_ctx = mock_ctx.__class__(**{**mock_ctx.__dict__, "species": "Trifolium squamosum"})
+    target_phylum(mock_ctx)
+    assert f"{LINEAGE_SCRIPT} 'Trifolium squamosum'" in mock_run.call_args.args[0]

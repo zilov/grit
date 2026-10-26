@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shlex
 from pathlib import Path
 
 import rich_click as click
@@ -151,7 +152,7 @@ def target_phylum(ctx: CurationContext) -> str:
     cleaned_species = _clean_species_name(ctx.species)
     log.info("Species: %s", cleaned_species)
 
-    lineage_cmd = f"{module_cmd('GRIT')} && {LINEAGE_SCRIPT} {cleaned_species}"
+    lineage_cmd = f"{module_cmd('GRIT')} && {LINEAGE_SCRIPT} {shlex.quote(cleaned_species)}"
     lineage_out = _run(lineage_cmd, ctx.print_only)
     # module load can add chatter before the lineage itself; the lineage is the
     # last non-empty line.
@@ -201,7 +202,7 @@ def _blast_contaminants_for_hap(
     # 3. Create contaminated.bed (filter non-target phylum hits)
     contaminated_bed = hap_dir / f"{ctx.tol_id}.{hap_prefix}.contaminated.bed"
     bed_cmd = (
-        f"grep -v {phylum} {taxonomy_txt} | "
+        f"grep -v {shlex.quote(phylum)} {taxonomy_txt} | "
         "perl -anE 'say \"$F[0]\\t0\\t10000\\tREMOVE\"' "
         f">> {contaminated_bed}"
     )
