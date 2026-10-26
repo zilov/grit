@@ -972,8 +972,7 @@ def find_reheadered_reference(ctx: "CurationContext") -> Path:
     never been run/tracked. Globbing there would pick up unrelated files (e.g.
     original.fa), so that fallback is treated as "no reference dir yet".
 
-    Raises FileNotFoundError with a tip to run find-reference first if nothing
-    is found.
+    Raises UsageError with a tip to run find-reference first if nothing is found.
     """
     ref_dir = find_latest_dir(ctx, "find_reference")
     ref_reheader = None
@@ -983,7 +982,9 @@ def find_reheadered_reference(ctx: "CurationContext") -> Path:
             ref_reheader = Path(sorted(ref_matches)[-1])
 
     if ref_reheader is None or (not ctx.print_only and not ref_reheader.exists()):
-        raise FileNotFoundError(
+        import rich_click as click
+
+        raise click.UsageError(
             f"No reference found for {ctx.tol_id}.\n"
             f"Run 'grit find-reference -t {ctx.ticket_id}' first."
         )

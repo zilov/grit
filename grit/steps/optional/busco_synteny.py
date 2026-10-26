@@ -88,7 +88,7 @@ def run_busco_synteny(
     if reference_path:
         ref_path = Path(reference_path)
         if not ctx.print_only and not ref_path.exists():
-            raise FileNotFoundError(f"Reference not found: {ref_path}")
+            raise click.UsageError(f"Reference not found: {ref_path}")
         log.info("Reference FASTA (explicit): %s", ref_path)
         ref_reheader = reheader_reference(ctx, ref_path)
     else:
