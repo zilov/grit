@@ -1570,6 +1570,7 @@ def test_finalize_for_qc_haplotig_dest_name_mirrors_disk_over_combine_for_curati
 
     hap1_fa = tmp_path / "ilBrySene2.1.primary.curated.fa"
     real_haplotigs = tmp_path / "ilBrySene2.1.additional_haplotigs.curated.fa"
+    real_haplotigs.write_text(">h1\nACGT\n")
 
     mock_find_fa.return_value = hap1_fa
     mock_find_csv.return_value = tmp_path / "chr.list.csv"
@@ -1583,6 +1584,48 @@ def test_finalize_for_qc_haplotig_dest_name_mirrors_disk_over_combine_for_curati
     expected_dest = "ilBrySene2.1.additional_haplotigs.curated.fa"
     assert any(str(real_haplotigs) in c and expected_dest in c for c in calls)
     assert not any("all_haplotigs" in c for c in calls)
+
+
+@patch("grit.steps.post_curation.qv.run_qv")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_empty_placeholder_name_does_not_override_flag(
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_bsub,
+    mock_ctx_primary,
+    tmp_path,
+):
+    """haplotig-files' empty all_haplotigs placeholder must not make a non-combined
+    single-hap ticket publish all_haplotigs (pp expects additional_haplotigs)."""
+    mock_ctx_primary.workdir = tmp_path
+    mock_ctx_primary.tol_id = "iyExySpon1"
+    mock_ctx_primary.release_version = 1
+    assert mock_ctx_primary.combine_for_curation is False
+    mock_ctx_primary.assembly_curated_dir = tmp_path / "curated" / "iyExySpon1.1"
+    mock_ctx_primary.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+
+    placeholder = tmp_path / "iyExySpon1.1.all_haplotigs.curated.fa"
+    placeholder.touch()
+
+    mock_find_fa.return_value = tmp_path / "iyExySpon1.1.primary.curated.fa"
+    mock_find_csv.return_value = tmp_path / "chr.list.csv"
+    mock_find_haplotigs.return_value = placeholder
+    mock_glob.side_effect = [[], [], [], []]
+    mock_run.return_value = ""
+
+    finalize_for_qc(mock_ctx_primary)
+
+    calls = [str(c) for c in mock_run.call_args_list]
+    assert any(
+        str(placeholder) in c and "iyExySpon1.1.additional_haplotigs.curated.fa" in c for c in calls
+    )
 
 
 @patch("grit.steps.post_curation.qv.run_qv")

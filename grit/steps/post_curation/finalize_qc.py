@@ -275,9 +275,11 @@ def finalize_for_qc(
         # "additional_haplotigs" — mirror whatever pretext-to-asm's real output on
         # disk is named rather than trusting the YAML's combine_for_curation flag,
         # which (like assembly type) can disagree with what the curator actually did.
-        if src and "additional_haplotigs" in src.name:
+        # haplotig-files' empty placeholder is always named "all_haplotigs" — not evidence.
+        named = src and src.exists() and src.stat().st_size > 0
+        if named and "additional_haplotigs" in src.name:
             haplotig_suffix = "additional_haplotigs.curated.fa"
-        elif src and "all_haplotigs" in src.name:
+        elif named and "all_haplotigs" in src.name:
             haplotig_suffix = "all_haplotigs.curated.fa"
         else:
             haplotig_suffix = (
