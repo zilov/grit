@@ -122,6 +122,20 @@ def _copy_map(
     _run(f"cp {src} {nfs_dest / dest_name}", ctx.print_only)
 
 
+def _run_busco_if_missing(ctx: CurationContext) -> None:
+    """Submit busco-curated unless a finished or in-flight run exists; no lineage only warns."""
+    from grit.steps.optional.busco_curated import run_busco_curated
+
+    existing = ctx.tracker.latest_run_dir("busco_curated") if ctx.tracker else None
+    if existing:
+        log.info("busco-curated already run or in flight (%s) — not resubmitting", existing)
+        return
+    try:
+        run_busco_curated(ctx)
+    except click.UsageError as e:
+        log.warning("Skipping busco-curated: %s", e.message)
+
+
 # ---------------------------------------------------------------------------
 # Public step function
 # ---------------------------------------------------------------------------
@@ -201,6 +215,7 @@ def finalize_for_qc(
             from grit.steps.post_curation.qv import run_qv
 
             run_qv(ctx)
+        _run_busco_if_missing(ctx)
 
         if ctx.tracker and run_dir:
             ctx.tracker.finish(
@@ -307,17 +322,17 @@ def finalize_for_qc(
     if hap2_map or hap2_hic_has_output:
         _copy_map(ctx, "hic_remapping_hap2", ctx.hap2_prefix, nfs_dest, hap2_map)
 
-    # 4. QV if merquryk not yet present
-    qv_dir = dest_dir / "merquryk"
-    if not qv_dir.exists():
-        from grit.steps.post_curation.qv import run_qv
+    # 4. QV if merquryk not yet present, BUSCO if never run
+    from grit.steps.post_curation.qv import run_qv
 
-        try:
+    try:
+        if not (dest_dir / "merquryk").exists():
             run_qv(ctx)
-        except Exception:
-            if ctx.tracker and run_dir:
-                ctx.tracker.finish("finalize_qc", run_dir, "failed", untracked=ctx.untracked)
-            raise
+        _run_busco_if_missing(ctx)
+    except Exception:
+        if ctx.tracker and run_dir:
+            ctx.tracker.finish("finalize_qc", run_dir, "failed", untracked=ctx.untracked)
+        raise
 
     if ctx.print_only:
         console.print(

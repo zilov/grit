@@ -240,8 +240,8 @@ _TUTORIAL_1 = Scenario(
         "Shortcuts for real tickets:\n"
         "  • `grit post-curation -t <ticket> --hap2` runs pretext-to-asm and "
         "hic-remapping in one go, for both haplotypes (drop --hap2 for hap1 only).\n"
-        "  • finalize-qc runs qv itself if it hasn't run yet, so you usually don't "
-        "need to run qv on its own."
+        "  • finalize-qc runs qv and busco-curated (lineage from the ticket YAML) itself "
+        "if they haven't run yet, so you usually don't need to run them on their own."
     ),
     lessons=[
         _read(

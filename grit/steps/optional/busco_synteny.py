@@ -44,7 +44,7 @@ _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
 
 
 def run_busco_synteny(
-    ctx: CurationContext, lineage: str, reference_path: str | None = None
+    ctx: CurationContext, lineage: str | None = None, reference_path: str | None = None
 ) -> None:
     """
     Runs BUSCO synteny analysis between the curated assembly and a reference genome.
@@ -63,6 +63,10 @@ def run_busco_synteny(
         Step header, bsub command.
     """
     log.info("busco-synteny | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
+    lineage = lineage or ctx.yaml_data.get("busco_lineage")
+    if not lineage:
+        raise click.UsageError("No busco_lineage in the ticket YAML; pass --lineage.")
+    log.info("BUSCO lineage: %s", lineage)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO synteny")
 
     if ctx.dry_run:
@@ -136,7 +140,11 @@ def run_busco_synteny(
 
 
 @click.command("busco-synteny", cls=GritCommand, bsub_ram_default=70000)
-@click.option("--lineage", required=True, help="BUSCO lineage name (e.g. insecta_odb10).")
+@click.option(
+    "--lineage",
+    default=None,
+    help="BUSCO lineage name (e.g. insecta_odb10). Default: busco_lineage from the ticket YAML.",
+)
 @click.option(
     "--reference",
     "-r",
@@ -151,6 +159,8 @@ def busco_synteny_cmd(ctx, lineage, reference):
     curation_ctx = build_context(ctx.obj)
     try:
         run_busco_synteny(curation_ctx, lineage, reference_path=reference)
+    except click.UsageError:
+        raise
     except Exception:
         log.exception("busco-synteny failed")
         raise SystemExit(1)

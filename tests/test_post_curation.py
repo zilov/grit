@@ -2190,6 +2190,35 @@ def test_busco_curated_passes_a_name_to_o_and_the_dir_to_out_path(mock_bsub, moc
     assert " -f" not in inner_cmd
 
 
+@patch("grit.steps.optional.busco_curated._submit_bsub")
+def test_busco_curated_lineage_defaults_to_yaml(mock_bsub, mock_ctx, tmp_path):
+    """--lineage is optional: the ticket YAML's busco_lineage is used instead."""
+    from grit.steps.optional.busco_curated import run_busco_curated
+
+    ctx = _busco_ctx(mock_ctx, tmp_path)
+    ctx.yaml_data["busco_lineage"] = "mollusca_odb10"
+    mock_bsub.return_value = "12345"
+
+    run_busco_curated(ctx)
+
+    assert "/lineages/mollusca_odb10 " in mock_bsub.call_args[0][0]
+
+
+@patch("grit.steps.optional.busco_curated._submit_bsub")
+def test_busco_curated_without_any_lineage_is_a_usage_error(mock_bsub, mock_ctx, tmp_path):
+    """No flag and no YAML value must fail before anything is started or submitted."""
+    import click
+
+    from grit.steps.optional.busco_curated import run_busco_curated
+
+    ctx = _busco_ctx(mock_ctx, tmp_path)
+    ctx.yaml_data.pop("busco_lineage", None)
+
+    with pytest.raises(click.UsageError):
+        run_busco_curated(ctx)
+    mock_bsub.assert_not_called()
+
+
 def test_busco_curated_output_specs_are_registered(tmp_path):
     """Without specs the bsub -Ep epilogue re-globs nothing and the run is
     recorded as success with no outputs at all."""
@@ -2327,3 +2356,84 @@ def test_hic_remapping_hap2_is_refused_on_a_single_hap_ticket(
 
     mock_run.assert_not_called()
     assert mock_ctx_primary.tracker.history() == []
+
+
+# ---------------------------------------------------------------------------
+# busco-synteny lineage default / finalize_for_qc runs busco-curated
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.optional.busco_synteny._submit_bsub")
+@patch("grit.steps.optional.busco_synteny.find_reheadered_reference")
+@patch("grit.steps.optional.busco_synteny.find_canonical_fa")
+def test_busco_synteny_lineage_defaults_to_yaml(
+    mock_find_fa, mock_find_ref, mock_bsub, mock_ctx, tmp_path
+):
+    """--lineage is optional: the ticket YAML's busco_lineage is used instead."""
+    from grit.steps.optional.busco_synteny import run_busco_synteny
+
+    mock_ctx.print_only = True
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tracker = None
+    mock_ctx.yaml_data["busco_lineage"] = "mollusca_odb10"
+    mock_find_ref.return_value = tmp_path / "ref.fa"
+    mock_find_fa.return_value = tmp_path / "q.fa"
+
+    run_busco_synteny(mock_ctx)
+
+    assert "-l mollusca_odb10 " in mock_bsub.call_args[0][0]
+
+
+@patch("grit.steps.optional.busco_synteny._submit_bsub")
+def test_busco_synteny_without_any_lineage_is_a_usage_error(mock_bsub, mock_ctx):
+    import click
+
+    from grit.steps.optional.busco_synteny import run_busco_synteny
+
+    mock_ctx.yaml_data.pop("busco_lineage", None)
+    with pytest.raises(click.UsageError):
+        run_busco_synteny(mock_ctx)
+    mock_bsub.assert_not_called()
+
+
+def _finalize_dry_ctx(mock_ctx, tmp_path):
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.dry_run = True
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / f"{mock_ctx.tol_id}.1"
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+    return mock_ctx
+
+
+def test_finalize_for_qc_runs_busco_curated_with_yaml_lineage(mock_ctx, tmp_path):
+    ctx = _finalize_dry_ctx(mock_ctx, tmp_path)
+    ctx.yaml_data["busco_lineage"] = "mollusca_odb10"
+
+    finalize_for_qc(ctx)
+
+    assert ctx.tracker.get_output("busco_curated", "summary") is not None
+
+
+def test_finalize_for_qc_does_not_resubmit_busco_in_flight(mock_ctx, tmp_path):
+    ctx = _finalize_dry_ctx(mock_ctx, tmp_path)
+    ctx.yaml_data["busco_lineage"] = "mollusca_odb10"
+    ctx.tracker.start("busco_curated", ctx.ticket_id, ctx.tol_id)
+
+    finalize_for_qc(ctx)
+
+    assert [r["status"] for r in ctx.tracker.history("busco_curated")] == ["started"]
+
+
+def test_finalize_for_qc_without_lineage_skips_busco_and_succeeds(mock_ctx, tmp_path, caplog):
+    ctx = _finalize_dry_ctx(mock_ctx, tmp_path)
+    ctx.yaml_data.pop("busco_lineage", None)
+
+    finalize_for_qc(ctx)
+
+    assert ctx.tracker.history("busco_curated") == []
+    assert ctx.tracker.history("finalize_qc")[-1]["status"] == "success"
+    assert "Skipping busco-curated" in caplog.text

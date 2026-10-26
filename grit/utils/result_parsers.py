@@ -24,6 +24,8 @@ class CurationResults:
     sex_matches: list[tuple[str, str]] = field(default_factory=list)  # (scaffold, count)
     qv_text: str | None = None
     completeness_text: str | None = None
+    busco_lineage: str | None = None
+    busco_summary: str | None = None  # the C:...% line of BUSCO's short summary
 
     def has_any(self) -> bool:
         return any(
@@ -33,6 +35,7 @@ class CurationResults:
                 self.sex_matches,
                 self.qv_text,
                 self.completeness_text,
+                self.busco_summary,
             ]
         )
 
@@ -266,5 +269,15 @@ def collect_curation_results(
             r.completeness_text = read_tabular(comp_path)
         except Exception as e:
             log.warning("Failed to read completeness file %s: %s", comp_path, e)
+
+    # --- BUSCO curated: short_summary.specific.<lineage>.<out>.txt ---
+    busco_summary = tracker.get_output("busco_curated", "summary") if tracker else None
+    if busco_summary and Path(busco_summary).exists():
+        try:
+            lines = Path(busco_summary).read_text().splitlines()
+            r.busco_summary = next((s.strip() for s in lines if s.strip().startswith("C:")), None)
+            r.busco_lineage = Path(busco_summary).name.split(".")[2]
+        except Exception as e:
+            log.warning("Failed to read BUSCO summary %s: %s", busco_summary, e)
 
     return r
