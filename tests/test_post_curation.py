@@ -2262,6 +2262,23 @@ def test_busco_curated_without_any_lineage_is_a_usage_error(mock_bsub, mock_ctx,
     mock_bsub.assert_not_called()
 
 
+def test_resolve_lineage_rejects_one_not_installed(mock_ctx, tmp_path, monkeypatch):
+    """A YAML odb10 lineage when only odb12 is installed fails and names what is there."""
+    import click
+
+    from grit.steps.optional import busco_curated
+
+    (tmp_path / "mollusca_odb12").mkdir()
+    (tmp_path / "insecta_odb12").mkdir()
+    monkeypatch.setattr(busco_curated, "_BUSCO_LINEAGES", str(tmp_path))
+    mock_ctx.print_only = False
+    mock_ctx.dry_run = False
+
+    assert busco_curated.resolve_lineage(mock_ctx, "mollusca_odb12") == "mollusca_odb12"
+    with pytest.raises(click.UsageError, match="Available: mollusca_odb12;"):
+        busco_curated.resolve_lineage(mock_ctx, "mollusca_odb10")
+
+
 def test_busco_curated_output_specs_are_registered(tmp_path):
     """Without specs the bsub -Ep epilogue re-globs nothing and the run is
     recorded as success with no outputs at all."""

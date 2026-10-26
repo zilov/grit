@@ -7,6 +7,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
+from grit.steps.optional.busco_curated import resolve_lineage
 from grit.utils.helpers import (
     _state_update_epilogue,
     _submit_bsub,
@@ -63,9 +64,7 @@ def run_busco_synteny(
         Step header, bsub command.
     """
     log.info("busco-synteny | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
-    lineage = lineage or ctx.yaml_data.get("busco_lineage")
-    if not lineage:
-        raise click.UsageError("No busco_lineage in the ticket YAML; pass --lineage.")
+    lineage = resolve_lineage(ctx, lineage)
     log.info("BUSCO lineage: %s", lineage)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO synteny")
 

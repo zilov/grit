@@ -52,6 +52,22 @@ def _dry_run_busco_curated(ctx: CurationContext, run_dir: Path) -> dict[str, str
     )
 
 
+def resolve_lineage(ctx: CurationContext, lineage: str | None) -> str:
+    """Return the flag's or the YAML's BUSCO lineage; UsageError when unset or not installed."""
+    lineage = lineage or ctx.yaml_data.get("busco_lineage")
+    if not lineage:
+        raise click.UsageError("No busco_lineage in the ticket YAML; pass --lineage.")
+    root = Path(_BUSCO_LINEAGES)
+    if ctx.dry_run or ctx.print_only or (root / lineage).is_dir():
+        return lineage
+    clade = lineage.split("_")[0]
+    near = sorted(p.name for p in root.glob(f"{clade}_*")) if root.is_dir() else []
+    raise click.UsageError(
+        f"BUSCO lineage {lineage!r} is not in {root}."
+        + (f" Available: {', '.join(near)}; pass one with --lineage." if near else "")
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public step functions
 # ---------------------------------------------------------------------------
@@ -80,9 +96,7 @@ def run_busco_curated(ctx: CurationContext, lineage: str | None = None) -> None:
         Step header, input FASTA, file size, memory allocation, bsub command.
     """
     log.info("busco-curated | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
-    lineage = lineage or ctx.yaml_data.get("busco_lineage")
-    if not lineage:
-        raise click.UsageError("No busco_lineage in the ticket YAML; pass --lineage.")
+    lineage = resolve_lineage(ctx, lineage)
     log.info("BUSCO lineage: %s", lineage)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO on curated genome")
 

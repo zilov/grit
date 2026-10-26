@@ -183,11 +183,14 @@ Small fixes and improvements — close in one batch when still relevant.
   `--lineage`; give it the same fallback. Done: `_run_busco_if_missing()` in
   both finalize-qc paths; `busco-synteny` falls back to the YAML too.
 
-- [ ] **BUSCO lineage must exist under `_BUSCO_LINEAGES`** — check that the
+- [x] **BUSCO lineage must exist under `_BUSCO_LINEAGES`** — check that the
   lineage (flag or YAML `busco_lineage`) is a dir under
   `/lustre/scratch122/tol/resources/busco/latest/lineages` before submitting;
-  the YAML may say `odb10` while `latest/lineages` holds `odb12`. Needs the farm
-  to see what's actually there.
+  the YAML may say `odb10` while `latest/lineages` holds `odb12`. Done:
+  `resolve_lineage()` in `busco_curated.py`, shared with `busco-synteny`; a
+  missing lineage is a `UsageError` listing the same clade's installed ones
+  (finalize-qc turns it into a skip warning). Skipped under
+  `--dry-run`/`--print-only`. `latest` (2026-06-16) holds odb10, odb12 and odb12.2.
 
 - [x] **`grit status`: BUSCO curated summary line** — when `busco-curated` has
   run, show one line under QV/completeness, e.g.
