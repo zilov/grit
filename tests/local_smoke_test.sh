@@ -120,7 +120,7 @@ if [ -d /lustre ]; then
     preview "fastga"                    "$HAP_YAML"     "$P1_HAP"     fastga
     preview "blast-contaminants"        "$HAP_YAML"     "$P1_HAP"     blast-contaminants
     preview "rename-and-orient"         "$HAP_YAML"     "$P1_HAP"     rename-and-orient
-    preview "busco-synteny"             "$HAP_YAML"     "$P1_HAP"     busco-synteny --lineage stramenopiles_odb10
+    preview "busco-synteny"             "$HAP_YAML"     "$P1_HAP"     busco-synteny
 else
     skip "section 1 — needs real ToL paths, and /lustre is not mounted here"
 fi

@@ -2481,6 +2481,15 @@ def test_finalize_for_qc_runs_busco_curated_with_yaml_lineage(mock_ctx, tmp_path
     assert ctx.tracker.get_output("busco_curated", "summary") is not None
 
 
+def test_finalize_for_qc_lineage_flag_covers_a_yaml_without_one(mock_ctx, tmp_path):
+    ctx = _finalize_dry_ctx(mock_ctx, tmp_path)
+    ctx.yaml_data.pop("busco_lineage", None)
+
+    finalize_for_qc(ctx, lineage="mollusca_odb10")
+
+    assert ctx.tracker.get_output("busco_curated", "summary") is not None
+
+
 def test_finalize_for_qc_does_not_resubmit_busco_in_flight(mock_ctx, tmp_path):
     ctx = _finalize_dry_ctx(mock_ctx, tmp_path)
     ctx.yaml_data["busco_lineage"] = "mollusca_odb10"

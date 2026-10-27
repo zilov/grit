@@ -122,7 +122,7 @@ def _copy_map(
     _run(f"cp {src} {nfs_dest / dest_name}", ctx.print_only)
 
 
-def _run_busco_if_missing(ctx: CurationContext) -> None:
+def _run_busco_if_missing(ctx: CurationContext, lineage: str | None = None) -> None:
     """Submit busco-curated unless a finished or in-flight run exists; no lineage only warns."""
     from grit.steps.optional.busco_curated import run_busco_curated
 
@@ -131,7 +131,7 @@ def _run_busco_if_missing(ctx: CurationContext) -> None:
         log.info("busco-curated already run or in flight (%s) — not resubmitting", existing)
         return
     try:
-        run_busco_curated(ctx)
+        run_busco_curated(ctx, lineage)
     except click.UsageError as e:
         log.warning("Skipping busco-curated: %s", e.message)
 
@@ -153,6 +153,7 @@ def finalize_for_qc(
     hap1_map: Path | None = None,
     hap2_map: Path | None = None,
     curated_dir: Path | None = None,
+    lineage: str | None = None,
 ) -> None:
     """
     Copies all curated outputs to their final destinations and prompts
@@ -174,7 +175,7 @@ def finalize_for_qc(
 
     All file arguments (``hap1_assembly``, ``hap2_assembly``, etc.) override
     the automatically resolved paths. ``curated_dir`` overrides
-    ``ctx.assembly_curated_dir``.
+    ``ctx.assembly_curated_dir``. ``lineage`` overrides the YAML's ``busco_lineage``.
     """
     log.info("finalize-qc | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Finalize for QC")
@@ -215,7 +216,7 @@ def finalize_for_qc(
             from grit.steps.post_curation.qv import run_qv
 
             run_qv(ctx)
-        _run_busco_if_missing(ctx)
+        _run_busco_if_missing(ctx, lineage)
 
         if ctx.tracker and run_dir:
             ctx.tracker.finish(
@@ -330,7 +331,7 @@ def finalize_for_qc(
     try:
         if not (dest_dir / "merquryk").exists():
             run_qv(ctx)
-        _run_busco_if_missing(ctx)
+        _run_busco_if_missing(ctx, lineage)
     except Exception:
         if ctx.tracker and run_dir:
             ctx.tracker.finish("finalize_qc", run_dir, "failed", untracked=ctx.untracked)
@@ -413,6 +414,12 @@ def _print_submission_reminder(ctx: CurationContext, dest_dir: Path) -> None:
     default=None,
     help="Override destination curated assembly directory.",
 )
+@click.option(
+    "--lineage",
+    default=None,
+    help="BUSCO lineage for busco-curated (e.g. insecta_odb10). "
+    "Default: busco_lineage from the ticket YAML.",
+)
 @click.pass_context
 def finalize_qc_cmd(
     ctx,
@@ -425,6 +432,7 @@ def finalize_qc_cmd(
     hap1_map,
     hap2_map,
     curated_dir,
+    lineage,
 ):
     """Finalize curation and prepare for QC."""
     from grit.core.click_cli import build_context
@@ -443,6 +451,7 @@ def finalize_qc_cmd(
             hap1_map=Path(hap1_map) if hap1_map else None,
             hap2_map=Path(hap2_map) if hap2_map else None,
             curated_dir=Path(curated_dir) if curated_dir else None,
+            lineage=lineage,
         )
     except Exception:
         log.exception("finalize-qc failed")

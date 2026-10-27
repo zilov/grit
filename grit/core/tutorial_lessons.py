@@ -240,8 +240,9 @@ _TUTORIAL_1 = Scenario(
         "Shortcuts for real tickets:\n"
         "  • `grit post-curation -t <ticket> --hap2` runs pretext-to-asm and "
         "hic-remapping in one go, for both haplotypes (drop --hap2 for hap1 only).\n"
-        "  • finalize-qc runs qv and busco-curated (lineage from the ticket YAML) itself "
-        "if they haven't run yet, so you usually don't need to run them on their own."
+        "  • finalize-qc runs qv and busco-curated (lineage from the ticket YAML, or "
+        "--lineage when the YAML has none) itself if they haven't run yet, so you "
+        "usually don't need to run them on their own."
     ),
     lessons=[
         _read(
@@ -421,20 +422,13 @@ _TUTORIAL_2 = Scenario(
             why=(
                 "Plots BUSCO gene positions in the curated assembly against the "
                 "reference, so you can see at a glance whether chromosome-scale synteny "
-                "holds up. --lineage is required — grit does not guess it. This ticket's "
-                "YAML carries busco_lineage: vertebrata_odb10; that's the value to pass. "
-                "Because find-reference already ran, --reference is not needed here — "
-                "it would only be for overriding the auto-search."
+                "holds up. The BUSCO lineage comes from the ticket YAML (busco_lineage: "
+                "vertebrata_odb10 here); pass --lineage only to override it, or when the "
+                "YAML has none. Because find-reference already ran, --reference is not "
+                "needed here — it would only be for overriding the auto-search."
             ),
-            task="Run BUSCO synteny using this ticket's busco_lineage value.",
+            task="Run BUSCO synteny against the reference find-reference picked.",
             command="busco-synteny",
-            args=["--lineage", "vertebrata_odb10"],
-            flag_hints={
-                "--lineage": (
-                    "busco-synteny needs --lineage — use this ticket's busco_lineage "
-                    "value from the YAML: vertebrata_odb10."
-                )
-            },
             check=(
                 "the scp line under 'Download busco-synteny plot' — run it on your laptop "
                 "to see a real example plot (reference chromosomes on one side, curated "
