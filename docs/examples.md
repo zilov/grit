@@ -138,9 +138,9 @@ grit blast-contaminants -t RC-1234
 
 # Blast chosen draft scaffolds (headers as in original.fa, any haplotype),
 # canonical is not changed. Writes a taxonomy table + BED with KEEP/REMOVE/NO_HIT
-grit target-blast -t RC-1234 --headers "HAP1_SCAFFOLD_12,HAP2_SCAFFOLD_7"
+grit blast-target -t RC-1234 --headers "HAP1_SCAFFOLD_12,HAP2_SCAFFOLD_7"
 # or from a file, one header per line
-grit target-blast -t RC-1234 --headers targets.txt
+grit blast-target -t RC-1234 --headers targets.txt
 
 # Rename and orient scaffolds against a reference (after pretext-to-asm)
 grit rename-and-orient -t RC-1234

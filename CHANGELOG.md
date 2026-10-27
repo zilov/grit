@@ -8,7 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
-- `grit target-blast -t RC-1234 --headers X`: blasts chosen draft scaffolds from `original.fa` (a comma-separated list or a file of headers, any haplotype) and writes a taxonomy table and a BED marking each KEEP/REMOVE/NO_HIT. Canonical is not changed.
+- `grit blast-target -t RC-1234 --headers X`: blasts chosen draft scaffolds from `original.fa` (a comma-separated list or a file of headers, any haplotype) and writes a taxonomy table and a BED marking each KEEP/REMOVE/NO_HIT. Canonical is not changed.
 
 ### Fixed
 

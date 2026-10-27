@@ -1,4 +1,4 @@
-"""Tests for target-blast: headers parsing, unknown headers, BED verdicts, canonical untouched."""
+"""Tests for blast-target: headers parsing, unknown headers, BED verdicts, canonical untouched."""
 
 import logging
 from pathlib import Path
@@ -9,7 +9,7 @@ import rich_click as click
 
 from grit.core.registry import RegistryManager
 from grit.core.run_tracker import RunTracker
-from grit.steps.optional.target_blast import parse_headers, run_target_blast
+from grit.steps.optional.blast_target import parse_headers, run_blast_target
 
 _FAI = (
     "HAP1_SCAFFOLD_1\t500\t0\t60\t61\nHAP1_SCAFFOLD_2\t700\t0\t60\t61\n"
@@ -51,8 +51,8 @@ def test_parse_headers_string_and_file(tmp_path):
     assert parse_headers(str(f)) == ["HAP1_SCAFFOLD_1", "HAP2_SCAFFOLD_3"]
 
 
-@patch("grit.steps.optional.target_blast.target_phylum", return_value="Chordata")
-@patch("grit.steps.optional.target_blast._run", side_effect=_fake_run)
+@patch("grit.steps.optional.blast_target.target_phylum", return_value="Chordata")
+@patch("grit.steps.optional.blast_target._run", side_effect=_fake_run)
 def test_bed_verdicts_and_unknown_header(mock_run, _phylum, mock_ctx, tmp_path, caplog):
     _setup(mock_ctx, tmp_path)
     from grit.utils.helpers import find_canonical_fa
@@ -63,7 +63,7 @@ def test_bed_verdicts_and_unknown_header(mock_run, _phylum, mock_ctx, tmp_path, 
         before = None
 
     with caplog.at_level(logging.WARNING):
-        run_target_blast(
+        run_blast_target(
             mock_ctx, ["HAP1_SCAFFOLD_1", "HAP1_SCAFFOLD_2", "HAP2_SCAFFOLD_3", "HAP1_SCAFFOLD_99"]
         )
 
@@ -71,7 +71,7 @@ def test_bed_verdicts_and_unknown_header(mock_run, _phylum, mock_ctx, tmp_path, 
     extract = next(c.args[0] for c in mock_run.call_args_list if "targets.fa" in c.args[0])
     assert "HAP1_SCAFFOLD_99" not in extract and "HAP2_SCAFFOLD_3" in extract
 
-    last = mock_ctx.tracker.history("target_blast")[-1]
+    last = mock_ctx.tracker.history("blast_target")[-1]
     assert last["status"] == "success"
     bed = open(last["outputs"]["bed"]).read().splitlines()
     assert bed == [
@@ -88,28 +88,28 @@ def test_bed_verdicts_and_unknown_header(mock_run, _phylum, mock_ctx, tmp_path, 
     assert before == after
 
 
-@patch("grit.steps.optional.target_blast._run", side_effect=_fake_run)
+@patch("grit.steps.optional.blast_target._run", side_effect=_fake_run)
 def test_all_unknown_starts_no_run(mock_run, mock_ctx, tmp_path, caplog):
     _setup(mock_ctx, tmp_path)
     with caplog.at_level(logging.WARNING):
-        run_target_blast(mock_ctx, ["NOPE_1"])
+        run_blast_target(mock_ctx, ["NOPE_1"])
     assert "nothing to blast" in caplog.text
-    assert mock_ctx.tracker.history("target_blast") == []
+    assert mock_ctx.tracker.history("blast_target") == []
 
 
-@patch("grit.steps.optional.target_blast.target_phylum", return_value="Chordata")
-@patch("grit.steps.optional.target_blast._run", side_effect=_fake_run)
+@patch("grit.steps.optional.blast_target.target_phylum", return_value="Chordata")
+@patch("grit.steps.optional.blast_target._run", side_effect=_fake_run)
 def test_failure_finishes_failed(mock_run, _phylum, mock_ctx, tmp_path):
     _setup(mock_ctx, tmp_path)
     mock_run.side_effect = lambda cmd, p=False: (
         _fake_run(cmd) if cmd.endswith("original.fa") else ""
     )
     with pytest.raises(FileNotFoundError):
-        run_target_blast(mock_ctx, ["HAP1_SCAFFOLD_1"])
-    assert mock_ctx.tracker.history("target_blast")[-1]["status"] == "failed"
+        run_blast_target(mock_ctx, ["HAP1_SCAFFOLD_1"])
+    assert mock_ctx.tracker.history("blast_target")[-1]["status"] == "failed"
 
 
 def test_missing_original_fa(mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     with pytest.raises(click.UsageError, match="grit setup"):
-        run_target_blast(mock_ctx, ["HAP1_SCAFFOLD_1"])
+        run_blast_target(mock_ctx, ["HAP1_SCAFFOLD_1"])

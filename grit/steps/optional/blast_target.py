@@ -27,9 +27,9 @@ def parse_headers(value: str) -> list[str]:
     return [h.strip() for h in value.split(",") if h.strip()]
 
 
-def run_target_blast(ctx: CurationContext, headers: list[str]) -> None:
+def run_blast_target(ctx: CurationContext, headers: list[str]) -> None:
     """Blast the given original.fa scaffolds and write a taxonomy table + KEEP/REMOVE/NO_HIT BED."""
-    log.info("target-blast | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
+    log.info("blast-target | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Target blast")
     require_workdir(ctx)
 
@@ -52,7 +52,7 @@ def run_target_blast(ctx: CurationContext, headers: list[str]) -> None:
         log.warning("None of the requested headers are in %s — nothing to blast.", original)
         return
 
-    run_dir = ctx.tracker.start("target_blast", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+    run_dir = ctx.tracker.start("blast_target", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
     try:
         targets = run_dir / "targets.fa"
         _run(
@@ -78,7 +78,7 @@ def run_target_blast(ctx: CurationContext, headers: list[str]) -> None:
             if line.strip():
                 top.setdefault(line.split()[0], line)
 
-        bed = run_dir / f"{ctx.tol_id}.target_blast.bed"
+        bed = run_dir / f"{ctx.tol_id}.blast_target.bed"
         rows = []
         for h in found:
             verdict = "NO_HIT" if h not in top else "KEEP" if phylum in top[h] else "REMOVE"
@@ -86,20 +86,20 @@ def run_target_blast(ctx: CurationContext, headers: list[str]) -> None:
         bed.write_text("".join(rows))
 
         ctx.tracker.finish(
-            "target_blast",
+            "blast_target",
             run_dir,
             "success",
             outputs={"bed": str(bed), "taxonomy": str(taxonomy)},
             untracked=ctx.untracked,
         )
     except Exception:
-        ctx.tracker.finish("target_blast", run_dir, "failed", untracked=ctx.untracked)
+        ctx.tracker.finish("blast_target", run_dir, "failed", untracked=ctx.untracked)
         raise
 
     print_done(f"Target blast → {bed}")
 
 
-@click.command("target-blast", cls=GritCommand)
+@click.command("blast-target", cls=GritCommand)
 @click.option(
     "--headers",
     required=True,
@@ -107,7 +107,7 @@ def run_target_blast(ctx: CurationContext, headers: list[str]) -> None:
     "(original.fa names, any haplotype). Large scaffolds make the blast slow.",
 )
 @click.pass_context
-def target_blast_cmd(ctx, headers):
+def blast_target_cmd(ctx, headers):
     """Blast chosen draft scaffolds; canonical is not changed."""
     from grit.core.click_cli import build_context
 
@@ -116,9 +116,9 @@ def target_blast_cmd(ctx, headers):
         raise click.UsageError("--headers is empty.")
     curation_ctx = build_context(ctx.obj)
     try:
-        run_target_blast(curation_ctx, header_list)
+        run_blast_target(curation_ctx, header_list)
     except click.UsageError:
         raise
     except Exception:
-        log.exception("target-blast failed")
+        log.exception("blast-target failed")
         raise SystemExit(1)
