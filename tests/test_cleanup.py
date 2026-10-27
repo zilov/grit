@@ -300,3 +300,34 @@ def test_run_cleanup_counts_an_untrackable_gzip_submission_as_an_error(
 
     assert mock_submit_bsub.call_count == 2
     mock_registry.mark_cleaned_up.assert_called_once_with("RC-2")
+
+
+def test_busco_kept_dir_drops_scratch_keeps_summaries(tmp_path):
+    workdir = tmp_path / "workdir"
+    old_run = workdir / "busco_curated" / "2026-01-01T00_00_00"
+    run_dir = workdir / "busco_curated" / "2026-02-01T00_00_00"
+    lineage = run_dir / "run_fungi_odb10"
+    for d in ("hmmer_output", "miniprot_output", "busco_sequences", ".bbtools_output"):
+        (lineage / d).mkdir(parents=True)
+    (run_dir / "busco_downloads").mkdir()
+    (run_dir / "logs").mkdir()
+    old_run.mkdir()
+    summary = run_dir / "short_summary.specific.fungi_odb10.busco_out.txt"
+    summary.write_text("C:99%")
+    (lineage / "full_table.tsv").write_text("x")
+
+    deleted = _actions_for("delete", plan_cleanup(workdir, "tolId1", _FakeTracker()))
+
+    assert old_run in deleted
+    for p in (
+        "busco_downloads",
+        "logs",
+        "run_fungi_odb10/hmmer_output",
+        "run_fungi_odb10/miniprot_output",
+        "run_fungi_odb10/busco_sequences",
+        "run_fungi_odb10/.bbtools_output",
+    ):
+        assert run_dir / p in deleted
+    assert summary not in deleted
+    assert lineage not in deleted
+    assert lineage / "full_table.tsv" not in deleted
