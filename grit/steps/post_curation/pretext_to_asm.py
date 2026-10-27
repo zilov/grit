@@ -213,7 +213,7 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
     Converts the curated AGP + original.fa into a curated FASTA via pretext-to-asm.
 
     Output FASTA goes into a timestamped run directory:
-    ``{workdir}/pretext_to_asm/<timestamp>/{tol_id}.fa``
+    ``{workdir}/pretext_to_asm/<timestamp>/{tol_id}.{release_version}.fa``
 
     Notebook source: ``pre_and_post_curation()`` — ``generate_fasta_from_agp`` section.
 
@@ -225,7 +225,7 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
                module load grit && pretext-to-asm \
                    -a {workdir}/original.fa \
                    -p {agp_path} \
-                   -o {run_dir}/{tol_id}.fa
+                   -o {run_dir}/{tol_id}.{release_version}.fa
 
     Prints:
         Step header, AGP path found, command executed.
@@ -252,7 +252,7 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
                 "hap2_chr_list": chr_list,
             },
         )
-        (run_dir / f"{ctx.tol_id}.1.log").write_text(
+        (run_dir / f"{ctx.tol_id_versioned}.log").write_text(
             "Curation made 2 cuts in contigs, 5 breaks at gaps and 14 joins\n"
         )
         if is_single_hap(ctx):
@@ -279,7 +279,7 @@ def run_pretext_to_asm(ctx: CurationContext) -> None:
         original_fa,
         f"original.fa not found at {original_fa}. Run setup_curation first.",
         ctx.workdir,
-        f"{ctx.tol_id}.fa",
+        f"{ctx.tol_id_versioned}.fa",
         _OUTPUT_SPECS,
     )
 

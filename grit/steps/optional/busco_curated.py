@@ -52,12 +52,28 @@ def _dry_run_busco_curated(ctx: CurationContext, run_dir: Path) -> dict[str, str
     )
 
 
+def resolve_lineage(ctx: CurationContext, lineage: str | None) -> str:
+    """Return the flag's or the YAML's BUSCO lineage; UsageError when unset or not installed."""
+    lineage = lineage or ctx.yaml_data.get("busco_lineage")
+    if not lineage:
+        raise click.UsageError("No busco_lineage in the ticket YAML; pass --lineage.")
+    root = Path(_BUSCO_LINEAGES)
+    if ctx.dry_run or ctx.print_only or (root / lineage).is_dir():
+        return lineage
+    clade = lineage.split("_")[0]
+    near = sorted(p.name for p in root.glob(f"{clade}_*")) if root.is_dir() else []
+    raise click.UsageError(
+        f"BUSCO lineage {lineage!r} is not in {root}."
+        + (f" Available: {', '.join(near)}; pass one with --lineage." if near else "")
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public step functions
 # ---------------------------------------------------------------------------
 
 
-def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
+def run_busco_curated(ctx: CurationContext, lineage: str | None = None) -> None:
     """
     Runs BUSCO analysis on the curated genome assembly.
 
@@ -80,6 +96,8 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
         Step header, input FASTA, file size, memory allocation, bsub command.
     """
     log.info("busco-curated | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
+    lineage = resolve_lineage(ctx, lineage)
+    log.info("BUSCO lineage: %s", lineage)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO on curated genome")
 
     if ctx.dry_run:
@@ -181,7 +199,11 @@ def run_busco_curated(ctx: CurationContext, lineage: str) -> None:
         "(default: auto-scaled by curated FASTA size — 50000/100000/150000/220000)."
     ),
 )
-@click.option("--lineage", required=True, help="BUSCO lineage name (e.g. insecta_odb10).")
+@click.option(
+    "--lineage",
+    default=None,
+    help="BUSCO lineage name (e.g. insecta_odb10). Default: busco_lineage from the ticket YAML.",
+)
 @click.pass_context
 def busco_curated_cmd(ctx, lineage):
     """Run BUSCO on the curated genome assembly."""
@@ -190,6 +212,8 @@ def busco_curated_cmd(ctx, lineage):
     curation_ctx = build_context(ctx.obj)
     try:
         run_busco_curated(curation_ctx, lineage)
+    except click.UsageError:
+        raise
     except Exception:
         log.exception("busco-curated failed")
         raise SystemExit(1)

@@ -7,6 +7,7 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
+from grit.steps.optional.busco_curated import resolve_lineage
 from grit.utils.helpers import (
     _state_update_epilogue,
     _submit_bsub,
@@ -44,7 +45,7 @@ _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
 
 
 def run_busco_synteny(
-    ctx: CurationContext, lineage: str, reference_path: str | None = None
+    ctx: CurationContext, lineage: str | None = None, reference_path: str | None = None
 ) -> None:
     """
     Runs BUSCO synteny analysis between the curated assembly and a reference genome.
@@ -63,6 +64,8 @@ def run_busco_synteny(
         Step header, bsub command.
     """
     log.info("busco-synteny | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
+    lineage = resolve_lineage(ctx, lineage)
+    log.info("BUSCO lineage: %s", lineage)
     print_step_header(ctx.ticket_id, ctx.tol_id, "Run BUSCO synteny")
 
     if ctx.dry_run:
@@ -85,7 +88,7 @@ def run_busco_synteny(
     if reference_path:
         ref_path = Path(reference_path)
         if not ctx.print_only and not ref_path.exists():
-            raise FileNotFoundError(f"Reference not found: {ref_path}")
+            raise click.UsageError(f"Reference not found: {ref_path}")
         log.info("Reference FASTA (explicit): %s", ref_path)
         ref_reheader = reheader_reference(ctx, ref_path)
     else:
@@ -104,7 +107,7 @@ def run_busco_synteny(
         else ctx.workdir / "busco_synteny" / "untracked"
     )
     inner_cmd = (
-        f"{module_cmd('GRIT')} && "
+        f"cd {run_dir} && {module_cmd('GRIT')} && "
         f"bash {_BUSCO_SYNTENY_SCRIPT} -r {ref_reheader} -q {query_fa} -l {lineage} -p {run_dir}"
     )
     bsub_opts = build_bsub_opts(
@@ -136,7 +139,11 @@ def run_busco_synteny(
 
 
 @click.command("busco-synteny", cls=GritCommand, bsub_ram_default=70000)
-@click.option("--lineage", required=True, help="BUSCO lineage name (e.g. insecta_odb10).")
+@click.option(
+    "--lineage",
+    default=None,
+    help="BUSCO lineage name (e.g. insecta_odb10). Default: busco_lineage from the ticket YAML.",
+)
 @click.option(
     "--reference",
     "-r",
@@ -151,6 +158,8 @@ def busco_synteny_cmd(ctx, lineage, reference):
     curation_ctx = build_context(ctx.obj)
     try:
         run_busco_synteny(curation_ctx, lineage, reference_path=reference)
+    except click.UsageError:
+        raise
     except Exception:
         log.exception("busco-synteny failed")
         raise SystemExit(1)

@@ -28,6 +28,19 @@ _STEPS_KEEP_LATEST = [
     "fastga",
     "find_reference",
     "qv",
+    "busco_curated",
+    "busco_synteny",
+]
+
+# BUSCO scratch inside a kept busco run dir; the short_summary files and
+# run_*/full_table.tsv stay.
+_BUSCO_SCRATCH_GLOBS = [
+    "busco_downloads",
+    "logs",
+    "run_*/hmmer_output",
+    "run_*/miniprot_output",
+    "run_*/busco_sequences",
+    "run_*/.bbtools_output",
 ]
 
 # Files in workdir root to delete.
@@ -141,6 +154,13 @@ def plan_cleanup(workdir: Path, tol_id: str, tracker: RunTracker) -> list[Cleanu
         for f in sorted(ptoa_kept_dir.glob("*.fa")):
             if f.is_file() and f.stat().st_size > 0:
                 actions.append(("gzip", f))
+
+    # 1e. busco kept dirs: delete BUSCO's per-gene scratch (thousands of files)
+    for step in ("busco_curated", "busco_synteny"):
+        busco_kept_dir = kept_dirs.get(step)
+        if busco_kept_dir and busco_kept_dir.is_dir():
+            for pattern in _BUSCO_SCRATCH_GLOBS:
+                actions.extend(("delete", p) for p in sorted(busco_kept_dir.glob(pattern)))
 
     # 2. Any remaining Nextflow scratch (work/, .nextflow/, .nextflow.log*) at any
     # depth not already covered above. Skip anything already nested under a path
@@ -336,8 +356,9 @@ def cleanup_cmd(ctx, yes, include_cleaned):
 
     - Deletes older run dirs for every step in _STEPS_KEEP_LATEST (pretext_to_asm,
       hic_remapping, hic_remapping_hap2, rename_and_orient, fastga, find_reference,
-      qv), keeping only the latest canonical run per step — this already covers
-      removing non-canonical pretext_to_asm run dirs, no separate mechanism needed.
+      qv, busco_curated, busco_synteny), keeping only the latest canonical run
+      per step — this already covers removing non-canonical pretext_to_asm run
+      dirs, no separate mechanism needed.
     - Deletes Nextflow scratch (work/, .nextflow/, .nextflow.log*), both inside
       kept run dirs and anywhere else under the workdir.
     - Deletes original.fa from the workdir root.
@@ -347,6 +368,10 @@ def cleanup_cmd(ctx, yes, include_cleaned):
       0 bytes (filename kept, so which reference was used stays visible)
       instead of deleting it, and deletes the raw downloaded reference plus
       its .1gdb/.bps/.gix index files.
+    - In busco_curated / busco_synteny kept run dirs: deletes busco_downloads/,
+      BUSCO's logs/ and the per-gene run_*/ subdirs (hmmer_output,
+      miniprot_output, busco_sequences), keeping the short summaries and
+      full_table.tsv.
     - In pretext_to_asm's kept run dir: gzips non-empty curated .fa files
       in place via a fire-and-forget bsub pigz job (one job per run dir).
 

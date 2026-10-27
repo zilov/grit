@@ -165,3 +165,41 @@ Small fixes and improvements — close in one batch when still relevant.
   `post-curation-recurate --hap2` exist but hap2 recuration is not set up for
   real use yet. It is a rare case, so tutorial 4 only recurates hap1; add a hap2
   lesson back once this works.
+
+- [x] **Emails arrive with no content** — nextflow pipes `-N` mail to
+  `sendmail -t` without `-i`, so exim ends the message at a line holding a single
+  ".". A long command line pushes the HTML part to quoted-printable, whose
+  wrapping leaves "implied." 's dot alone on a line: the HTML is cut after the
+  licence comment and Outlook shows an empty mail. `curationpretext.sh` puts
+  `grit/scripts/mail/sendmail` (`sendmail -i`) first on PATH.
+
+- [x] **`finalize-qc`: run `busco-curated`** — finalize-qc already runs `qv`
+  when `merquryk/` is missing (`grit/steps/post_curation/finalize_qc.py`); do
+  the same for `busco-curated`, so the curated assembly's BUSCO comes out of the
+  same finalize-qc call instead of needing a separate step. Lineage:
+  `run_busco_curated(ctx)` already falls back to the YAML's `busco_lineage`
+  (raises `UsageError` when there is none). Finalize-qc should catch that and
+  skip BUSCO with a warning, not fail. `busco-synteny` still requires
+  `--lineage`; give it the same fallback. Done: `_run_busco_if_missing()` in
+  both finalize-qc paths; `busco-synteny` falls back to the YAML too.
+
+- [x] **BUSCO lineage must exist under `_BUSCO_LINEAGES`** — check that the
+  lineage (flag or YAML `busco_lineage`) is a dir under
+  `/lustre/scratch122/tol/resources/busco/latest/lineages` before submitting;
+  the YAML may say `odb10` while `latest/lineages` holds `odb12`. Done:
+  `resolve_lineage()` in `busco_curated.py`, shared with `busco-synteny`; a
+  missing lineage is a `UsageError` listing the same clade's installed ones
+  (finalize-qc turns it into a skip warning). Skipped under
+  `--dry-run`/`--print-only`. `latest` (2026-06-16) holds odb10, odb12 and odb12.2.
+
+- [x] **`grit status`: BUSCO curated summary line** — when `busco-curated` has
+  run, show one line under QV/completeness, e.g.
+  `BUSCO curated (mollusca_odb10): C:99.8%[S:99.0%,D:0.7%],F:0.1%,M:0.1%,n:1367,E:13.6%`.
+  The lineage is in the file name, `short_summary.specific.<lineage>.busco_out.txt`.
+  It's the `C:...` line of the run's `short_summary.specific.*.txt`, which is
+  already tracked as `tracker.get_output("busco_curated", "summary")`. Read it in
+  `collect_results()` (`grit/utils/result_parsers.py`, next to the QV block)
+  and print it in `grit/utils/output.py` after QV. Show nothing if the step
+  never ran. `E:` only appears in newer BUSCO versions, so print the line as-is
+  rather than parse its fields. Done: `busco_summary`/`busco_lineage` on
+  `CurationResults`.

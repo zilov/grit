@@ -4,6 +4,33 @@ All notable changes to this project are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+## [0.6.0] - 2026-10-27
+
+### Added
+
+- `grit blast-target -t RC-1234 --headers X`: blasts chosen draft scaffolds from `original.fa` (a comma-separated list or a file of headers, any haplotype) and writes a taxonomy table and a BED marking each KEEP/REMOVE/NO_HIT. Canonical is not changed.
+- `-t` accepts a ToL ID as well as a ticket ID on every step and on `status`/`untrack`/`retrack`/`done`/`reopen`/`remove`; a ToL ID that is ambiguous after a re-release is refused with the candidates.
+- Bash tab completion of `-t` (ticket and ToL IDs from the registry). `grit init` offers to add the completion line to `~/.bashrc`.
+- `busco-curated` / `busco-synteny`: `--lineage` defaults to the ticket YAML's `busco_lineage`. `finalize-qc` runs `busco-curated` when there is no finished or in-flight run (`--lineage` passes through), and `grit status` shows the BUSCO curated score under QV.
+
+### Changed
+
+- `grit cleanup` keeps only the latest `busco_curated` / `busco_synteny` run, and in it drops `busco_downloads/`, BUSCO's `logs/` and the per-gene `run_*/` dirs, keeping the short summaries and `full_table.tsv`.
+- README: single https install via `uv`, `grit init` before the tutorial.
+
+### Fixed
+
+- The release version is taken from the ticket's Jira `release_version` field instead of the YAML (where it never was), so a v2 ticket no longer writes v1-named files into `assembly/curated/<tol>.1/`. A v2+ ticket gets its own workdir, `<user>_curation/<tol>.<v>/`, and so its own step history; v1 workdirs are unchanged. `pretext-to-asm` and `pretext-to-asm-recurate` now pass `-o <tol>.<v>.fa`, so their output files carry the release version instead of always `.1`.
+- `blast-contaminants` quotes the species name passed to the lineage script: a two-word species reached it as its genus alone, which could resolve to the wrong phylum and mark every real hit as contamination (#12).
+- `finalize-qc` no longer publishes a single-hap ticket's empty haplotig placeholder as `all_haplotigs` when post-processing expects `additional_haplotigs`.
+- `hic-remapping -N` mail no longer arrives with its HTML body cut off.
+- BUSCO fails before submitting when the lineage is not installed, listing the clade's installed lineages.
+- A missing reference in `busco-synteny` / `fastga` is a usage error with the `find-reference` tip, not a traceback.
+- `busco-synteny` runs inside its run dir, so BUSCO output no longer lands in the launch dir.
+- The untrack message names the latest tracked run instead of claiming a canonical run for steps that have none.
+
 ## [0.5.0] - 2026-09-30
 
 ### Added

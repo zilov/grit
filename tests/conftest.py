@@ -24,6 +24,17 @@ def _wide_console(monkeypatch):
     monkeypatch.setattr(console, "width", 120)
 
 
+@pytest.fixture(autouse=True)
+def _busco_lineages(tmp_path_factory, monkeypatch):
+    """Point BUSCO at a local lineages dir, so tests never depend on lustre."""
+    from grit.steps.optional import busco_curated
+
+    root = tmp_path_factory.mktemp("busco") / "lineages"
+    for name in ("insecta_odb10", "mollusca_odb10"):
+        (root / name).mkdir(parents=True)
+    monkeypatch.setattr(busco_curated, "_BUSCO_LINEAGES", str(root))
+
+
 def plain(output: str) -> str:
     """CLI output with colour codes and rich's panel decoration removed.
 

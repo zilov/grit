@@ -13,6 +13,7 @@ import yaml
 from rich.logging import RichHandler
 
 from grit.core.context import CurationContext
+from grit.core.registry import complete_ticket
 
 log = logging.getLogger(__name__)
 
@@ -127,6 +128,7 @@ def build_context(state: GlobalState) -> CurationContext:
 
 # Import and add commands (deferred to avoid circular imports)  # noqa: E402
 from grit.steps.optional.blast_contaminants import blast_contaminants_cmd  # noqa: E402
+from grit.steps.optional.blast_target import blast_target_cmd  # noqa: E402
 from grit.steps.optional.busco_curated import busco_curated_cmd  # noqa: E402
 from grit.steps.optional.busco_synteny import busco_synteny_cmd  # noqa: E402
 from grit.steps.optional.fastga import fastga_cmd, fastga_stats_cmd  # noqa: E402
@@ -169,28 +171,39 @@ def init_cmd():
     """Create ~/.grit/grit_curation_config.yaml, pre-filled with your username."""
     import getpass
 
-    from grit.config.init import DEFAULT_CONFIG_PATH, write_default_config
+    from grit.config import init
 
     username = getpass.getuser()
-    if write_default_config(username):
-        click.echo(f"Wrote {DEFAULT_CONFIG_PATH} (username={username}).")
+    if init.write_default_config(username, init.DEFAULT_CONFIG_PATH):
+        click.echo(f"Wrote {init.DEFAULT_CONFIG_PATH} (username={username}).")
         click.echo("Review it, then you're ready to run: grit setup -t RC-1234")
     else:
-        click.echo(f"Config already exists at {DEFAULT_CONFIG_PATH} — leaving it untouched.")
+        click.echo(f"Config already exists at {init.DEFAULT_CONFIG_PATH} — leaving it untouched.")
+
+    if click.confirm("Enable Tab completion for grit in ~/.bashrc?", default=True):
+        added = init.enable_completion()
+        click.echo("Added to ~/.bashrc; open a new shell." if added else "Already in ~/.bashrc.")
+    else:
+        click.echo(f"To enable it later, add to ~/.bashrc:\n{init.COMPLETION_SNIPPET}")
 
 
 @cli.command("status")
-@click.option("--ticket", "-t", default=None, help="Ticket ID for per-ticket step history.")
+@click.option(
+    "--ticket",
+    "-t",
+    default=None,
+    shell_complete=complete_ticket,
+    help="Ticket ID or ToL ID for per-ticket step history.",
+)
 @click.pass_context
 def status_cmd(ctx, ticket):
     """Show status of active curation tickets, or step history for a specific ticket."""
-    from grit.core.registry import RegistryManager, dry_run_root
+    from grit.core.registry import RegistryManager
     from grit.core.status import show_global_status, show_ticket_history
 
-    if getattr(ctx.obj, "dry_run", False):
-        registry = RegistryManager(registry_dir=dry_run_root())
-    else:
-        registry = RegistryManager()
+    registry = RegistryManager.for_run(getattr(ctx.obj, "dry_run", False))
+    if ticket:
+        ticket = registry.resolve_ticket(ticket)
     registry.refresh_statuses()
 
     if ticket:
@@ -297,6 +310,7 @@ cli.add_command(fastga_stats_cmd)
 cli.add_command(fastga_synteny_cmd)
 cli.add_command(rename_and_orient_cmd)
 cli.add_command(super_to_scaffold_cmd)
+cli.add_command(blast_target_cmd)
 
 
 from grit.core.cleanup import cleanup_cmd  # noqa: E402
@@ -308,13 +322,11 @@ cli.add_command(tutorial_cmd)
 
 def _resolve_tracker(ctx, ticket):
     """Return the RunTracker for *ticket*, honoring --dry-run's isolated registry."""
-    from grit.core.registry import RegistryManager, dry_run_root
+    from grit.core.registry import RegistryManager
     from grit.core.run_tracker import RunTracker
 
-    if getattr(ctx.obj, "dry_run", False):
-        reg = RegistryManager(registry_dir=dry_run_root())
-    else:
-        reg = RegistryManager()
+    reg = RegistryManager.for_run(getattr(ctx.obj, "dry_run", False))
+    ticket = reg.resolve_ticket(ticket)
     entry = reg.find_ticket(ticket)
     if entry is None:
         click.echo(f"Ticket {ticket} not found in registry.", err=True)
@@ -339,6 +351,9 @@ def _resolve_run(ctx, ticket: str, run: str):
     return tracker, step, Path(run_dir)
 
 
+_TICKET_OPTION = click.option(
+    "--ticket", "-t", required=True, shell_complete=complete_ticket, help="Ticket ID or ToL ID."
+)
 _RUN_OPTION = click.option(
     "--run",
     "-r",
@@ -348,7 +363,7 @@ _RUN_OPTION = click.option(
 
 
 @cli.command("untrack")
-@click.option("--ticket", "-t", required=True, help="Ticket ID.")
+@_TICKET_OPTION
 @_RUN_OPTION
 @click.pass_context
 def untrack_cmd(ctx, ticket, run):
@@ -371,7 +386,7 @@ cli.add_command(untrack_cmd)
 
 
 @cli.command("retrack")
-@click.option("--ticket", "-t", required=True, help="Ticket ID.")
+@_TICKET_OPTION
 @_RUN_OPTION
 @click.pass_context
 def retrack_cmd(ctx, ticket, run):
@@ -403,7 +418,7 @@ cli.add_command(retrack_cmd)
 
 
 @cli.command("done")
-@click.option("--ticket", "-t", required=True, help="Ticket ID to mark as done.")
+@_TICKET_OPTION
 @click.pass_context
 def done_cmd(ctx, ticket):
     """Mark a curation ticket as done and remove it from the active list."""
@@ -414,6 +429,7 @@ def done_cmd(ctx, ticket):
         raise click.UsageError("--dry-run is not supported for 'done'.")
 
     reg = RegistryManager()
+    ticket = reg.resolve_ticket(ticket)
     entry = reg.find_ticket(ticket)
     if entry is None:
         click.echo(f"Ticket {ticket} not found in registry.", err=True)
@@ -426,7 +442,7 @@ def done_cmd(ctx, ticket):
 
 
 @cli.command("reopen")
-@click.option("--ticket", "-t", required=True, help="Ticket ID to reopen.")
+@_TICKET_OPTION
 @click.pass_context
 def reopen_cmd(ctx, ticket):
     """Set a done ticket's status back to active curation."""
@@ -437,6 +453,7 @@ def reopen_cmd(ctx, ticket):
         raise click.UsageError("--dry-run is not supported for 'reopen'.")
 
     reg = RegistryManager()
+    ticket = reg.resolve_ticket(ticket)
     entry = reg.find_ticket(ticket)
     if entry is None:
         click.echo(f"Ticket {ticket} not found in registry.", err=True)
@@ -449,7 +466,7 @@ def reopen_cmd(ctx, ticket):
 
 
 @cli.command("remove")
-@click.option("--ticket", "-t", required=True, help="Ticket ID to permanently remove.")
+@_TICKET_OPTION
 @click.option("--yes", is_flag=True, default=False, help="Skip the confirmation prompt.")
 @click.pass_context
 def remove_cmd(ctx, ticket, yes):
@@ -463,6 +480,7 @@ def remove_cmd(ctx, ticket, yes):
         raise click.UsageError("--dry-run is not supported for 'remove'.")
 
     reg = RegistryManager()
+    ticket = reg.resolve_ticket(ticket)
     entry = reg.find_ticket(ticket)
     if entry is None:
         click.echo(f"Ticket {ticket} not found in registry.", err=True)

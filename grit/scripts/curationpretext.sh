@@ -21,6 +21,8 @@ fi
 
 export NXF_DISABLE_CHECK_LATEST=1
 export NXF_OPTS='-Xms128m -Xmx1024m'
+# -N mail goes through our sendmail, which adds -i (see grit/scripts/mail/sendmail).
+export PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/mail:$PATH"
 
 args=(
     -profile sanger,singularity

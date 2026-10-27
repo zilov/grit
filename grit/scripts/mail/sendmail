@@ -1,0 +1,5 @@
+#!/bin/sh
+# nextflow -N pipes its mail to `sendmail -t`. Without -i, exim ends the message
+# at a line holding a single ".", which quoted-printable wrapping can produce,
+# and the HTML body arrives cut off (Outlook shows an empty mail).
+exec /usr/sbin/sendmail -i "$@"

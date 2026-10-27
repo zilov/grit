@@ -7,6 +7,7 @@ all step functions. Holds no global state.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from dataclasses import dataclass, field
@@ -14,6 +15,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import click
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from grit.core.run_tracker import RunTracker
@@ -194,7 +197,9 @@ class CurationContext:
                 registry=RegistryManager(registry_dir=dry_run_root()),
             )
         else:
-            workdir = _derive_workdir(assembly_draft_dir.parent, cfg.username, tol_id)
+            workdir = _derive_workdir(
+                assembly_draft_dir.parent, cfg.username, tol_id, release_version
+            )
             tracker = RunTracker(workdir, print_only=print_only)
 
         return cls(
@@ -257,6 +262,14 @@ class CurationContext:
 
             jira_issue = gritjiraissue_module.GritJiraIssue(ticket_id)
             yaml_data = jira_issue.yaml
+            try:
+                yaml_data = {**yaml_data, "release_version": int(jira_issue.get_release_version())}
+            except (TypeError, ValueError):
+                log.warning(
+                    "%s: Jira release_version field is empty; using %s",
+                    ticket_id,
+                    yaml_data.get("release_version", 1),
+                )
             teloseq_raw = jira_issue.issue_json["fields"].get("customfield_11650") or ""
 
             raw_yaml_path = jira_issue.get_custom_field("yaml")
@@ -302,11 +315,14 @@ def _detect_assembly_type(
         raise ValueError(f"Cannot detect assembly type from YAML keys: {list(yaml_data.keys())}")
 
 
-def _derive_workdir(assembly_draft_dir: Path, username: str, tol_id: str) -> Path:
+def _derive_workdir(
+    assembly_draft_dir: Path, username: str, tol_id: str, release_version: int = 1
+) -> Path:
     """
     Derives the working directory from the draft assembly path.
 
     Logic: replace 'assembly/draft' with 'working', append /<username>_curation/<tol_id>/
+    (<tol_id>.<v> for release_version >= 2).
 
     Example:
         .../Dipturus_intermedius/assembly/draft/sDipInt39.1/
@@ -318,4 +334,6 @@ def _derive_workdir(assembly_draft_dir: Path, username: str, tol_id: str) -> Pat
     working_base = draft_str.replace("assembly/draft", "working")
     # strip version suffix from tol_id if present (sDipInt39.1 → sDipInt39)
     tol_id_base = tol_id.split(".")[0] if "." in tol_id else tol_id
+    if release_version >= 2:
+        tol_id_base = f"{tol_id_base}.{release_version}"
     return Path(working_base) / f"{username}_curation" / tol_id_base

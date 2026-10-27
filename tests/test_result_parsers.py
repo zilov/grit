@@ -329,3 +329,25 @@ def test_collect_curation_results_ignores_micro_run_when_it_never_ran(tmp_path):
 
     result = collect_curation_results(tracker, workdir, "sDipInt39")
     assert (result.cuts, result.breaks, result.joins) == (3, 2, 11)
+
+
+def test_collect_curation_results_reads_busco_curated_summary_and_lineage(tmp_path):
+    tracker, workdir = _make_tracker(tmp_path)
+    run_dir = workdir / "busco_curated" / "run1"
+    run_dir.mkdir(parents=True)
+    summary = run_dir / "short_summary.specific.mollusca_odb10.busco_out.txt"
+    c_line = "C:99.8%[S:99.0%,D:0.7%],F:0.1%,M:0.1%,n:1367,E:13.6%"
+    summary.write_text(f"# BUSCO version is: 5.8.0\n\n\t{c_line}\t\n\t1365\tComplete BUSCOs\n")
+    tracker.start("busco_curated", "RC-1234", "sDipInt39")
+    tracker.finish("busco_curated", run_dir, "success", outputs={"summary": str(summary)})
+
+    result = collect_curation_results(tracker, workdir, "sDipInt39")
+
+    assert result.busco_summary == c_line
+    assert result.busco_lineage == "mollusca_odb10"
+    assert result.has_any()
+
+
+def test_collect_curation_results_no_busco_when_step_never_ran(tmp_path):
+    tracker, workdir = _make_tracker(tmp_path)
+    assert collect_curation_results(tracker, workdir, "sDipInt39").busco_summary is None

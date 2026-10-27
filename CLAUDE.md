@@ -18,7 +18,7 @@ ctx = CurationContext.from_ticket("RC-1234", user_config)
 ctx = CurationContext.from_yaml("RC-1234", yaml_data, user_config)
 ```
 
-**Workdir derivation:** computed from the draft assembly path by replacing `assembly/draft` → `working`, appending `/<username>_curation/<tol_id>/`. No separate `curations_dir` setting.
+**Workdir derivation:** computed from the draft assembly path by replacing `assembly/draft` → `working`, appending `/<username>_curation/<tol_id>/` — or `<tol_id>.<v>` for release version v ≥ 2, so a re-release gets its own workdir and registry entry. `from_ticket` takes the version from the Jira `release_version` custom field (`get_release_version()`), falling back to the YAML value / 1 with a warning when it is empty. No separate `curations_dir` setting.
 
 ### Step structure
 
@@ -26,7 +26,7 @@ ctx = CurationContext.from_yaml("RC-1234", yaml_data, user_config)
 grit/steps/
 ├── pre_curation/    # setup, pretext tracks, sex-matcher, microchromosome-second-shot, find-reference
 ├── post_curation/   # pretext-to-asm, haplotig-files, hic-remapping, microchromosome-combine, qv, validate, finalize-qc
-└── optional/        # blast-contaminants, busco-curated, busco-synteny, fastga, rename-and-orient
+└── optional/        # blast-contaminants, busco-curated, busco-synteny, fastga, rename-and-orient, blast-target
 ```
 
 Each step file exports:
@@ -94,6 +94,8 @@ grit [--yaml FILE] [--print-only] [--logging-level LEVEL] <COMMAND> -t RC-1234
 ```
 
 `GlobalState` carries shared flags; `build_context()` constructs `CurationContext` from it. `GritCommand` (in `base_command.py`) is a shared Click base class that auto-injects `--ticket / -t`.
+
+`-t` accepts a ToL ID as well as a ticket ID everywhere (`RegistryManager.resolve_ticket()`; `UsageError` when a re-release makes it ambiguous, unknown values pass through to Jira), and Tab-completes both from the registry (`complete_ticket`, read-only, never raises). Completion is Click's built-in `_GRIT_COMPLETE=bash_source`, enabled by `grit init` appending a guarded `eval` line to `~/.bashrc`.
 
 ### Onboarding: `grit tutorial`
 

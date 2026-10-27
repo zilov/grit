@@ -125,6 +125,7 @@ def test_output_specs_resolve_haplotigs_and_chr_list_for_primary_assembly(tmp_pa
 def test_run_pretext_to_asm_builds_correct_command(mock_glob, mock_run, mock_ctx, tmp_path):
     mock_ctx.workdir = tmp_path
     mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 2
 
     # create original.fa so existence check passes
     (tmp_path / "original.fa").write_text("")
@@ -139,6 +140,8 @@ def test_run_pretext_to_asm_builds_correct_command(mock_glob, mock_run, mock_ctx
     assert any("pretext-to-asm" in c for c in calls)
     assert any("original.fa" in c for c in calls)
     assert any(agp in c for c in calls)
+    # pretext-to-asm takes the release version from the -o name (<tol>.<v>.fa)
+    assert any("sDipInt39.2.fa" in c for c in calls)
 
 
 @patch("grit.steps.post_curation.pretext_to_asm._run")
@@ -1567,6 +1570,7 @@ def test_finalize_for_qc_haplotig_dest_name_mirrors_disk_over_combine_for_curati
 
     hap1_fa = tmp_path / "ilBrySene2.1.primary.curated.fa"
     real_haplotigs = tmp_path / "ilBrySene2.1.additional_haplotigs.curated.fa"
+    real_haplotigs.write_text(">h1\nACGT\n")
 
     mock_find_fa.return_value = hap1_fa
     mock_find_csv.return_value = tmp_path / "chr.list.csv"
@@ -1580,6 +1584,48 @@ def test_finalize_for_qc_haplotig_dest_name_mirrors_disk_over_combine_for_curati
     expected_dest = "ilBrySene2.1.additional_haplotigs.curated.fa"
     assert any(str(real_haplotigs) in c and expected_dest in c for c in calls)
     assert not any("all_haplotigs" in c for c in calls)
+
+
+@patch("grit.steps.post_curation.qv.run_qv")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_empty_placeholder_name_does_not_override_flag(
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_bsub,
+    mock_ctx_primary,
+    tmp_path,
+):
+    """haplotig-files' empty all_haplotigs placeholder must not make a non-combined
+    single-hap ticket publish all_haplotigs (pp expects additional_haplotigs)."""
+    mock_ctx_primary.workdir = tmp_path
+    mock_ctx_primary.tol_id = "iyExySpon1"
+    mock_ctx_primary.release_version = 1
+    assert mock_ctx_primary.combine_for_curation is False
+    mock_ctx_primary.assembly_curated_dir = tmp_path / "curated" / "iyExySpon1.1"
+    mock_ctx_primary.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+
+    placeholder = tmp_path / "iyExySpon1.1.all_haplotigs.curated.fa"
+    placeholder.touch()
+
+    mock_find_fa.return_value = tmp_path / "iyExySpon1.1.primary.curated.fa"
+    mock_find_csv.return_value = tmp_path / "chr.list.csv"
+    mock_find_haplotigs.return_value = placeholder
+    mock_glob.side_effect = [[], [], [], []]
+    mock_run.return_value = ""
+
+    finalize_for_qc(mock_ctx_primary)
+
+    calls = [str(c) for c in mock_run.call_args_list]
+    assert any(
+        str(placeholder) in c and "iyExySpon1.1.additional_haplotigs.curated.fa" in c for c in calls
+    )
 
 
 @patch("grit.steps.post_curation.qv.run_qv")
@@ -2187,6 +2233,52 @@ def test_busco_curated_passes_a_name_to_o_and_the_dir_to_out_path(mock_bsub, moc
     assert " -f" not in inner_cmd
 
 
+@patch("grit.steps.optional.busco_curated._submit_bsub")
+def test_busco_curated_lineage_defaults_to_yaml(mock_bsub, mock_ctx, tmp_path):
+    """--lineage is optional: the ticket YAML's busco_lineage is used instead."""
+    from grit.steps.optional.busco_curated import run_busco_curated
+
+    ctx = _busco_ctx(mock_ctx, tmp_path)
+    ctx.yaml_data["busco_lineage"] = "mollusca_odb10"
+    mock_bsub.return_value = "12345"
+
+    run_busco_curated(ctx)
+
+    assert "/lineages/mollusca_odb10 " in mock_bsub.call_args[0][0]
+
+
+@patch("grit.steps.optional.busco_curated._submit_bsub")
+def test_busco_curated_without_any_lineage_is_a_usage_error(mock_bsub, mock_ctx, tmp_path):
+    """No flag and no YAML value must fail before anything is started or submitted."""
+    import click
+
+    from grit.steps.optional.busco_curated import run_busco_curated
+
+    ctx = _busco_ctx(mock_ctx, tmp_path)
+    ctx.yaml_data.pop("busco_lineage", None)
+
+    with pytest.raises(click.UsageError):
+        run_busco_curated(ctx)
+    mock_bsub.assert_not_called()
+
+
+def test_resolve_lineage_rejects_one_not_installed(mock_ctx, tmp_path, monkeypatch):
+    """A YAML odb10 lineage when only odb12 is installed fails and names what is there."""
+    import click
+
+    from grit.steps.optional import busco_curated
+
+    (tmp_path / "mollusca_odb12").mkdir()
+    (tmp_path / "insecta_odb12").mkdir()
+    monkeypatch.setattr(busco_curated, "_BUSCO_LINEAGES", str(tmp_path))
+    mock_ctx.print_only = False
+    mock_ctx.dry_run = False
+
+    assert busco_curated.resolve_lineage(mock_ctx, "mollusca_odb12") == "mollusca_odb12"
+    with pytest.raises(click.UsageError, match="Available: mollusca_odb12;"):
+        busco_curated.resolve_lineage(mock_ctx, "mollusca_odb10")
+
+
 def test_busco_curated_output_specs_are_registered(tmp_path):
     """Without specs the bsub -Ep epilogue re-globs nothing and the run is
     recorded as success with no outputs at all."""
@@ -2259,7 +2351,9 @@ def test_curationpretext_script_runs_main_nf_from_the_loaded_wrapper(tmp_path):
         f'nxf_run_command="nextflow run   {main_nf}"\nbsub ... $nxf_run_command\n'
     )
     (bin_dir / "curationpretext.sh").chmod(0o755)
-    (bin_dir / "nextflow").write_text('#!/bin/sh\necho "NEXTFLOW $*"\n')
+    (bin_dir / "nextflow").write_text(
+        '#!/bin/sh\necho "SENDMAIL $(command -v sendmail)"\necho "NEXTFLOW $*"\n'
+    )
     (bin_dir / "nextflow").chmod(0o755)
 
     env = {"PATH": f"{bin_dir}:/usr/bin:/bin"}
@@ -2274,6 +2368,7 @@ def test_curationpretext_script_runs_main_nf_from_the_loaded_wrapper(tmp_path):
     assert result.returncode == 0, result.stderr
     assert f"NEXTFLOW run {main_nf} -profile sanger,singularity -ansi-log false" in result.stdout
     assert result.stdout.rstrip().endswith("--sample x.hap1 -resume")
+    assert f"SENDMAIL {_CURATIONPRETEXT_SCRIPT.parent / 'mail' / 'sendmail'}" in result.stdout
 
 
 def test_curationpretext_script_fails_without_main_nf(tmp_path):
@@ -2324,3 +2419,93 @@ def test_hic_remapping_hap2_is_refused_on_a_single_hap_ticket(
 
     mock_run.assert_not_called()
     assert mock_ctx_primary.tracker.history() == []
+
+
+# ---------------------------------------------------------------------------
+# busco-synteny lineage default / finalize_for_qc runs busco-curated
+# ---------------------------------------------------------------------------
+
+
+@patch("grit.steps.optional.busco_synteny._submit_bsub")
+@patch("grit.steps.optional.busco_synteny.find_reheadered_reference")
+@patch("grit.steps.optional.busco_synteny.find_canonical_fa")
+def test_busco_synteny_lineage_defaults_to_yaml(
+    mock_find_fa, mock_find_ref, mock_bsub, mock_ctx, tmp_path
+):
+    """--lineage is optional: the ticket YAML's busco_lineage is used instead."""
+    from grit.steps.optional.busco_synteny import run_busco_synteny
+
+    mock_ctx.print_only = True
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tracker = None
+    mock_ctx.yaml_data["busco_lineage"] = "mollusca_odb10"
+    mock_find_ref.return_value = tmp_path / "ref.fa"
+    mock_find_fa.return_value = tmp_path / "q.fa"
+
+    run_busco_synteny(mock_ctx)
+
+    assert "-l mollusca_odb10 " in mock_bsub.call_args[0][0]
+
+
+@patch("grit.steps.optional.busco_synteny._submit_bsub")
+def test_busco_synteny_without_any_lineage_is_a_usage_error(mock_bsub, mock_ctx):
+    import click
+
+    from grit.steps.optional.busco_synteny import run_busco_synteny
+
+    mock_ctx.yaml_data.pop("busco_lineage", None)
+    with pytest.raises(click.UsageError):
+        run_busco_synteny(mock_ctx)
+    mock_bsub.assert_not_called()
+
+
+def _finalize_dry_ctx(mock_ctx, tmp_path):
+    from grit.core.registry import RegistryManager
+    from grit.core.run_tracker import RunTracker
+
+    mock_ctx.workdir = tmp_path
+    mock_ctx.dry_run = True
+    mock_ctx.assembly_curated_dir = tmp_path / "curated" / f"{mock_ctx.tol_id}.1"
+    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
+    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
+    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
+    return mock_ctx
+
+
+def test_finalize_for_qc_runs_busco_curated_with_yaml_lineage(mock_ctx, tmp_path):
+    ctx = _finalize_dry_ctx(mock_ctx, tmp_path)
+    ctx.yaml_data["busco_lineage"] = "mollusca_odb10"
+
+    finalize_for_qc(ctx)
+
+    assert ctx.tracker.get_output("busco_curated", "summary") is not None
+
+
+def test_finalize_for_qc_lineage_flag_covers_a_yaml_without_one(mock_ctx, tmp_path):
+    ctx = _finalize_dry_ctx(mock_ctx, tmp_path)
+    ctx.yaml_data.pop("busco_lineage", None)
+
+    finalize_for_qc(ctx, lineage="mollusca_odb10")
+
+    assert ctx.tracker.get_output("busco_curated", "summary") is not None
+
+
+def test_finalize_for_qc_does_not_resubmit_busco_in_flight(mock_ctx, tmp_path):
+    ctx = _finalize_dry_ctx(mock_ctx, tmp_path)
+    ctx.yaml_data["busco_lineage"] = "mollusca_odb10"
+    ctx.tracker.start("busco_curated", ctx.ticket_id, ctx.tol_id)
+
+    finalize_for_qc(ctx)
+
+    assert [r["status"] for r in ctx.tracker.history("busco_curated")] == ["started"]
+
+
+def test_finalize_for_qc_without_lineage_skips_busco_and_succeeds(mock_ctx, tmp_path, caplog):
+    ctx = _finalize_dry_ctx(mock_ctx, tmp_path)
+    ctx.yaml_data.pop("busco_lineage", None)
+
+    finalize_for_qc(ctx)
+
+    assert ctx.tracker.history("busco_curated") == []
+    assert ctx.tracker.history("finalize_qc")[-1]["status"] == "success"
+    assert "Skipping busco-curated" in caplog.text

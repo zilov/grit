@@ -136,6 +136,12 @@ grit busco-synteny -t RC-1234 --lineage insecta_odb10 --reference /path/to/refer
 # Contamination screening (after pretext-to-asm)
 grit blast-contaminants -t RC-1234
 
+# Blast chosen draft scaffolds (headers as in original.fa, any haplotype),
+# canonical is not changed. Writes a taxonomy table + BED with KEEP/REMOVE/NO_HIT
+grit blast-target -t RC-1234 --headers "HAP1_SCAFFOLD_12,HAP2_SCAFFOLD_7"
+# or from a file, one header per line
+grit blast-target -t RC-1234 --headers targets.txt
+
 # Rename and orient scaffolds against a reference (after pretext-to-asm)
 grit rename-and-orient -t RC-1234
 grit rename-and-orient -t RC-1234 --hap2

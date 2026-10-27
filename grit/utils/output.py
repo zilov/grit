@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 
 console = Console()
@@ -61,5 +62,8 @@ def print_curation_results(tracker, workdir, tol_id: str, curated_dir=None) -> N
 
     if r.qv_text:
         lines.append(f"[bold]QV           :[/bold]\n{r.qv_text}")
+
+    if r.busco_summary:
+        lines.append(f"[bold]BUSCO curated ({r.busco_lineage}):[/bold] {escape(r.busco_summary)}")
 
     console.print("\n".join(lines))

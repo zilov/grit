@@ -70,8 +70,25 @@ def dry_run_root() -> Path:
     return Path.home() / ".grit" / "dry_run"
 
 
+def complete_ticket(ctx, param, incomplete: str) -> list[str]:
+    """Shell-complete -t with registry ticket IDs and ToL IDs; never raises."""
+    try:
+        reg = RegistryManager.for_run(ctx.find_root().params.get("dry_run"))
+        reopen = ctx.command.name == "reopen"
+        tickets = reg.done_tickets(limit=None) if reopen else reg.all_tickets()
+        ids = dict.fromkeys(i for t in tickets for i in (t["ticket_id"], t.get("tol_id")) if i)
+        return [i for i in ids if i.startswith(incomplete)]
+    except Exception:
+        return []
+
+
 class RegistryManager:
     """Manages the global ticket registry in ~/.grit/grit_registry.json."""
+
+    @classmethod
+    def for_run(cls, dry_run: bool) -> "RegistryManager":
+        """Return the dry-run sandbox registry or the real one."""
+        return cls(registry_dir=dry_run_root()) if dry_run else cls()
 
     def __init__(self, registry_dir: Path | None = None) -> None:
         self.dir = registry_dir or _DEFAULT_DIR
@@ -170,6 +187,24 @@ class RegistryManager:
     def find_ticket(self, ticket_id: str) -> dict | None:
         """Find any ticket by ID regardless of status."""
         return next((t for t in self._load() if t["ticket_id"] == ticket_id), None)
+
+    def resolve_ticket(self, value: str) -> str:
+        """Return the ticket ID for a ticket or ToL ID; unknown values pass through."""
+        tickets = self._load()
+        if any(t["ticket_id"] == value for t in tickets):
+            return value
+        matches = [t for t in tickets if t.get("tol_id") == value]
+        active = [t for t in matches if t.get("status") != "done"]
+        pick = active if len(active) == 1 else matches
+        if len(pick) > 1:
+            listing = "\n".join(
+                f"  {t['ticket_id']} ({Path(t['workdir']).name}, {t['status']})" for t in matches
+            )
+            raise click.UsageError(f"ToL ID {value} matches several tickets:\n{listing}")
+        if not pick:
+            return value
+        log.info("%s → %s", value, pick[0]["ticket_id"])
+        return pick[0]["ticket_id"]
 
     def find_ticket_by_workdir(self, workdir: Path) -> dict | None:
         """Find any ticket by workdir path regardless of status."""

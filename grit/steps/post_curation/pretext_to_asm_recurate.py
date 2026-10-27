@@ -193,7 +193,7 @@ def run_pretext_to_asm_recurate(ctx: CurationContext, hap_prefix: str, step_name
         original_fa,
         f"No canonical FASTA found for {hap_prefix!r}. Run pretext-to-asm first.",
         agp_search_dir,
-        f"{ctx.tol_id}.fa",
+        f"{ctx.tol_id_versioned}.fa",
         _output_specs_for_hap(ctx, hap_prefix),
         agp_glob=f"{ctx.tol_id}*{hap_prefix}*.agp*",
         output_transform=_merge_haplotigs_transform(merged_name, prior_haplotigs),

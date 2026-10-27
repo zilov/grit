@@ -137,7 +137,7 @@ def run_fastga(ctx: CurationContext, reference_path: str | None = None) -> None:
     if reference_path:
         ref_path = Path(reference_path)
         if not ctx.print_only and not ref_path.exists():
-            raise FileNotFoundError(f"Reference not found: {ref_path}")
+            raise click.UsageError(f"Reference not found: {ref_path}")
         log.info("Reference FASTA (explicit): %s", ref_path)
         ref_reheader = reheader_reference(ctx, ref_path)
     else:
@@ -282,6 +282,8 @@ def fastga_cmd(ctx, reference):
     curation_ctx = build_context(ctx.obj)
     try:
         run_fastga(curation_ctx, reference_path=reference)
+    except click.UsageError:
+        raise
     except Exception:
         log.exception("fastga failed")
         raise SystemExit(1)

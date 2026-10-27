@@ -419,3 +419,16 @@ def test_cli_fastga_stats_dry_run_chains_after_fastga_dry_run(tmp_path, monkeypa
     assert result_stats.exit_code == 0, result_stats.output
     assert "SUPER_1" in result_stats.output
     assert "chr1" in result_stats.output
+
+
+def test_no_reference_is_a_usage_error_not_a_traceback(mock_ctx, tmp_path):
+    """Without find-reference, fastga and busco-synteny must fail with a clean tip."""
+    import click
+    import pytest
+
+    from grit.utils.helpers import find_reheadered_reference
+
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.print_only = False
+    with pytest.raises(click.UsageError, match="find-reference"):
+        find_reheadered_reference(mock_ctx)
