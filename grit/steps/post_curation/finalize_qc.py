@@ -211,12 +211,12 @@ def finalize_for_qc(
             (dest_dir / _dest_name(hap_prefix, haplotig_suffix)).write_text("fake\n")
             (dest_dir / _dest_name(hap_prefix, "primary.chromosome.list.csv")).write_text("fake\n")
 
+        _run_busco_if_missing(ctx, lineage)
         qv_dir = dest_dir / "merquryk"
         if not qv_dir.exists():
             from grit.steps.post_curation.qv import run_qv
 
             run_qv(ctx)
-        _run_busco_if_missing(ctx, lineage)
 
         if ctx.tracker and run_dir:
             ctx.tracker.finish(
@@ -325,13 +325,13 @@ def finalize_for_qc(
     if hap2_map or hap2_hic_has_output:
         _copy_map(ctx, "hic_remapping_hap2", ctx.hap2_prefix, nfs_dest, hap2_map)
 
-    # 4. QV if merquryk not yet present, BUSCO if never run
+    # 4. BUSCO if never run (async bsub, so first), then QV if merquryk not yet present (blocks)
     from grit.steps.post_curation.qv import run_qv
 
     try:
+        _run_busco_if_missing(ctx, lineage)
         if not (dest_dir / "merquryk").exists():
             run_qv(ctx)
-        _run_busco_if_missing(ctx, lineage)
     except Exception:
         if ctx.tracker and run_dir:
             ctx.tracker.finish("finalize_qc", run_dir, "failed", untracked=ctx.untracked)
