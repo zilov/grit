@@ -351,6 +351,15 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   exist yet, so the check would wrongly skip the remap.
   `--assembly` drops it for hap1 too: the check compares against the canonical
   FASTA, not the file passed.
+- **hap2 assembly level is decided by `finalize-qc`**, not Jira: `post_process_rc`
+  publishes a haplotype at chromosome level iff its curated `*.chromosome.list.csv`
+  is non-empty, and the Jira "Chromosome list files" field is filled by hand only
+  after finalize-qc. `_hap2_chromosome_level()` takes `--hap2-level`, else guesses
+  chromosome only if `hic_remapping_hap2` has output and makes the curator confirm
+  that guess with an explicit `y` (`[y/N]`; N stops with a `UsageError` pointing at
+  `--hap2-level`); non-tty, print-only and dry-run take the guess with a warning. A
+  scaffold-level hap2 gets an emptied (`truncate -s 0`) chr list — the file must
+  still exist for pp.
 - **`require_workdir(ctx)`** — guards steps that need an existing workdir; skipped in print_only mode
 - **`log.*` not `print()`** — use Python `logging`; `RichHandler` formats output
 - **Minimal docstrings** — one line stating what the function returns/does, only

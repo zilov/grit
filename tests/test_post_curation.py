@@ -1292,6 +1292,68 @@ def test_finalize_for_qc_creates_curated_dir(
     assert any("touch" in c and "hap2" in c and "all_haplotigs" in c for c in calls)
 
 
+@pytest.mark.parametrize("hap2_level", [None, "scaffold", "chromosome"])
+@patch("grit.steps.post_curation.qv.run_qv")
+@patch("grit.steps.post_curation.finalize_qc._run")
+@patch("grit.steps.post_curation.finalize_qc.glob.glob")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_chr_list")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_haplotigs")
+@patch("grit.steps.post_curation.finalize_qc.find_canonical_fa")
+def test_finalize_for_qc_hap2_scaffold_level_gets_empty_chr_list(
+    mock_find_fa,
+    mock_find_haplotigs,
+    mock_find_csv,
+    mock_glob,
+    mock_run,
+    mock_bsub,
+    hap2_level,
+    mock_ctx,
+    tmp_path,
+):
+    """No hap2 map (or --hap2-level scaffold) → hap2 chr list emptied, so pp publishes scaffold."""
+    mock_ctx.workdir = tmp_path
+    mock_ctx.tol_id = "sDipInt39"
+    mock_ctx.release_version = 1
+    mock_ctx.hap1_prefix = "hap1"
+    mock_ctx.hap2_prefix = "hap2"
+    mock_ctx.assembly_curated_dir = tmp_path / "curated"
+    mock_ctx.curated_pretext_maps_nfs = Path("/nfs/curated_pretext_maps")
+
+    mock_find_fa.side_effect = FileNotFoundError("no fa")
+    mock_find_haplotigs.side_effect = FileNotFoundError("no haplotigs")
+    mock_find_csv.side_effect = lambda ctx, hap: tmp_path / f"{hap}.chromosome.list.csv"
+    mock_glob.side_effect = [[f"{mock_ctx.tol_id}.hap1.1.curated.fa"], [], [], []]
+    mock_run.return_value = ""
+
+    finalize_for_qc(mock_ctx, hap1_map=Path("/hic/hap1_normal.pretext"), hap2_level=hap2_level)
+
+    calls = [str(c) for c in mock_run.call_args_list]
+    hap2_chromosome = hap2_level == "chromosome"
+    hap2_dest = "sDipInt39.hap2.1.primary.chromosome.list.csv"
+    assert any(f"cp {tmp_path}/hap1.chromosome.list.csv" in c for c in calls)
+    assert any(f"cp {tmp_path}/hap2.chromosome.list.csv" in c for c in calls) == hap2_chromosome
+    assert any("truncate -s 0" in c and hap2_dest in c for c in calls) != hap2_chromosome
+
+
+@pytest.mark.parametrize("mapped", [True, False])
+def test_hap2_level_prompt_needs_explicit_yes(mapped, mock_ctx, monkeypatch):
+    """The map-based guess is used only on y; N (the default) stops finalize-qc."""
+    import click
+
+    from grit.steps.post_curation import finalize_qc
+
+    monkeypatch.setattr(finalize_qc.sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(finalize_qc, "_hap2_has_map", lambda ctx: mapped)
+    mock_ctx.print_only = mock_ctx.dry_run = False
+
+    monkeypatch.setattr(finalize_qc.click, "confirm", lambda msg: True)
+    assert finalize_qc._hap2_chromosome_level(mock_ctx, None, None) is mapped
+
+    monkeypatch.setattr(finalize_qc.click, "confirm", lambda msg: False)
+    with pytest.raises(click.UsageError):
+        finalize_qc._hap2_chromosome_level(mock_ctx, None, None)
+
+
 @patch("grit.steps.post_curation.qv.run_qv")
 @patch("grit.steps.post_curation.finalize_qc._run")
 @patch("grit.steps.post_curation.finalize_qc.glob.glob")
