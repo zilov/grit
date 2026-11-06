@@ -365,3 +365,15 @@ def test_from_ticket_empty_jira_release_version_falls_back(caplog):
     assert ctx.release_version == 1
     assert ctx.workdir.name == "sDipInt39"
     assert "release_version" in caplog.text
+
+
+@pytest.mark.parametrize("raw, expected", [({"value": "1"}, 1), (2.0, 2), (None, None)])
+def test_from_ticket_reads_chromosome_list_files(raw, expected):
+    class _WithChrLists(_FakeJiraIssue):
+        def __init__(self, ticket_id):
+            super().__init__(ticket_id)
+            self.issue_json = {"fields": {"customfield_13210": raw}}
+
+    module = SimpleNamespace(GritJiraIssue=_WithChrLists)
+    ctx = CurationContext.from_ticket("RC-0002", TEST_USER_CONFIG, gritjiraissue_module=module)
+    assert ctx.chromosome_list_files == expected

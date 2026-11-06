@@ -360,6 +360,10 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   `--hap2-level`); non-tty, print-only and dry-run take the guess with a warning. A
   scaffold-level hap2 gets an emptied (`truncate -s 0`) chr list — the file must
   still exist for pp.
+  `grit pp` cross-checks: `ctx.chromosome_list_files` (Jira `customfield_13210`,
+  read in `from_ticket`; None under `--yaml`) must agree with the hap2 curated chr
+  list — 1 + non-empty or 2 + empty → `UsageError` printing the fix (`truncate -s 0`,
+  or `finalize-qc --hap2-level chromosome`).
 - **`require_workdir(ctx)`** — guards steps that need an existing workdir; skipped in print_only mode
 - **`log.*` not `print()`** — use Python `logging`; `RichHandler` formats output
 - **Minimal docstrings** — one line stating what the function returns/does, only

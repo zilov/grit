@@ -2064,6 +2064,38 @@ def test_cli_haplotig_files_dry_run_chains_after_pretext_to_asm_dry_run(tmp_path
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize(
+    "jira_count, hap2_content, refused",
+    [
+        (1, "SUPER_1,1,yes\n", "truncate -s 0"),
+        (1, "", None),
+        (2, "SUPER_1,1,yes\n", None),
+        (2, "", "--hap2-level chromosome"),
+    ],
+)
+def test_pp_refuses_hap2_chr_list_disagreeing_with_jira(
+    jira_count, hap2_content, refused, mock_ctx, tmp_path
+):
+    """Jira count disagreeing with hap2's list (1 + non-empty, 2 + empty) → refuse with the fix."""
+    import click
+
+    from grit.steps.post_curation.post_processing import _refuse_hap2_chr_list_against_jira
+
+    mock_ctx.assembly_curated_dir = tmp_path
+    mock_ctx.chromosome_list_files = jira_count
+    hap2 = tmp_path / (
+        f"{mock_ctx.tol_id}.{mock_ctx.hap2_prefix}.{mock_ctx.release_version}"
+        ".primary.chromosome.list.csv"
+    )
+    hap2.write_text(hap2_content)
+
+    if refused:
+        with pytest.raises(click.UsageError, match=refused):
+            _refuse_hap2_chr_list_against_jira(mock_ctx)
+    else:
+        _refuse_hap2_chr_list_against_jira(mock_ctx)
+
+
 @patch("grit.core.registry.RegistryManager.mark_done")
 @patch("grit.steps.post_curation.post_processing.subprocess.run")
 def test_run_post_processing_dry_run_skips_subprocess_and_mark_done(
