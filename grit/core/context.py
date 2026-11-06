@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -101,6 +101,7 @@ class CurationContext:
     dry_run: bool = False  # if True, isolate workdir/registry under dry_run_root()
     untracked: bool = False  # if True, tracker.start() marks runs as non-canonical
     bsub_ram: int | None = None  # if set, overrides a step's default LSF memory limit (MB)
+    chromosome_list_files: int | None = None  # Jira "Chromosome list files"; None if unset/no Jira
 
     # --- raw data ---
     yaml_data: dict[str, Any] = field(default_factory=dict)
@@ -255,6 +256,7 @@ class CurationContext:
         if yaml_override is not None:
             yaml_data = yaml_override
             teloseq_raw = ""
+            chr_lists = None
         else:
             if gritjiraissue_module is None:
                 sys.path.insert(0, os.path.expanduser(cfg.gritjiraissue_path))
@@ -271,13 +273,14 @@ class CurationContext:
                     yaml_data.get("release_version", 1),
                 )
             teloseq_raw = jira_issue.issue_json["fields"].get("customfield_11650") or ""
+            chr_lists = _jira_int(jira_issue.issue_json["fields"].get("customfield_13210"))
 
             raw_yaml_path = jira_issue.get_custom_field("yaml")
             yaml_path = Path(raw_yaml_path) if raw_yaml_path else None
 
         teloseq = f"--teloseq {teloseq_raw}" if teloseq_raw else ""
 
-        return cls.from_yaml(
+        ctx = cls.from_yaml(
             ticket_id,
             yaml_data,
             user_config,
@@ -288,6 +291,17 @@ class CurationContext:
             bsub_ram=bsub_ram,
             yaml_path=yaml_path,
         )
+        return replace(ctx, chromosome_list_files=chr_lists)
+
+
+def _jira_int(raw: Any) -> int | None:
+    """An int from a Jira number or single-select (``{"value": "1"}``) field, else None."""
+    if isinstance(raw, dict):
+        raw = raw.get("value")
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        return None
 
 
 def _detect_assembly_type(

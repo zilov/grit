@@ -9,12 +9,38 @@ import rich_click as click
 
 from grit.core.base_command import GritCommand
 from grit.core.context import CurationContext
-from grit.utils.helpers import require_workdir
+from grit.utils.helpers import is_single_hap, require_workdir
 from grit.utils.output import console, print_done, print_step_header
 
 log = logging.getLogger(__name__)
 
 _POST_PROC_CONF = "/software/grit/projects/contamination_screen/conf/contamination_screen.conf"
+
+
+def _refuse_hap2_chr_list_against_jira(ctx: CurationContext) -> None:
+    """Raise when Jira's chromosome list count disagrees with hap2's curated list."""
+    if is_single_hap(ctx) or ctx.chromosome_list_files not in (1, 2):
+        return
+    hap2 = ctx.assembly_curated_dir / (
+        f"{ctx.tol_id}.{ctx.hap2_prefix}.{ctx.release_version}.primary.chromosome.list.csv"
+    )
+    if not hap2.exists():
+        return
+    if ctx.chromosome_list_files == 2 and hap2.stat().st_size == 0:
+        raise click.UsageError(
+            f"Jira 'Chromosome list files' is 2, but {hap2.name} is empty, so hap2 would be "
+            "published at scaffold level. To publish hap2 at chromosome level, refill it:\n"
+            f"  grit finalize-qc -t {ctx.ticket_id} --hap2-level chromosome\n"
+            "or set 'Chromosome list files' to 1 if hap2 really is scaffold level."
+        )
+    if ctx.chromosome_list_files == 1 and hap2.stat().st_size > 0:
+        raise click.UsageError(
+            f"Jira 'Chromosome list files' is 1, but {hap2.name} is not empty, so hap2 would be "
+            "published at chromosome level. To publish hap2 as scaffold, empty it:\n"
+            f"  truncate -s 0 {hap2}\n"
+            "or set 'Chromosome list files' to 2 if hap2 really is chromosome level."
+        )
+
 
 # ---------------------------------------------------------------------------
 # Public step functions
@@ -34,6 +60,7 @@ def run_post_processing(ctx: CurationContext) -> None:
     print_step_header(ctx.ticket_id, ctx.tol_id, "Post-processing")
 
     require_workdir(ctx)
+    _refuse_hap2_chr_list_against_jira(ctx)
 
     run_dir = (
         ctx.tracker.start("post_processing", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
@@ -88,6 +115,8 @@ def post_processing_cmd(ctx):
     curation_ctx = build_context(ctx.obj)
     try:
         run_post_processing(curation_ctx)
+    except click.UsageError:
+        raise
     except Exception:
         log.exception("post-processing failed")
         raise SystemExit(1)
@@ -102,6 +131,8 @@ def pp_cmd(ctx):
     curation_ctx = build_context(ctx.obj)
     try:
         run_post_processing(curation_ctx)
+    except click.UsageError:
+        raise
     except Exception:
         log.exception("post-processing failed")
         raise SystemExit(1)

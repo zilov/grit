@@ -203,3 +203,8 @@ Small fixes and improvements — close in one batch when still relevant.
   never ran. `E:` only appears in newer BUSCO versions, so print the line as-is
   rather than parse its fields. Done: `busco_summary`/`busco_lineage` on
   `CurationResults`.
+
+- [x] **`finalize-qc`: submit `busco-curated` before QV/completeness** — QV
+  blocks on `kmer_completeness.bash`'s `bsub -K`, so BUSCO only got submitted
+  after QV finished (and never, if QV raised). BUSCO is fire-and-forget, so
+  submit it first and let both run in parallel. Done: both finalize-qc paths.

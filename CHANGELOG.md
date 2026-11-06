@@ -6,6 +6,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-06
+
+### Added
+
+- `finalize-qc --hap2-level chromosome|scaffold`. Without it, finalize-qc guesses hap2's level from whether hap2 has a Hi-C map and the curator must confirm with an explicit `y` (`[y/N]`; N stops so it can be rerun with the flag).
+- `grit pp` checks the Jira "Chromosome list files" field against the hap2 curated chromosome list and refuses to run when they disagree (1 with a non-empty hap2 list, or 2 with an empty one), printing the command that fixes it.
+
+### Fixed
+
+- A hap1/hap2 ticket where only hap1 was curated no longer publishes hap2 at chromosome level: finalize-qc copied the hap2 chromosome list pretext-to-asm always writes, and post-processing publishes any non-empty list as chromosome level. A scaffold-level hap2 now gets an empty list.
+- `finalize-qc` submits `busco-curated` before the blocking QV run instead of after it.
+
 ## [0.6.0] - 2026-10-27
 
 ### Added

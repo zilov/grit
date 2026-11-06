@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import glob
 import logging
+import sys
 from pathlib import Path
 
 import rich_click as click
@@ -122,6 +123,31 @@ def _copy_map(
     _run(f"cp {src} {nfs_dest / dest_name}", ctx.print_only)
 
 
+def _hap2_has_map(ctx: CurationContext) -> bool:
+    """True when a hap2 Hi-C remapping run dir with output exists."""
+    hap2_hic_dir = find_latest_dir(ctx, "hic_remapping_hap2")
+    return hap2_hic_dir != ctx.workdir and hap2_hic_dir.exists() and any(hap2_hic_dir.iterdir())
+
+
+def _hap2_chromosome_level(
+    ctx: CurationContext, hap2_level: str | None, hap2_map: Path | None
+) -> bool:
+    """Whether hap2 goes out at chromosome level: --hap2-level, else the map guess confirmed (y)."""
+    if hap2_level:
+        return hap2_level == "chromosome"
+    mapped = hap2_map is not None or _hap2_has_map(ctx)
+    found = "found" if mapped else "not found"
+    level = "chromosome" if mapped else "scaffold"
+    if sys.stdin.isatty() and not ctx.print_only and not ctx.dry_run:
+        if not click.confirm(f"hap2 Hi-C map {found} — publish hap2 as {level} assembly?"):
+            raise click.UsageError("hap2 level not confirmed; rerun with --hap2-level")
+        return mapped
+    log.warning(
+        "hap2 published at %s level (hap2 Hi-C map %s); override with --hap2-level", level, found
+    )
+    return mapped
+
+
 def _run_busco_if_missing(ctx: CurationContext, lineage: str | None = None) -> None:
     """Submit busco-curated unless a finished or in-flight run exists; no lineage only warns."""
     from grit.steps.optional.busco_curated import run_busco_curated
@@ -154,6 +180,7 @@ def finalize_for_qc(
     hap2_map: Path | None = None,
     curated_dir: Path | None = None,
     lineage: str | None = None,
+    hap2_level: str | None = None,
 ) -> None:
     """
     Copies all curated outputs to their final destinations and prompts
@@ -188,6 +215,8 @@ def finalize_for_qc(
             return f"{ctx.tol_id}.{ctx.release_version}.{suffix}"
         return f"{ctx.tol_id}.{hap_prefix}.{ctx.release_version}.{suffix}"
 
+    hap2_chr = not is_single_hap(ctx) and _hap2_chromosome_level(ctx, hap2_level, hap2_map)
+
     if ctx.dry_run:
         run_dir = (
             ctx.tracker.start("finalize_qc", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
@@ -209,14 +238,15 @@ def finalize_for_qc(
                 else "additional_haplotigs.curated.fa"
             )
             (dest_dir / _dest_name(hap_prefix, haplotig_suffix)).write_text("fake\n")
-            (dest_dir / _dest_name(hap_prefix, "primary.chromosome.list.csv")).write_text("fake\n")
+            chr_list = "fake\n" if hap_prefix == ctx.hap1_prefix or hap2_chr else ""
+            (dest_dir / _dest_name(hap_prefix, "primary.chromosome.list.csv")).write_text(chr_list)
 
+        _run_busco_if_missing(ctx, lineage)
         qv_dir = dest_dir / "merquryk"
         if not qv_dir.exists():
             from grit.steps.post_curation.qv import run_qv
 
             run_qv(ctx)
-        _run_busco_if_missing(ctx, lineage)
 
         if ctx.tracker and run_dir:
             ctx.tracker.finish(
@@ -294,9 +324,13 @@ def finalize_for_qc(
         else:
             _run(f"touch {dest}", ctx.print_only)
 
-    # 2c. chromosome lists
+    # 2c. chromosome lists — post-processing publishes a haplotype with an empty one as scaffold
     chr_list_overrides = {ctx.hap1_prefix: hap1_chr_list, ctx.hap2_prefix: hap2_chr_list}
     for hap_prefix in haps_to_process:
+        dest = dest_dir / _dest_name(hap_prefix, "primary.chromosome.list.csv")
+        if hap_prefix == ctx.hap2_prefix and not hap2_chr:
+            _run(f"truncate -s 0 {dest}", ctx.print_only)
+            continue
         src = chr_list_overrides[hap_prefix]
         if src is None:
             try:
@@ -304,10 +338,7 @@ def finalize_for_qc(
             except FileNotFoundError as e:
                 log.warning(str(e))
                 continue
-        _run(
-            f"cp {src} {dest_dir / _dest_name(hap_prefix, 'primary.chromosome.list.csv')}",
-            ctx.print_only,
-        )
+        _run(f"cp {src} {dest}", ctx.print_only)
 
     # 3. copy remapped pretext maps to NFS
     tol_id = ctx.tol_id
@@ -316,22 +347,16 @@ def finalize_for_qc(
     _copy_map(ctx, "hic_remapping", ctx.hap1_prefix, nfs_dest, hap1_map)
 
     # hap2 map: only for dual-hap assemblies
-    hap2_hic_dir = find_latest_dir(ctx, "hic_remapping_hap2")
-    hap2_hic_has_output = (
-        (hap2_hic_dir != ctx.workdir and hap2_hic_dir.exists() and any(hap2_hic_dir.iterdir()))
-        if not ctx.print_only
-        else False
-    )
-    if hap2_map or hap2_hic_has_output:
+    if hap2_map or (not ctx.print_only and _hap2_has_map(ctx)):
         _copy_map(ctx, "hic_remapping_hap2", ctx.hap2_prefix, nfs_dest, hap2_map)
 
-    # 4. QV if merquryk not yet present, BUSCO if never run
+    # 4. BUSCO if never run (async bsub, so first), then QV if merquryk not yet present (blocks)
     from grit.steps.post_curation.qv import run_qv
 
     try:
+        _run_busco_if_missing(ctx, lineage)
         if not (dest_dir / "merquryk").exists():
             run_qv(ctx)
-        _run_busco_if_missing(ctx, lineage)
     except Exception:
         if ctx.tracker and run_dir:
             ctx.tracker.finish("finalize_qc", run_dir, "failed", untracked=ctx.untracked)
@@ -420,6 +445,13 @@ def _print_submission_reminder(ctx: CurationContext, dest_dir: Path) -> None:
     help="BUSCO lineage for busco-curated (e.g. insecta_odb10). "
     "Default: busco_lineage from the ticket YAML.",
 )
+@click.option(
+    "--hap2-level",
+    type=click.Choice(["chromosome", "scaffold"]),
+    default=None,
+    help="Publish hap2 at this level; scaffold writes an empty hap2 chromosome list. "
+    "Default: asked to confirm chromosome if hap2 has a Hi-C map, else scaffold.",
+)
 @click.pass_context
 def finalize_qc_cmd(
     ctx,
@@ -433,6 +465,7 @@ def finalize_qc_cmd(
     hap2_map,
     curated_dir,
     lineage,
+    hap2_level,
 ):
     """Finalize curation and prepare for QC."""
     from grit.core.click_cli import build_context
@@ -452,7 +485,10 @@ def finalize_qc_cmd(
             hap2_map=Path(hap2_map) if hap2_map else None,
             curated_dir=Path(curated_dir) if curated_dir else None,
             lineage=lineage,
+            hap2_level=hap2_level,
         )
+    except click.UsageError:
+        raise
     except Exception:
         log.exception("finalize-qc failed")
         raise SystemExit(1)
