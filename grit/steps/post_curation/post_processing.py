@@ -112,7 +112,7 @@ def post_processing_cmd(ctx):
     """Run post-processing pipeline (contamination screen + submission prep)."""
     from grit.core.click_cli import build_context
 
-    curation_ctx = build_context(ctx.obj)
+    curation_ctx = build_context(ctx.obj, refresh_jira=True)
     try:
         run_post_processing(curation_ctx)
     except click.UsageError:
@@ -128,7 +128,7 @@ def pp_cmd(ctx):
     """Alias for post-processing."""
     from grit.core.click_cli import build_context
 
-    curation_ctx = build_context(ctx.obj)
+    curation_ctx = build_context(ctx.obj, refresh_jira=True)
     try:
         run_post_processing(curation_ctx)
     except click.UsageError:

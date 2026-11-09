@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import click
+import yaml
 
 log = logging.getLogger(__name__)
 
@@ -245,18 +246,33 @@ class CurationContext:
         dry_run: bool = False,
         untracked: bool = False,
         bsub_ram: int | None = None,
+        refresh_jira: bool = False,
     ) -> "CurationContext":
         """
-        Fetch YAML from Jira (or use yaml_override for tests) and build context.
+        Build context from the registry's cached Jira fields, else Jira (or yaml_override).
         """
         cfg = UserConfig.from_dict(user_config)
 
+        from grit.core.registry import RegistryManager
+
         yaml_path: Path | None = None
+        registry = RegistryManager.for_run(dry_run) if yaml_override is None else None
+        cached = None
+        if registry and not refresh_jira:
+            cached = (registry.find_ticket(ticket_id) or {}).get("jira")
 
         if yaml_override is not None:
             yaml_data = yaml_override
             teloseq_raw = ""
             chr_lists = None
+        elif cached and Path(cached["yaml_path"]).is_file():
+            log.debug("%s: using Jira fields cached in the registry", ticket_id)
+            yaml_path = Path(cached["yaml_path"])
+            yaml_data = yaml.safe_load(yaml_path.read_text())
+            if cached["release_version"] is not None:
+                yaml_data = {**yaml_data, "release_version": cached["release_version"]}
+            teloseq_raw = cached["teloseq"]
+            chr_lists = None  # edited in Jira after finalize-qc; pp refreshes
         else:
             if gritjiraissue_module is None:
                 sys.path.insert(0, os.path.expanduser(cfg.gritjiraissue_path))
@@ -277,6 +293,15 @@ class CurationContext:
 
             raw_yaml_path = jira_issue.get_custom_field("yaml")
             yaml_path = Path(raw_yaml_path) if raw_yaml_path else None
+            if yaml_path:  # a YAML kept only as an attachment can't be cached
+                registry.cache_jira(
+                    ticket_id,
+                    {
+                        "yaml_path": str(yaml_path),
+                        "release_version": yaml_data.get("release_version"),
+                        "teloseq": teloseq_raw,
+                    },
+                )
 
         teloseq = f"--teloseq {teloseq_raw}" if teloseq_raw else ""
 

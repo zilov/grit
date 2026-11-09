@@ -112,7 +112,7 @@ def load_yaml_override(state: GlobalState) -> dict | None:
         return yaml.safe_load(f)
 
 
-def build_context(state: GlobalState) -> CurationContext:
+def build_context(state: GlobalState, *, refresh_jira: bool = False) -> CurationContext:
     user_config = load_user_config(Path(state.config_path))
     yaml_override = load_yaml_override(state)
     return CurationContext.from_ticket(
@@ -123,6 +123,7 @@ def build_context(state: GlobalState) -> CurationContext:
         dry_run=state.dry_run,
         untracked=getattr(state, "untracked", False),
         bsub_ram=getattr(state, "bsub_ram", None),
+        refresh_jira=refresh_jira,
     )
 
 

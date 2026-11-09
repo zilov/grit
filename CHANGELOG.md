@@ -11,6 +11,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 
 - `hic-remapping` runs curationpretext with nextflow `cleanup = true` (`grit/config/steps/hic_remapping_nf.config`), so the pipeline's intermediate `work/` files are deleted once it succeeds. `--keep-work` keeps them.
+- Steps no longer call Jira on every run: the ticket's YAML path, release version and telomere motif are stored in the registry on the first Jira read and reused. `setup` and `pp` always read Jira; `grit --print-only setup -t <ticket>` picks up a Jira edit without touching anything else.
 
 ## [0.6.1] - 2026-11-06
 

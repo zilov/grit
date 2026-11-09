@@ -144,6 +144,15 @@ class RegistryManager:
 
         self._save(tickets)
 
+    def cache_jira(self, ticket_id: str, jira: dict) -> None:
+        """Store the Jira fields grit reads on an existing ticket; no-op if absent or unchanged."""
+        tickets = self._load()
+        entry = next((t for t in tickets if t["ticket_id"] == ticket_id), None)
+        if entry is None or entry.get("jira") == jira:
+            return
+        entry["jira"] = jira
+        self._save(tickets)
+
     def update_status(self, ticket_id: str, status: str) -> None:
         """Update the status of any ticket."""
         tickets = self._load()

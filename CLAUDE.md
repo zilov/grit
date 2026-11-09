@@ -20,6 +20,16 @@ ctx = CurationContext.from_yaml("RC-1234", yaml_data, user_config)
 
 **Workdir derivation:** computed from the draft assembly path by replacing `assembly/draft` → `working`, appending `/<username>_curation/<tol_id>/` — or `<tol_id>.<v>` for release version v ≥ 2, so a re-release gets its own workdir and registry entry. `from_ticket` takes the version from the Jira `release_version` custom field (`get_release_version()`), falling back to the YAML value / 1 with a warning when it is empty. No separate `curations_dir` setting.
 
+**Jira is read once per ticket, not per command:** after a Jira fetch, `from_ticket` stores the
+YAML path, `release_version` and teloseq in the ticket's registry entry (`jira` key,
+`RegistryManager.cache_jira()`, only for a ticket already registered and a YAML that is a file, not
+an attachment); later commands read the YAML file from that path and never call Jira. `setup` and
+`pp`/`post-processing` pass `build_context(..., refresh_jira=True)` and always ask Jira — `pp` because
+the "Chromosome list files" field (`chromosome_list_files`) is filled in by hand after finalize-qc,
+so it is never cached (None on a cached context). `grit --print-only setup -t X` refreshes the cache
+(the cache write ignores `print_only`) without a plain `setup`'s side effect of resetting the
+ticket's status to `in_curation`.
+
 ### Step structure
 
 ```
