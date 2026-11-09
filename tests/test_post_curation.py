@@ -876,6 +876,45 @@ def test_run_hic_remapping_fresh_fasta_ignores_an_up_to_date_map(
 
 @patch("grit.utils.helpers._run")
 @patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
+def test_run_hic_remapping_after_untrack_skips_until_forced(
+    mock_find_fa, mock_run, mock_ctx, tmp_path
+):
+    """Untracking the newest remap leaves the older one canonical; only --force remaps."""
+    import os
+
+    from grit.utils.helpers import find_canonical_map
+
+    ctx = _hic_ctx_with_tracker(mock_ctx, tmp_path)
+    older = _seed_hic_run(ctx, tmp_path, "success")
+    newer = older.parent / "2026-09-24T11_00_00_hap1"
+    older.rename(newer)
+    ctx.tracker._registry.append_step(
+        tmp_path, {**ctx.tracker.history("hic_remapping")[-1], "run_dir": str(newer)}
+    )
+    older = _seed_hic_run(ctx, tmp_path, "success")
+    ctx.tracker.untrack("hic_remapping", newer)
+    fa = tmp_path / "old.fa"
+    fa.write_text(">a\nA\n")
+    os.utime(fa, (1, 1))
+    mock_find_fa.return_value = fa
+    mock_run.return_value = "Job <5> is submitted to queue <oversubscribed>."
+
+    assert find_canonical_map(ctx, "hap1").is_relative_to(older)
+    run_hic_remapping(ctx)
+    mock_run.assert_not_called()
+
+    from grit.core.click_cli import cli
+
+    config = Path(__file__).parent / "fixtures" / "test_config.yaml"
+    with patch("grit.core.click_cli.build_context", return_value=ctx):
+        args = ["--config", str(config), "hic-remapping", "-t", ctx.ticket_id, "--force"]
+        result = CliRunner().invoke(cli, args)
+    assert result.exit_code == 0, result.output
+    assert mock_run.call_count == 1
+
+
+@patch("grit.utils.helpers._run")
+@patch("grit.steps.post_curation.hic_remapping.find_canonical_fa")
 def test_run_hic_remapping_custom_assembly_ignores_an_up_to_date_map(
     mock_find_fa, mock_run, mock_ctx, tmp_path
 ):
@@ -1035,6 +1074,10 @@ def test_run_hic_remapping_print_only_passes_full_command(
     assert print_only is True
     assert cmd.startswith("bsub -Ep '")
     assert "curationpretext.sh" in cmd and "--split_telomere true" in cmd
+    assert "/config/steps/hic_remapping_nf.config" in cmd
+
+    run_hic_remapping(mock_ctx, keep_work=True)
+    assert "hic_remapping_nf.config" not in mock_run.call_args[0][0]
 
 
 @patch("grit.utils.helpers._run")

@@ -20,6 +20,16 @@ ctx = CurationContext.from_yaml("RC-1234", yaml_data, user_config)
 
 **Workdir derivation:** computed from the draft assembly path by replacing `assembly/draft` → `working`, appending `/<username>_curation/<tol_id>/` — or `<tol_id>.<v>` for release version v ≥ 2, so a re-release gets its own workdir and registry entry. `from_ticket` takes the version from the Jira `release_version` custom field (`get_release_version()`), falling back to the YAML value / 1 with a warning when it is empty. No separate `curations_dir` setting.
 
+**Jira is read once per ticket, not per command:** after a Jira fetch, `from_ticket` stores the
+YAML path, `release_version` and teloseq in the ticket's registry entry (`jira` key,
+`RegistryManager.cache_jira()`, only for a ticket already registered and a YAML that is a file, not
+an attachment); later commands read the YAML file from that path and never call Jira. `setup` and
+`pp`/`post-processing` pass `build_context(..., refresh_jira=True)` and always ask Jira — `pp` because
+the "Chromosome list files" field (`chromosome_list_files`) is filled in by hand after finalize-qc,
+so it is never cached (None on a cached context). `grit --print-only setup -t X` refreshes the cache
+(the cache write ignores `print_only`) without a plain `setup`'s side effect of resetting the
+ticket's status to `in_curation`.
+
 ### Step structure
 
 ```
@@ -350,7 +360,9 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   they have just rebuilt the FASTA, and under `--print-only` that FASTA doesn't
   exist yet, so the check would wrongly skip the remap.
   `--assembly` drops it for hap1 too: the check compares against the canonical
-  FASTA, not the file passed.
+  FASTA, not the file passed. `hic-remapping --force` drops it too (same
+  `fresh_fasta` path) — the only way to remap when, e.g., `grit untrack` of the
+  newest run leaves an older map that is still newer than the FASTA.
 - **hap2 assembly level is decided by `finalize-qc`**, not Jira: `post_process_rc`
   publishes a haplotype at chromosome level iff its curated `*.chromosome.list.csv`
   is non-empty, and the Jira "Chromosome list files" field is filled by hand only

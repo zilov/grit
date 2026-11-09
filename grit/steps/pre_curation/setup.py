@@ -410,7 +410,7 @@ def setup_cmd(ctx):
     from grit.core.click_cli import build_context
 
     state = ctx.obj
-    curation_ctx = build_context(state)
+    curation_ctx = build_context(state, refresh_jira=True)
     try:
         run_setup(curation_ctx)
     except Exception:
