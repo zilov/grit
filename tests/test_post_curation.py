@@ -1035,6 +1035,10 @@ def test_run_hic_remapping_print_only_passes_full_command(
     assert print_only is True
     assert cmd.startswith("bsub -Ep '")
     assert "curationpretext.sh" in cmd and "--split_telomere true" in cmd
+    assert "/config/steps/hic_remapping_nf.config" in cmd
+
+    run_hic_remapping(mock_ctx, keep_work=True)
+    assert "hic_remapping_nf.config" not in mock_run.call_args[0][0]
 
 
 @patch("grit.utils.helpers._run")

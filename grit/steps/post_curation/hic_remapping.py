@@ -26,6 +26,8 @@ log = logging.getLogger(__name__)
 # Same head-job resources curationpretext.sh requests; nextflow submits the real work itself.
 _HEAD_JOB_MEM_MB = 1200
 _CURATIONPRETEXT_SCRIPT = Path(__file__).parent.parent.parent / "scripts" / "curationpretext.sh"
+# nextflow `cleanup = true`: deletes work/ intermediates once the pipeline succeeds.
+_CLEAN_CONFIG = Path(__file__).parent.parent.parent / "config" / "steps" / "hic_remapping_nf.config"
 
 _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("hap1_pretext", "pretext_maps_processed/{tol_id}*hr.pretext", []),
@@ -103,6 +105,7 @@ def _submit_hic_remapping(
     *,
     assembly: Path | None = None,
     check_up_to_date: bool = True,
+    keep_work: bool = False,
 ) -> None:
     """Submit one curationpretext run for *hap_prefix*, tracked under *step_name*."""
 
@@ -136,6 +139,8 @@ def _submit_hic_remapping(
         pipeline_args += f" {ctx.teloseq}"
     if ctx.email:
         pipeline_args += f" -N {ctx.email}"
+    if not keep_work:
+        pipeline_args += f" -c {_CLEAN_CONFIG}"
     pipeline_args += " -resume"
 
     inner_cmd = (
@@ -203,6 +208,7 @@ def run_hic_remapping(
     ont_dir: Path | None = None,
     assembly: Path | None = None,
     fresh_fasta: bool = False,
+    keep_work: bool = False,
 ) -> None:
     """
     Runs the HiC remapping pipeline (sanger-tol/curationpretext).
@@ -215,6 +221,7 @@ def run_hic_remapping(
     ``hic_dir``, ``hifi_dir``, ``ont_dir`` override the values from the ticket
     YAML. If ``ont_dir`` is supplied, ``--read_type ont`` is used automatically.
     ``fresh_fasta=True`` (a chain that just rebuilt the FASTA) skips the up-to-date check.
+    ``keep_work=True`` keeps curationpretext's intermediate ``work/`` files.
     """
     check = not fresh_fasta
     if run_hap2:
@@ -262,11 +269,14 @@ def run_hic_remapping(
             assembly=assembly,
             # the check compares against the canonical FASTA, not a custom --assembly
             check_up_to_date=check and assembly is None,
+            keep_work=keep_work,
         )
 
     if run_hap2:
         print_step_header(ctx.ticket_id, ctx.tol_id, f"HiC remapping ({ctx.hap2_prefix})")
-        _submit_hic_remapping(ctx, ctx.hap2_prefix, "hic_remapping_hap2", check_up_to_date=check)
+        _submit_hic_remapping(
+            ctx, ctx.hap2_prefix, "hic_remapping_hap2", check_up_to_date=check, keep_work=keep_work
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -313,8 +323,15 @@ def run_hic_remapping(
         "even if the hap1 map is up to date."
     ),
 )
+@click.option(
+    "--keep-work",
+    "keep_work",
+    is_flag=True,
+    default=False,
+    help="Keep curationpretext's intermediate files (work/); by default they are cleaned up.",
+)
 @click.pass_context
-def hic_remapping_cmd(ctx, run_hap2, hic_dir, hifi_dir, ont_dir, assembly):
+def hic_remapping_cmd(ctx, run_hap2, hic_dir, hifi_dir, ont_dir, assembly, keep_work):
     """Submit HiC remapping pipeline."""
     from grit.core.click_cli import build_context
 
@@ -328,6 +345,7 @@ def hic_remapping_cmd(ctx, run_hap2, hic_dir, hifi_dir, ont_dir, assembly):
             hifi_dir=Path(hifi_dir) if hifi_dir else None,
             ont_dir=Path(ont_dir) if ont_dir else None,
             assembly=Path(assembly) if assembly else None,
+            keep_work=keep_work,
         )
     except Exception:
         log.exception("hic-remapping failed")
