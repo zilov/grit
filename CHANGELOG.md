@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-09
+
+### Changed
+
+- `hic-remapping` runs curationpretext with nextflow `cleanup = true` (`grit/config/steps/hic_remapping_nf.config`), so the pipeline's intermediate `work/` files are deleted once it succeeds. `--keep-work` keeps them.
+
 ## [0.6.1] - 2026-11-06
 
 ### Added
