@@ -360,7 +360,9 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   they have just rebuilt the FASTA, and under `--print-only` that FASTA doesn't
   exist yet, so the check would wrongly skip the remap.
   `--assembly` drops it for hap1 too: the check compares against the canonical
-  FASTA, not the file passed.
+  FASTA, not the file passed. `hic-remapping --force` drops it too (same
+  `fresh_fasta` path) — the only way to remap when, e.g., `grit untrack` of the
+  newest run leaves an older map that is still newer than the FASTA.
 - **hap2 assembly level is decided by `finalize-qc`**, not Jira: `post_process_rc`
   publishes a haplotype at chromosome level iff its curated `*.chromosome.list.csv`
   is non-empty, and the Jira "Chromosome list files" field is filled by hand only

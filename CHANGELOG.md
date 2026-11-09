@@ -8,6 +8,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [0.6.2] - 2026-11-09
 
+### Added
+
+- `hic-remapping --force` remaps even when the Hi-C map is newer than its canonical FASTA (e.g. after `grit untrack` of the newest run left an older map that still counts as up to date); the skip message now mentions it.
+
 ### Changed
 
 - `hic-remapping` runs curationpretext with nextflow `cleanup = true` (`grit/config/steps/hic_remapping_nf.config`), so the pipeline's intermediate `work/` files are deleted once it succeeds. `--keep-work` keeps them.

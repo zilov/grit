@@ -94,6 +94,7 @@ def _skip_hap(
     if pretext:
         log.info("HiC map for %s is newer than its canonical FASTA — skipping", hap_prefix)
         print_done(f"{hap_prefix} Hi-C map is up to date with the canonical FASTA → {pretext}")
+        print_tip("Pass [bold]--force[/bold] to remap anyway.")
         return True
     return False
 
@@ -330,8 +331,14 @@ def run_hic_remapping(
     default=False,
     help="Keep curationpretext's intermediate files (work/); by default they are cleaned up.",
 )
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Remap even when the Hi-C map is newer than its canonical FASTA.",
+)
 @click.pass_context
-def hic_remapping_cmd(ctx, run_hap2, hic_dir, hifi_dir, ont_dir, assembly, keep_work):
+def hic_remapping_cmd(ctx, run_hap2, hic_dir, hifi_dir, ont_dir, assembly, keep_work, force):
     """Submit HiC remapping pipeline."""
     from grit.core.click_cli import build_context
 
@@ -346,6 +353,7 @@ def hic_remapping_cmd(ctx, run_hap2, hic_dir, hifi_dir, ont_dir, assembly, keep_
             ont_dir=Path(ont_dir) if ont_dir else None,
             assembly=Path(assembly) if assembly else None,
             keep_work=keep_work,
+            fresh_fasta=force,
         )
     except Exception:
         log.exception("hic-remapping failed")

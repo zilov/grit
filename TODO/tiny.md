@@ -208,3 +208,13 @@ Small fixes and improvements — close in one batch when still relevant.
   blocks on `kmer_completeness.bash`'s `bsub -K`, so BUSCO only got submitted
   after QV finished (and never, if QV raised). BUSCO is fire-and-forget, so
   submit it first and let both run in parallel. Done: both finalize-qc paths.
+
+- [x] **`hic-remapping` still skips after `grit untrack` of the latest run** — RC-3290
+  (gfRusGrai3): `grit untrack -r a2c4b669` left the older run f2aea6ab
+  (`2026-09-24T15_06_12_primary`) as the latest tracked one, and its map is still newer
+  than the canonical FASTA (`pretext_to_asm/2026-09-24T15_00_51`), so `hic-remapping`
+  printed "up to date — skipping". Only `rm -r` of that run dir made it submit. A curator
+  who wants a fresh map has no grit way to get one short of `--assembly`.
+  Not a bug: untrack works, the older map really is newer than the FASTA. Done:
+  `hic-remapping --force` drops the up-to-date check (not the in-flight one), and the
+  skip message points at it.
