@@ -237,7 +237,7 @@ flowchart TD
     G1 --> H
 
     H{"Rename / orient?"}
-    H -->|Yes| H1["grit rename-and-orient<br/>--hap2 = ALSO hap2"]
+    H -->|Yes| H1["grit rename-and-orient<br/>--hap2 = hap2 after hap1"]
     H -->|No| R
     H1 --> R
 

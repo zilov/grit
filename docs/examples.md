@@ -144,7 +144,7 @@ grit blast-target -t RC-1234 --headers targets.txt
 
 # Rename and orient scaffolds against a reference (after pretext-to-asm)
 grit rename-and-orient -t RC-1234
-grit rename-and-orient -t RC-1234 --hap2
+grit rename-and-orient -t RC-1234 --hap2   # after hap1 finishes: hap2 with hap1's mapping table
 
 # Check which scaffold is the largest in super from the AGP (after pretext-to-asm/post-curation)
 grit super-to-scaffold -t RC-1234 # outputs table super - largest scaffold 
@@ -524,7 +524,7 @@ grit find-reference -t RC-1234               # or --local /path/to/reference.fa
 grit fastga -t RC-1234                       # rename-and-orient needs its PAF,
                                              # unless you pass --mapping-table
 
-grit rename-and-orient -t RC-1234 --hap2     # --hap2: hap1 and hap2,
+grit rename-and-orient -t RC-1234 --hap2     # --hap2 once hap1 finished: hap2 only,
                                              # reusing hap1's mapping table
 #   hap1:  fa, chr  ->  rename_and_orient
 #   hap2:  fa, chr  ->  rename_and_orient_hap2

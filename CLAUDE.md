@@ -348,7 +348,12 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   makes `hic-remapping --hap2` / `rename-and-orient --hap2` a `UsageError`
   before anything is started or submitted.
 - **`--hap2` means hap1 *and* hap2** on `hic-remapping`, `post-curation` and
-  `rename-and-orient` (without it, hap1 only). The recurate commands
+  `rename-and-orient` (without it, hap1 only). On `rename-and-orient` without
+  `--mapping-table`, hap2 needs hap1's mapping table, so `--hap2` reuses the table of
+  hap1's latest *finished* run and submits hap2 only (`_hap1_table()`); it submits hap1
+  only when hap1 has no finished run, and nothing while a hap1 run is in flight — it
+  must never resubmit hap1, or the lookup finds that new, unfinished run and hap2 never
+  starts (the RC-5369 loop). The dry-run branch still runs both. The recurate commands
   (`pretext-to-asm-recurate`, `post-curation-recurate`) are the exception: there
   `--hap2` means hap2 *instead of* hap1, since each haplotype is recurated from its
   own AGP. `hic_remapping._skip_hap()` skips a haplotype (real and dry-run paths

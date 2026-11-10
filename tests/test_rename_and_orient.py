@@ -142,10 +142,9 @@ def test_run_rename_and_orient_hap2_submits_when_mapping_tsv_exists(
 
     run_rename_and_orient(mock_ctx, run_hap2=True)
 
-    assert mock_bsub.call_count == 2
-    cmds = [call[0][0] for call in mock_bsub.call_args_list]
-    assert any("--paf" in cmd for cmd in cmds)
-    assert any("--mapping-table" in cmd for cmd in cmds)
+    # hap1 already finished: only hap2 is submitted, with hap1's table
+    mock_bsub.assert_called_once()
+    assert f"--mapping-table {mapping_tsv}" in mock_bsub.call_args[0][0]
 
 
 @patch("grit.steps.optional.rename_and_orient._submit_bsub")
@@ -571,3 +570,32 @@ def test_hap2_is_refused_on_a_single_hap_ticket(
 
     mock_bsub.assert_not_called()
     mock_find_fa.assert_not_called()
+
+
+@patch("grit.steps.optional.rename_and_orient._submit_bsub")
+@patch("grit.steps.optional.rename_and_orient.glob.glob")
+@patch("grit.steps.optional.rename_and_orient.find_canonical_fa")
+def test_hap2_after_finished_hap1_submits_hap2_only_and_waits_while_hap1_in_flight(
+    mock_find_fa, mock_glob, mock_bsub, mock_ctx, tmp_path
+):
+    """--hap2 after hap1 finished must not resubmit hap1 (it then never found its own
+    in-flight table and stopped before hap2, every time); an in-flight hap1 submits nothing."""
+    _attach_tracker(mock_ctx, tmp_path)
+    mock_ctx.print_only = False
+    mock_find_fa.return_value = tmp_path / "in.fa"
+    mock_glob.return_value = [str(tmp_path / "fastga" / "x_FastGA.paf")]
+    mock_bsub.return_value = "12345"
+
+    run_dir = mock_ctx.tracker.start("rename_and_orient", mock_ctx.ticket_id, mock_ctx.tol_id)
+    table = run_dir / f"{mock_ctx.tol_id}.{mock_ctx.hap1_prefix}.primary.renamed.mapping.tsv"
+    table.touch()
+
+    run_rename_and_orient(mock_ctx, run_hap2=True)  # hap1 still in flight
+    mock_bsub.assert_not_called()
+
+    mock_ctx.tracker.finish("rename_and_orient", run_dir, "success")
+    run_rename_and_orient(mock_ctx, run_hap2=True)
+
+    mock_bsub.assert_called_once()
+    cmd = mock_bsub.call_args[0][0]
+    assert f"--mapping-table {table}" in cmd and ".hap2.primary.renamed" in cmd

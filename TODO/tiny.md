@@ -218,3 +218,10 @@ Small fixes and improvements — close in one batch when still relevant.
   Not a bug: untrack works, the older map really is newer than the FASTA. Done:
   `hic-remapping --force` drops the up-to-date check (not the in-flight one), and the
   skip message points at it.
+
+- [x] **`rename-and-orient --hap2` never reaches hap2** — RC-5369 (ilEudTrun2): `--hap2`
+  always resubmitted hap1, then looked for hap1's mapping table in the newest run dir —
+  the hap1 run it had just submitted, with no table yet — so it told the curator to re-run
+  after hap1 finished, and every re-run did the same. Fixed: `--hap2` uses the table of
+  hap1's latest finished run and submits hap2 only; hap1 is submitted only when it has no
+  finished run, and nothing while hap1 is in flight.

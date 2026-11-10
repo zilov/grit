@@ -138,6 +138,15 @@ def _dry_run_rename_and_orient_for_hap(ctx: CurationContext, step_name: str) -> 
 # ---------------------------------------------------------------------------
 
 
+def _hap1_table(ctx: CurationContext) -> tuple[Path | None, bool]:
+    """Return (hap1's finished latest mapping table or None, whether hap1 is in flight)."""
+    latest = find_latest_dir(ctx, "rename_and_orient")
+    if latest != find_latest_dir(ctx, "rename_and_orient", settled_only=True):
+        return None, True
+    table = latest / f"{ctx.tol_id}.{ctx.hap1_prefix}.primary.renamed.mapping.tsv"
+    return (table if table.exists() else None), False
+
+
 def run_rename_and_orient(
     ctx: CurationContext,
     *,
@@ -149,10 +158,9 @@ def run_rename_and_orient(
     """
     Renames and orients chromosomes in the curated FASTA based on FastGA PAF alignment.
 
-    Submits hap1 as a bsub job (60 GB, 4 cores). Pass ``run_hap2=True`` to
-    also submit hap2 — but only if the hap1 mapping table already exists
-    (i.e. hap1 has completed). If not, a message is printed asking to re-run
-    with ``--hap2`` after hap1 finishes.
+    Submits hap1 as a bsub job (60 GB, 4 cores). With ``run_hap2=True`` and a
+    finished hap1 run, submits only hap2 with that run's mapping table; otherwise
+    hap1 is submitted (unless in flight) and hap2 waits for a re-run with ``--hap2``.
 
     Pass ``mapping_table`` to reuse a pre-built mapping TSV for every haplotype
     instead of a FastGA PAF — no ``grit fastga`` run is needed then.
@@ -191,32 +199,40 @@ def run_rename_and_orient(
         paf_file = Path(sorted(paf_matches)[-1])
         log.info("FastGA PAF: %s", paf_file)
 
-    _submit_rename_and_orient_for_hap(
-        ctx,
-        ctx.hap1_prefix,
-        paf_file,
-        "rename_and_orient",
-        mapping_table=mapping_table,
-        min_coverage=min_coverage,
-        plot_alignments=plot_alignments,
+    # --hap2 without a table reuses a finished hap1 run's table instead of redoing hap1
+    hap1_table, hap1_in_flight = (
+        (None, False) if mapping_table or not run_hap2 else _hap1_table(ctx)
     )
+    if hap1_in_flight:
+        console.print(
+            "\n[yellow]hap1 rename-and-orient is still running.[/yellow]\n"
+            "Re-run with [bold]--hap2[/bold] after it completes."
+        )
+        return
+    if hap1_table is None:
+        _submit_rename_and_orient_for_hap(
+            ctx,
+            ctx.hap1_prefix,
+            paf_file,
+            "rename_and_orient",
+            mapping_table=mapping_table,
+            min_coverage=min_coverage,
+            plot_alignments=plot_alignments,
+        )
+    else:
+        log.info("Using finished hap1 run's mapping table: %s", hap1_table)
 
     if run_hap2:
         print_step_header(ctx.ticket_id, ctx.tol_id, f"Rename and orient ({ctx.hap2_prefix})")
         # With an explicit mapping table there is nothing to wait for — hap2
         # reuses the same table as hap1 instead of the one hap1 produces.
-        mapping_tsv = mapping_table
+        mapping_tsv = mapping_table or hap1_table
         if mapping_tsv is None:
-            hap1_run_dir = find_latest_dir(ctx, "rename_and_orient")
-            hap1_prefix = f"{ctx.tol_id}.{ctx.hap1_prefix}.primary.renamed"
-            mapping_tsv = hap1_run_dir / f"{hap1_prefix}.mapping.tsv"
-
-            if not ctx.print_only and not mapping_tsv.exists():
-                console.print(
-                    f"\n[yellow]hap1 mapping table not found yet:[/yellow] {mapping_tsv}\n"
-                    f"Re-run with [bold]--hap2[/bold] after hap1 completes."
-                )
-                return
+            console.print(
+                "\n[yellow]hap1 has no finished run with a mapping table yet.[/yellow]\n"
+                "Re-run with [bold]--hap2[/bold] after hap1 completes."
+            )
+            return
 
         _submit_rename_and_orient_for_hap(
             ctx,
@@ -241,7 +257,10 @@ def run_rename_and_orient(
     "run_hap2",
     is_flag=True,
     default=False,
-    help="Run hap2 as well as hap1 (hap2 reuses hap1's mapping table).",
+    help=(
+        "Run hap2 with hap1's mapping table; hap1 is rerun only if it has no finished run "
+        "(with --mapping-table, both are run)."
+    ),
 )
 @click.option(
     "--mapping-table",
