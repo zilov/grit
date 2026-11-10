@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-11-10
+
+### Fixed
+
+- `rename-and-orient --hap2` never ran hap2: it resubmitted hap1 every time, then looked for hap1's mapping table in that new, unfinished run and told the curator to re-run after hap1 finished. Once hap1 has a finished run, `--hap2` now submits only hap2 with that run's mapping table; while hap1 is still running it submits nothing.
+
 ## [0.6.2] - 2026-11-09
 
 ### Added
