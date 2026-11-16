@@ -282,7 +282,7 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   `status="untracked"` instead of the given success/failed when `untracked=True`
   — omitting it there lets the finish record silently overwrite the untracked
   marker with `success`/`failed`, making the run canonical the moment it
-  completes (the exact bug fixed in `TODO/tiny.md`). Outputs are still
+  completes (the exact bug fixed in `TODO/done/tiny_done.md`). Outputs are still
   recorded on an untracked finish, so `grit retrack -t <ticket> -r <run_id>` can
   later promote the run to canonical using its own recorded outputs. The
   recovery paths that finish *without* `untracked` (`_refresh_pending_jobs`,
@@ -432,7 +432,7 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
 Design docs and implementation plans for non-trivial changes live in
 `TODO/<number>_<slug>.md` (next number = highest existing + 1), with
 `## Problem` / `## Design` sections — see `TODO/done/38_busco_shared_step.md` for
-the reference format. Small one-off fixes go in `TODO/tiny.md` instead of
+the reference format. Small one-off fixes go in `TODO/tiny.md` (closed ones move to `TODO/done/tiny_done.md`) instead of
 getting their own file. Move a file to `TODO/done/` once implemented. Do not
 use `docs/superpowers/specs/`.
 

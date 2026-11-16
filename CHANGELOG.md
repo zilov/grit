@@ -9,6 +9,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 
 - `rename-and-orient` now plots by default (`--no-plot-alignments` to skip): hap1's run writes `<prefix>.alignments_overview.pdf` (rename-and-orient 1.3.0, with matplotlib), and `grit status` prints an scp tip to download it. hap2 runs from hap1's mapping table, so it has no PAF and no plot.
+- `pretext-to-asm-recurate` no longer refuses an AGP whose unloc-named scaffolds carry no `unloc` tag: it lists them and asks `[y/N]`, since a curator may place unlocs into chromosomes on purpose from the remapped map. Without a tty it still fails.
 
 ### Fixed
 
