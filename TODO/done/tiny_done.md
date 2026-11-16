@@ -244,3 +244,13 @@ Closed items moved from `TODO/tiny.md`, oldest first.
   map where they belong. A warning alone would scroll away under pretext-to-asm's output.
   Fixed: on a tty the list is logged as a warning and the curator confirms with `y` (`[y/N]`;
   N stops with the re-tag hint); without a tty it still fails as before.
+
+- [x] **`hic-remapping`: `TERM_MEMLIMIT` on a very large genome** — dz11, aIchAlp3 (26 Gb hap1,
+  tol22, job 345883), run dir
+  `/lustre/scratch122/tol/data/9/7/0/0/3/7/Ichthyosaura_alpestris/working/dz11_curation/aIchAlp3/hic_remapping/2026-11-16T19_39_28_hap1`:
+  `CRAM_FILTER_MINIMAP2_FILTER5END_FIXMATE_SORT` was killed at 60 GB on its second (last)
+  attempt, while the minimap2 index alone is 54 GB. curationpretext 1.5.1's `base.config`
+  sizes that step by `reference.size()` but the input is named `ref`, so it gets 30 GB ×
+  attempt on any genome (to report to dp24). Fixed: `hic-remapping --high-mem` adds dp24's
+  `very_large_resources_1_5_0.config` (copied to `grit/config/steps/hic_remapping_high_mem.config`),
+  whose `maxRetries = 2` gives that step a third attempt at 90 GB.

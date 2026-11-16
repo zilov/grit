@@ -1076,8 +1076,13 @@ def test_run_hic_remapping_print_only_passes_full_command(
     assert "curationpretext.sh" in cmd and "--split_telomere true" in cmd
     assert "/config/steps/hic_remapping_nf.config" in cmd
 
+    assert "hic_remapping_high_mem.config" not in cmd
+
     run_hic_remapping(mock_ctx, keep_work=True)
     assert "hic_remapping_nf.config" not in mock_run.call_args[0][0]
+
+    run_hic_remapping(mock_ctx, high_mem=True)
+    assert "/config/steps/hic_remapping_high_mem.config" in mock_run.call_args[0][0]
 
 
 @patch("grit.utils.helpers._run")

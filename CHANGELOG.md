@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `hic-remapping --high-mem`: adds dp24's high-memory resources config to curationpretext (more memory, a third retry), for runs killed by `TERM_MEMLIMIT`.
+
 ### Changed
 
 - `rename-and-orient` now plots by default (`--no-plot-alignments` to skip): hap1's run writes `<prefix>.alignments_overview.pdf` (rename-and-orient 1.3.0, with matplotlib), and `grit status` prints an scp tip to download it. hap2 runs from hap1's mapping table, so it has no PAF and no plot.

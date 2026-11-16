@@ -28,6 +28,8 @@ _HEAD_JOB_MEM_MB = 1200
 _CURATIONPRETEXT_SCRIPT = Path(__file__).parent.parent.parent / "scripts" / "curationpretext.sh"
 # nextflow `cleanup = true`: deletes work/ intermediates once the pipeline succeeds.
 _CLEAN_CONFIG = Path(__file__).parent.parent.parent / "config" / "steps" / "hic_remapping_nf.config"
+# dp24's resources for very large genomes: more memory and a third retry.
+_HIGH_MEM_CONFIG = _CLEAN_CONFIG.with_name("hic_remapping_high_mem.config")
 
 _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("hap1_pretext", "pretext_maps_processed/{tol_id}*hr.pretext", []),
@@ -107,6 +109,7 @@ def _submit_hic_remapping(
     assembly: Path | None = None,
     check_up_to_date: bool = True,
     keep_work: bool = False,
+    high_mem: bool = False,
 ) -> None:
     """Submit one curationpretext run for *hap_prefix*, tracked under *step_name*."""
 
@@ -142,6 +145,8 @@ def _submit_hic_remapping(
         pipeline_args += f" -N {ctx.email}"
     if not keep_work:
         pipeline_args += f" -c {_CLEAN_CONFIG}"
+    if high_mem:
+        pipeline_args += f" -c {_HIGH_MEM_CONFIG}"
     pipeline_args += " -resume"
 
     inner_cmd = (
@@ -210,6 +215,7 @@ def run_hic_remapping(
     assembly: Path | None = None,
     fresh_fasta: bool = False,
     keep_work: bool = False,
+    high_mem: bool = False,
 ) -> None:
     """
     Runs the HiC remapping pipeline (sanger-tol/curationpretext).
@@ -223,6 +229,7 @@ def run_hic_remapping(
     YAML. If ``ont_dir`` is supplied, ``--read_type ont`` is used automatically.
     ``fresh_fasta=True`` (a chain that just rebuilt the FASTA) skips the up-to-date check.
     ``keep_work=True`` keeps curationpretext's intermediate ``work/`` files.
+    ``high_mem=True`` adds the high-memory resources config.
     """
     check = not fresh_fasta
     if run_hap2:
@@ -271,12 +278,18 @@ def run_hic_remapping(
             # the check compares against the canonical FASTA, not a custom --assembly
             check_up_to_date=check and assembly is None,
             keep_work=keep_work,
+            high_mem=high_mem,
         )
 
     if run_hap2:
         print_step_header(ctx.ticket_id, ctx.tol_id, f"HiC remapping ({ctx.hap2_prefix})")
         _submit_hic_remapping(
-            ctx, ctx.hap2_prefix, "hic_remapping_hap2", check_up_to_date=check, keep_work=keep_work
+            ctx,
+            ctx.hap2_prefix,
+            "hic_remapping_hap2",
+            check_up_to_date=check,
+            keep_work=keep_work,
+            high_mem=high_mem,
         )
 
 
@@ -332,13 +345,22 @@ def run_hic_remapping(
     help="Keep curationpretext's intermediate files (work/); by default they are cleaned up.",
 )
 @click.option(
+    "--high-mem",
+    "high_mem",
+    is_flag=True,
+    default=False,
+    help="More memory and retries for very large genomes (e.g. after a TERM_MEMLIMIT failure).",
+)
+@click.option(
     "--force",
     is_flag=True,
     default=False,
     help="Remap even when the Hi-C map is newer than its canonical FASTA.",
 )
 @click.pass_context
-def hic_remapping_cmd(ctx, run_hap2, hic_dir, hifi_dir, ont_dir, assembly, keep_work, force):
+def hic_remapping_cmd(
+    ctx, run_hap2, hic_dir, hifi_dir, ont_dir, assembly, keep_work, high_mem, force
+):
     """Submit HiC remapping pipeline."""
     from grit.core.click_cli import build_context
 
@@ -353,6 +375,7 @@ def hic_remapping_cmd(ctx, run_hap2, hic_dir, hifi_dir, ont_dir, assembly, keep_
             ont_dir=Path(ont_dir) if ont_dir else None,
             assembly=Path(assembly) if assembly else None,
             keep_work=keep_work,
+            high_mem=high_mem,
             fresh_fasta=force,
         )
     except Exception:
