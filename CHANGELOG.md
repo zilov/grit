@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `rename-and-orient` now plots by default (`--no-plot-alignments` to skip): hap1's run writes `<prefix>.alignments_overview.pdf` (rename-and-orient 1.3.0, with matplotlib), and `grit status` prints an scp tip to download it. hap2 runs from hap1's mapping table, so it has no PAF and no plot.
+
+### Fixed
+
+- `rename-and-orient` jobs failed with `command not found` for curators who installed grit with `uv tool install`: uv links only `grit` into `~/.local/bin`, not its dependencies' scripts. grit now puts its own venv's `bin/` on `PATH` at startup.
+
 ## [0.6.3] - 2026-11-10
 
 ### Fixed

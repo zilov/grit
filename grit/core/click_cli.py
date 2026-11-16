@@ -5,6 +5,7 @@ This is the new Click-based interface, allowing modular use of pipeline steps.
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -80,6 +81,9 @@ class GlobalState:
 @click.pass_context
 def cli(ctx, verbose, config_path, yaml, print_only, dry_run, logging_level):
     """Curation pipeline CLI."""
+    # uv tool links only grit's own entry point; dependency scripts (rename-and-orient)
+    # live beside the venv's python. bsub jobs inherit this PATH.
+    os.environ["PATH"] = f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"
     configure_logging(logging_level)
     ctx.ensure_object(dict)
     ctx.obj = GlobalState(
