@@ -1,5 +1,7 @@
 """Pipeline step output formatting via rich."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from rich.console import Console
@@ -7,6 +9,22 @@ from rich.markup import escape
 from rich.panel import Panel
 
 console = Console()
+
+
+@contextmanager
+def tee_console(path: Path | None) -> Iterator[None]:
+    """Copy everything printed to ``console`` inside the block (logs included) into *path*."""
+    if path is None:
+        yield
+        return
+    nested = console.record
+    skip = len(console.export_text(clear=False)) if nested else 0
+    console.record = True
+    try:
+        yield
+    finally:
+        path.write_text(console.export_text(clear=not nested)[skip:])
+        console.record = nested
 
 
 def shorten_path(path: Path, workdir: Path) -> str:

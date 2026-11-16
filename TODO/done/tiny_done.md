@@ -254,3 +254,10 @@ Closed items moved from `TODO/tiny.md`, oldest first.
   attempt on any genome (to report to dp24). Fixed: `hic-remapping --high-mem` adds dp24's
   `very_large_resources_1_5_0.config` (copied to `grit/config/steps/hic_remapping_high_mem.config`),
   whose `maxRetries = 2` gives that step a third attempt at 90 GB.
+
+- [x] **`qv` wrote straight into the curated dir; `finalize-qc` left nothing in its run dir** — the
+  module's `kmer_completeness.bash` found the curated dir itself (speciesops) and built `merquryk/`
+  there, and grit discarded its output, so a failed QV left no log in the workdir. Fixed: grit
+  ships `grit/scripts/kmer_completeness.sh`, run in `workdir/qv/<ts>/` with its output in
+  `kmer_completeness.log`; results are copied to `curated/merquryk/` on success. `finalize-qc`
+  tees the console (logs included, via `tee_console()`) into `finalize_qc.log` in its run dir.

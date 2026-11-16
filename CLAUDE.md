@@ -87,9 +87,16 @@ post-`start()` work in try/except and call `ctx.tracker.finish(step, run_dir,
 or a "success" exit that produced none of the expected outputs), then
 re-raise, or a crash strands the record as "started" forever with no
 recovery path but `grit untrack`. `qv` is the same kind of step:
-`kmer_completeness.bash` blocks on its own `bsub -K` MerquryFK job but exits 0
-whatever that job did, so `run_qv` judges completion by the `.qv` and
-`.completeness.stats` files in `merquryk/`, never by the wrapper's exit status.
+`grit/scripts/kmer_completeness.sh` blocks on its own `bsub -K` MerquryFK job in
+`workdir/qv/<ts>/` (output in `kmer_completeness.log` there), and `run_qv` judges
+completion by the `.qv` and `.completeness.stats` files in that run dir, never by
+the exit status, then copies them to `curated/merquryk/`.
+
+To keep a step's own console output in its run dir, wrap the work after
+`tracker.start()` in `with tee_console(run_dir / "<step>.log")`
+(`grit/utils/output.py`; pass `None` under `print_only`, where the run dir is
+virtual). It records `console`, which the `RichHandler` also writes to, so log
+lines are included; nested blocks are fine (see `finalize_qc.py`).
 
 ### HPC module loading
 

@@ -21,7 +21,7 @@ from grit.utils.helpers import (
     is_single_hap,
     pta_curated_fa_exists,
 )
-from grit.utils.output import console, print_done, print_step_header
+from grit.utils.output import console, print_done, print_step_header, tee_console
 
 log = logging.getLogger(__name__)
 
@@ -197,7 +197,7 @@ def finalize_for_qc(
            hic_remapping_hap2 if present) to NFS.
            Destination path uses a two-level prefix structure:
            ``{curated_pretext_maps_nfs}/{tol_id[0]}_*/{tol_id[1]}_*/``
-        4. Run kmer_completeness.bash if no merquryk folder exists in
+        4. Run qv (kmer_completeness.sh) if no merquryk folder exists in
            ``{ctx.assembly_curated_dir}``.
 
     All file arguments (``hap1_assembly``, ``hap2_assembly``, etc.) override
@@ -217,36 +217,157 @@ def finalize_for_qc(
 
     hap2_chr = not is_single_hap(ctx) and _hap2_chromosome_level(ctx, hap2_level, hap2_map)
 
-    if ctx.dry_run:
-        run_dir = (
-            ctx.tracker.start("finalize_qc", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
-            if ctx.tracker
-            else None
-        )
+    if not ctx.dry_run and not ctx.print_only:
+        _raise_if_yaml_pta_mismatch(ctx)
+
+    run_dir = (
+        ctx.tracker.start("finalize_qc", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else None
+    )
+    with tee_console(run_dir / "finalize_qc.log" if run_dir and not ctx.print_only else None):
+        if ctx.dry_run:
+            dest_dir = curated_dir or ctx.assembly_curated_dir
+            dest_dir.mkdir(parents=True, exist_ok=True)
+
+            haps_to_process = (
+                [ctx.hap1_prefix] if is_single_hap(ctx) else [ctx.hap1_prefix, ctx.hap2_prefix]
+            )
+            for hap_prefix in haps_to_process:
+                (dest_dir / _dest_name(hap_prefix, "primary.curated.fa")).write_text("fake\n")
+                haplotig_suffix = (
+                    "all_haplotigs.curated.fa"
+                    if ctx.combine_for_curation
+                    else "additional_haplotigs.curated.fa"
+                )
+                (dest_dir / _dest_name(hap_prefix, haplotig_suffix)).write_text("fake\n")
+                chr_list = "fake\n" if hap_prefix == ctx.hap1_prefix or hap2_chr else ""
+                (dest_dir / _dest_name(hap_prefix, "primary.chromosome.list.csv")).write_text(
+                    chr_list
+                )
+
+            _run_busco_if_missing(ctx, lineage)
+            qv_dir = dest_dir / "merquryk"
+            if not qv_dir.exists():
+                from grit.steps.post_curation.qv import run_qv
+
+                run_qv(ctx)
+
+            if ctx.tracker and run_dir:
+                ctx.tracker.finish(
+                    "finalize_qc",
+                    run_dir,
+                    "success",
+                    outputs={"curated_dir": str(dest_dir)},
+                    untracked=ctx.untracked,
+                )
+            print_done(f"[dry-run] Curated dir → {dest_dir}")
+            _print_submission_reminder(ctx, dest_dir)
+            return
 
         dest_dir = curated_dir or ctx.assembly_curated_dir
-        dest_dir.mkdir(parents=True, exist_ok=True)
 
+        # 1. mkdir
+        _run(f"mkdir -p {dest_dir}", ctx.print_only)
+        log.info("Curated dir: %s", dest_dir)
+
+        # Which haplotypes to process: primary/alternate → hap1 only; hap1/hap2 → both
         haps_to_process = (
             [ctx.hap1_prefix] if is_single_hap(ctx) else [ctx.hap1_prefix, ctx.hap2_prefix]
         )
+
+        # 2a. primary assembly FAs
+        assembly_overrides = {ctx.hap1_prefix: hap1_assembly, ctx.hap2_prefix: hap2_assembly}
         for hap_prefix in haps_to_process:
-            (dest_dir / _dest_name(hap_prefix, "primary.curated.fa")).write_text("fake\n")
-            haplotig_suffix = (
-                "all_haplotigs.curated.fa"
-                if ctx.combine_for_curation
-                else "additional_haplotigs.curated.fa"
+            src = assembly_overrides[hap_prefix]
+            if src is None:
+                try:
+                    src = find_canonical_fa(ctx, hap_prefix)
+                except FileNotFoundError as e:
+                    log.warning(str(e))
+                    continue
+            _run(
+                f"cp {src} {dest_dir / _dest_name(hap_prefix, 'primary.curated.fa')}",
+                ctx.print_only,
             )
-            (dest_dir / _dest_name(hap_prefix, haplotig_suffix)).write_text("fake\n")
-            chr_list = "fake\n" if hap_prefix == ctx.hap1_prefix or hap2_chr else ""
-            (dest_dir / _dest_name(hap_prefix, "primary.chromosome.list.csv")).write_text(chr_list)
 
-        _run_busco_if_missing(ctx, lineage)
-        qv_dir = dest_dir / "merquryk"
-        if not qv_dir.exists():
-            from grit.steps.post_curation.qv import run_qv
+        # 2b. haplotig FAs — override, find, or touch empty placeholder
+        haplotig_overrides = {ctx.hap1_prefix: hap1_haplotigs, ctx.hap2_prefix: hap2_haplotigs}
+        for hap_prefix in haps_to_process:
+            src = haplotig_overrides[hap_prefix]
+            if src is None:
+                try:
+                    src = find_canonical_haplotigs(ctx, hap_prefix)
+                except FileNotFoundError:
+                    src = None
+            # GritJiraIssue.get_curated_file_name_for_type() expects "all_haplotigs" only
+            # when the curated haplotigs were actually combined, otherwise it looks for
+            # "additional_haplotigs" — mirror whatever pretext-to-asm's real output on
+            # disk is named rather than trusting the YAML's combine_for_curation flag,
+            # which (like assembly type) can disagree with what the curator actually did.
+            # haplotig-files' empty placeholder is always named "all_haplotigs" — not evidence.
+            named = src and src.exists() and src.stat().st_size > 0
+            if named and "additional_haplotigs" in src.name:
+                haplotig_suffix = "additional_haplotigs.curated.fa"
+            elif named and "all_haplotigs" in src.name:
+                haplotig_suffix = "all_haplotigs.curated.fa"
+            else:
+                haplotig_suffix = (
+                    "all_haplotigs.curated.fa"
+                    if ctx.combine_for_curation
+                    else "additional_haplotigs.curated.fa"
+                )
+            dest = dest_dir / _dest_name(hap_prefix, haplotig_suffix)
+            if src:
+                _run(f"cp {src} {dest}", ctx.print_only)
+            else:
+                _run(f"touch {dest}", ctx.print_only)
 
-            run_qv(ctx)
+        # 2c. chromosome lists — post-processing publishes a haplotype with an empty one as scaffold
+        chr_list_overrides = {ctx.hap1_prefix: hap1_chr_list, ctx.hap2_prefix: hap2_chr_list}
+        for hap_prefix in haps_to_process:
+            dest = dest_dir / _dest_name(hap_prefix, "primary.chromosome.list.csv")
+            if hap_prefix == ctx.hap2_prefix and not hap2_chr:
+                _run(f"truncate -s 0 {dest}", ctx.print_only)
+                continue
+            src = chr_list_overrides[hap_prefix]
+            if src is None:
+                try:
+                    src = find_canonical_chr_list(ctx, hap_prefix)
+                except FileNotFoundError as e:
+                    log.warning(str(e))
+                    continue
+            _run(f"cp {src} {dest}", ctx.print_only)
+
+        # 3. copy remapped pretext maps to NFS
+        tol_id = ctx.tol_id
+        nfs_dest = _resolve_nfs_dest(ctx.curated_pretext_maps_nfs, tol_id, ctx.print_only)
+
+        _copy_map(ctx, "hic_remapping", ctx.hap1_prefix, nfs_dest, hap1_map)
+
+        # hap2 map: only for dual-hap assemblies
+        if hap2_map or (not ctx.print_only and _hap2_has_map(ctx)):
+            _copy_map(ctx, "hic_remapping_hap2", ctx.hap2_prefix, nfs_dest, hap2_map)
+
+        # 4. BUSCO if never run (async bsub, so first), then QV if merquryk not yet present (blocks)
+        from grit.steps.post_curation.qv import run_qv
+
+        try:
+            _run_busco_if_missing(ctx, lineage)
+            if not (dest_dir / "merquryk").exists():
+                run_qv(ctx)
+        except Exception:
+            if ctx.tracker and run_dir:
+                ctx.tracker.finish("finalize_qc", run_dir, "failed", untracked=ctx.untracked)
+            raise
+
+        if ctx.print_only:
+            console.print(
+                "\n[yellow]print-only: files not copied — "
+                "commands above show what would run[/yellow]"
+            )
+        else:
+            print_done("All files copied to curated directory")
 
         if ctx.tracker and run_dir:
             ctx.tracker.finish(
@@ -256,130 +377,9 @@ def finalize_for_qc(
                 outputs={"curated_dir": str(dest_dir)},
                 untracked=ctx.untracked,
             )
-        print_done(f"[dry-run] Curated dir → {dest_dir}")
-        _print_submission_reminder(ctx, dest_dir)
-        return
 
-    if not ctx.print_only:
-        _raise_if_yaml_pta_mismatch(ctx)
-
-    run_dir = (
-        ctx.tracker.start("finalize_qc", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
-        if ctx.tracker
-        else None
-    )
-
-    dest_dir = curated_dir or ctx.assembly_curated_dir
-
-    # 1. mkdir
-    _run(f"mkdir -p {dest_dir}", ctx.print_only)
-    log.info("Curated dir: %s", dest_dir)
-
-    # Which haplotypes to process: primary/alternate → hap1 only; hap1/hap2 → both
-    haps_to_process = (
-        [ctx.hap1_prefix] if is_single_hap(ctx) else [ctx.hap1_prefix, ctx.hap2_prefix]
-    )
-
-    # 2a. primary assembly FAs
-    assembly_overrides = {ctx.hap1_prefix: hap1_assembly, ctx.hap2_prefix: hap2_assembly}
-    for hap_prefix in haps_to_process:
-        src = assembly_overrides[hap_prefix]
-        if src is None:
-            try:
-                src = find_canonical_fa(ctx, hap_prefix)
-            except FileNotFoundError as e:
-                log.warning(str(e))
-                continue
-        _run(f"cp {src} {dest_dir / _dest_name(hap_prefix, 'primary.curated.fa')}", ctx.print_only)
-
-    # 2b. haplotig FAs — override, find, or touch empty placeholder
-    haplotig_overrides = {ctx.hap1_prefix: hap1_haplotigs, ctx.hap2_prefix: hap2_haplotigs}
-    for hap_prefix in haps_to_process:
-        src = haplotig_overrides[hap_prefix]
-        if src is None:
-            try:
-                src = find_canonical_haplotigs(ctx, hap_prefix)
-            except FileNotFoundError:
-                src = None
-        # GritJiraIssue.get_curated_file_name_for_type() expects "all_haplotigs" only
-        # when the curated haplotigs were actually combined, otherwise it looks for
-        # "additional_haplotigs" — mirror whatever pretext-to-asm's real output on
-        # disk is named rather than trusting the YAML's combine_for_curation flag,
-        # which (like assembly type) can disagree with what the curator actually did.
-        # haplotig-files' empty placeholder is always named "all_haplotigs" — not evidence.
-        named = src and src.exists() and src.stat().st_size > 0
-        if named and "additional_haplotigs" in src.name:
-            haplotig_suffix = "additional_haplotigs.curated.fa"
-        elif named and "all_haplotigs" in src.name:
-            haplotig_suffix = "all_haplotigs.curated.fa"
-        else:
-            haplotig_suffix = (
-                "all_haplotigs.curated.fa"
-                if ctx.combine_for_curation
-                else "additional_haplotigs.curated.fa"
-            )
-        dest = dest_dir / _dest_name(hap_prefix, haplotig_suffix)
-        if src:
-            _run(f"cp {src} {dest}", ctx.print_only)
-        else:
-            _run(f"touch {dest}", ctx.print_only)
-
-    # 2c. chromosome lists — post-processing publishes a haplotype with an empty one as scaffold
-    chr_list_overrides = {ctx.hap1_prefix: hap1_chr_list, ctx.hap2_prefix: hap2_chr_list}
-    for hap_prefix in haps_to_process:
-        dest = dest_dir / _dest_name(hap_prefix, "primary.chromosome.list.csv")
-        if hap_prefix == ctx.hap2_prefix and not hap2_chr:
-            _run(f"truncate -s 0 {dest}", ctx.print_only)
-            continue
-        src = chr_list_overrides[hap_prefix]
-        if src is None:
-            try:
-                src = find_canonical_chr_list(ctx, hap_prefix)
-            except FileNotFoundError as e:
-                log.warning(str(e))
-                continue
-        _run(f"cp {src} {dest}", ctx.print_only)
-
-    # 3. copy remapped pretext maps to NFS
-    tol_id = ctx.tol_id
-    nfs_dest = _resolve_nfs_dest(ctx.curated_pretext_maps_nfs, tol_id, ctx.print_only)
-
-    _copy_map(ctx, "hic_remapping", ctx.hap1_prefix, nfs_dest, hap1_map)
-
-    # hap2 map: only for dual-hap assemblies
-    if hap2_map or (not ctx.print_only and _hap2_has_map(ctx)):
-        _copy_map(ctx, "hic_remapping_hap2", ctx.hap2_prefix, nfs_dest, hap2_map)
-
-    # 4. BUSCO if never run (async bsub, so first), then QV if merquryk not yet present (blocks)
-    from grit.steps.post_curation.qv import run_qv
-
-    try:
-        _run_busco_if_missing(ctx, lineage)
-        if not (dest_dir / "merquryk").exists():
-            run_qv(ctx)
-    except Exception:
-        if ctx.tracker and run_dir:
-            ctx.tracker.finish("finalize_qc", run_dir, "failed", untracked=ctx.untracked)
-        raise
-
-    if ctx.print_only:
-        console.print(
-            "\n[yellow]print-only: files not copied — commands above show what would run[/yellow]"
-        )
-    else:
-        print_done("All files copied to curated directory")
-
-    if ctx.tracker and run_dir:
-        ctx.tracker.finish(
-            "finalize_qc",
-            run_dir,
-            "success",
-            outputs={"curated_dir": str(dest_dir)},
-            untracked=ctx.untracked,
-        )
-
-    if not ctx.print_only:
-        _print_submission_reminder(ctx, dest_dir)
+        if not ctx.print_only:
+            _print_submission_reminder(ctx, dest_dir)
 
 
 def _print_submission_reminder(ctx: CurationContext, dest_dir: Path) -> None:

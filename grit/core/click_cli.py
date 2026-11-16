@@ -15,6 +15,7 @@ from rich.logging import RichHandler
 
 from grit.core.context import CurationContext
 from grit.core.registry import complete_ticket
+from grit.utils.output import console
 
 log = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ def configure_logging(logging_level: str) -> None:
         level=level,
         format="%(message)s",
         datefmt="[%X]",
-        handlers=[RichHandler(show_path=show_path, rich_tracebacks=True)],
+        handlers=[RichHandler(console=console, show_path=show_path, rich_tracebacks=True)],
     )
 
 
