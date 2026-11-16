@@ -436,6 +436,11 @@ the reference format. Small one-off fixes go in `TODO/tiny.md` (closed ones move
 getting their own file. Move a file to `TODO/done/` once implemented. Do not
 use `docs/superpowers/specs/`.
 
+Before every commit: add a `CHANGELOG.md` entry under `[Unreleased]` and a test
+for the change, and make sure the task is written down — a task that had no
+TODO yet goes in `TODO/tiny.md` (or straight into `TODO/done/tiny_done.md` when
+already done) if small, or in its own `TODO/<number>_<slug>.md` if large.
+
 When a finished task changes the architecture (new pattern, new shared
 helper, a convention this file documents becoming outdated), update this
 CLAUDE.md as part of that same task, not later — it has drifted out of date
