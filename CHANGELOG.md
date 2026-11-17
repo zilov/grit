@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-17
+
 ### Added
 
 - `hic-remapping --high-mem`: adds dp24's high-memory resources config to curationpretext (more memory, a third retry), for runs killed by `TERM_MEMLIMIT`.
