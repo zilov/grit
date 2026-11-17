@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import shutil
+from pathlib import Path
 
 import rich_click as click
 
@@ -14,24 +16,20 @@ from grit.utils.output import print_done, print_step_header
 
 log = logging.getLogger(__name__)
 
+_KMER_COMPLETENESS_SCRIPT = Path(__file__).parent.parent.parent / "scripts" / "kmer_completeness.sh"
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
 
-def _find_qv_outputs(ctx: CurationContext) -> dict[str, str]:
-    """
-    Check for the two files kmer_completeness.bash writes into
-    ``{ctx.assembly_curated_dir}/merquryk/`` — always that dir regardless of
-    the ``cd {ctx.workdir}`` the command runs from (the script locates its
-    output dir from tol_id itself, not from cwd).
-    """
-    qv_dir = ctx.assembly_curated_dir / "merquryk"
+def _find_qv_outputs(ctx: CurationContext, run_dir: Path) -> dict[str, str]:
+    """Return the run's MerquryFK .qv / .completeness.stats files that exist."""
     outputs: dict[str, str] = {}
-    qv_file = qv_dir / f"{ctx.tol_id}.qv"
+    qv_file = run_dir / f"{ctx.tol_id}.qv"
     if qv_file.exists():
         outputs["qv"] = str(qv_file)
-    completeness_file = qv_dir / f"{ctx.tol_id}.completeness.stats"
+    completeness_file = run_dir / f"{ctx.tol_id}.completeness.stats"
     if completeness_file.exists():
         outputs["completeness_stats"] = str(completeness_file)
     return outputs
@@ -43,79 +41,69 @@ def _find_qv_outputs(ctx: CurationContext) -> dict[str, str]:
 
 
 def run_qv(ctx: CurationContext) -> None:
-    """
-    Runs QV and k-mer completeness analysis inline.
-
-    Notebook source: ``pre_and_post_curation()`` — ``run_qv_analysis`` section.
-
-    Steps:
-        1. Build and run::
-
-               . /etc/profile.d/modules.sh && module purge && module load grit
-               cd {ctx.workdir} && kmer_completeness.bash {ctx.tol_id} {ctx.release_version}
-
-    Prints:
-        Step header, command, done message.
-    Next step hint: ``finalize_for_qc(ctx)``
-    """
+    """Run MerquryFK in ``workdir/qv/<ts>/``, then copy its results to ``curated/merquryk``."""
     log.info("qv | ticket=%s tol_id=%s", ctx.ticket_id, ctx.tol_id)
     print_step_header(ctx.ticket_id, ctx.tol_id, "QV analysis")
 
+    run_dir = (
+        ctx.tracker.start("qv", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
+        if ctx.tracker
+        else ctx.workdir / "qv"
+    )
+    qv_dir = ctx.assembly_curated_dir / "merquryk"
+
     if ctx.dry_run:
-        run_dir = (
-            ctx.tracker.start("qv", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
-            if ctx.tracker
-            else None
-        )
-        qv_dir = ctx.assembly_curated_dir / "merquryk"
-        qv_dir.mkdir(parents=True, exist_ok=True)
-        (qv_dir / f"{ctx.tol_id}.qv").write_text(
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / f"{ctx.tol_id}.qv").write_text(
             "Assembly\tNo Support\tTotal\tError %\tQV\n"
             f"{ctx.tol_id}.{ctx.hap1_prefix}\t1204\t412345678\t0.0003\t65.4\n"
             f"{ctx.tol_id}.{ctx.hap2_prefix}\t1350\t405678123\t0.0003\t64.9\n"
             "Both\t2554\t818023801\t0.0003\t65.1\n"
         )
-        (qv_dir / f"{ctx.tol_id}.completeness.stats").write_text(
+        (run_dir / f"{ctx.tol_id}.completeness.stats").write_text(
             "Assembly\tRegion\tFound\tTotal\t% Covered\n"
             f"{ctx.tol_id}.{ctx.hap1_prefix}\tall\t402123456\t425678901\t94.47\n"
             f"{ctx.tol_id}.{ctx.hap2_prefix}\tall\t398765432\t425678901\t93.68\n"
             "Both\tall\t421234567\t425678901\t98.96\n"
         )
-        if ctx.tracker and run_dir:
-            outputs = _find_qv_outputs(ctx) or None
+        qv_dir.mkdir(parents=True, exist_ok=True)
+        for f in run_dir.glob(f"{ctx.tol_id}.*"):
+            shutil.copy(f, qv_dir)
+        if ctx.tracker:
+            outputs = _find_qv_outputs(ctx, run_dir) or None
             ctx.tracker.finish("qv", run_dir, "success", outputs=outputs, untracked=ctx.untracked)
-        print_done(f"[dry-run] QV analysis → {qv_dir}")
+        print_done(f"[dry-run] QV analysis → {run_dir}, copied to {qv_dir}")
         return
 
-    run_dir = (
-        ctx.tracker.start("qv", ctx.ticket_id, ctx.tol_id, untracked=ctx.untracked)
-        if ctx.tracker
-        else None
-    )
-
+    script_log = run_dir / "kmer_completeness.log"
     cmd = (
-        f"{module_cmd('GRIT')} && cd {ctx.workdir} && "
-        f"kmer_completeness.bash {ctx.tol_id} {ctx.release_version}"
+        f"{module_cmd('GRIT')} && mkdir -p {run_dir} && cd {run_dir} && "
+        f"bash {_KMER_COMPLETENESS_SCRIPT} {ctx.tol_id} {ctx.release_version} "
+        f"{ctx.assembly_curated_dir} {ctx.assembly_draft_dir} > {script_log} 2>&1"
     )
     try:
-        # the wrapper blocks on its MerquryFK job (bsub -K) but exits 0 even when it fails
+        # judged by the files, not the exit status: MerquryFK can exit 0 without its outputs
         _run(cmd, ctx.print_only)
-        outputs = None if ctx.print_only else _find_qv_outputs(ctx)
+        outputs = None if ctx.print_only else _find_qv_outputs(ctx, run_dir)
         if outputs is not None and set(outputs) != {"qv", "completeness_stats"}:
             raise RuntimeError(
-                "kmer_completeness.bash finished without writing "
-                f"{ctx.tol_id}.qv and {ctx.tol_id}.completeness.stats to "
-                f"{ctx.assembly_curated_dir / 'merquryk'}; see merqury.out there"
+                f"kmer_completeness.sh finished without writing {ctx.tol_id}.qv and "
+                f"{ctx.tol_id}.completeness.stats to {run_dir}; see {script_log}, merqury.*"
             )
+        _run(
+            f"mkdir -p {qv_dir} && cp {run_dir}/{ctx.tol_id}.* {run_dir}/merqury.* {qv_dir}/",
+            ctx.print_only,
+        )
     except Exception:
-        if ctx.tracker and run_dir:
+        log.error("qv failed; logs in %s", run_dir)
+        if ctx.tracker:
             ctx.tracker.finish("qv", run_dir, "failed", untracked=ctx.untracked)
         raise
 
-    if ctx.tracker and run_dir:
+    if ctx.tracker:
         ctx.tracker.finish("qv", run_dir, "success", outputs=outputs, untracked=ctx.untracked)
 
-    print_done("QV analysis done")
+    print_done(f"QV analysis → {run_dir}, copied to {qv_dir}")
 
 
 # ---------------------------------------------------------------------------

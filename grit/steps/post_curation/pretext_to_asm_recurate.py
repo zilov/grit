@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 
 import rich_click as click
@@ -103,7 +104,7 @@ def _write_fake_recurate_outputs(
 
 
 def _check_unloc_tags(agp_path: Path) -> None:
-    """Fail when scaffolds named as unlocs in the recurate AGP carry no ``unloc`` tag."""
+    """Confirm (y/N) unloc-named scaffolds with no ``unloc`` tag in the AGP; fail without a tty."""
     rows = iter_agp_rows(agp_path)
     # A recurate map is built from the curated FASTA, so a previous round's unloc
     # name arrives either as the AGP object (PretextView kept the curated names) or
@@ -126,13 +127,19 @@ def _check_unloc_tags(agp_path: Path) -> None:
     if not untagged:
         return
     listed = "\n".join(f"  {name}" for name in sorted(untagged))
-    raise click.ClickException(
+    message = (
         f"These scaffolds in {agp_path} are named as unlocs but carry no 'unloc' tag:\n"
         f"{listed}\n"
         "Unlocs carried over from the previous curation round keep their names but lose "
         "their tag, so the recurated assembly would promote them to normal scaffolds.\n"
-        "Re-tag them as unlocs in PretextView, re-export the AGP, copy it over and re-run."
     )
+    retag = "Re-tag them as unlocs in PretextView, re-export the AGP, copy it over and re-run."
+    if not sys.stdin.isatty():
+        raise click.ClickException(message + retag)
+    # placing an unloc into its chromosome from the remapped map is a real curation choice
+    log.warning(message)
+    if not click.confirm("Were these unlocs placed into chromosomes on purpose?", default=False):
+        raise click.ClickException(retag)
 
 
 def run_pretext_to_asm_recurate(ctx: CurationContext, hap_prefix: str, step_name: str) -> Path:

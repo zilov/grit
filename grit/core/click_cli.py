@@ -5,6 +5,7 @@ This is the new Click-based interface, allowing modular use of pipeline steps.
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from rich.logging import RichHandler
 
 from grit.core.context import CurationContext
 from grit.core.registry import complete_ticket
+from grit.utils.output import console
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +27,7 @@ def configure_logging(logging_level: str) -> None:
         level=level,
         format="%(message)s",
         datefmt="[%X]",
-        handlers=[RichHandler(show_path=show_path, rich_tracebacks=True)],
+        handlers=[RichHandler(console=console, show_path=show_path, rich_tracebacks=True)],
     )
 
 
@@ -80,6 +82,9 @@ class GlobalState:
 @click.pass_context
 def cli(ctx, verbose, config_path, yaml, print_only, dry_run, logging_level):
     """Curation pipeline CLI."""
+    # uv tool links only grit's own entry point; dependency scripts (rename-and-orient)
+    # live beside the venv's python. bsub jobs inherit this PATH.
+    os.environ["PATH"] = f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"
     configure_logging(logging_level)
     ctx.ensure_object(dict)
     ctx.obj = GlobalState(

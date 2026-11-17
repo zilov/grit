@@ -29,6 +29,7 @@ _DEFAULT_MEM_MB = 60000
 _OUTPUT_SPECS: list[tuple[str, str, list[str]]] = [
     ("hap1_fa", "{tol_id}.{hap1}.*.fa", ["haplotigs"]),
     ("hap1_chr_list", "{tol_id}.{hap1}.*.chromosome.list.csv", []),
+    ("hap1_plot", "{tol_id}.{hap1}.*.alignments_overview.pdf", []),
 ]
 _OUTPUT_SPECS_HAP2: list[tuple[str, str, list[str]]] = [
     ("hap2_fa", "{tol_id}.{hap2}.*.fa", ["haplotigs"]),
@@ -72,9 +73,8 @@ def _submit_rename_and_orient_for_hap(
 
     source_arg = f"--mapping-table {mapping_table}" if mapping_table else f"--paf {paf_file}"
 
-    # Resolve the absolute path now, on the submit host, since $HOME is
-    # NFS-shared with the compute node and rename-and-orient's own bsub
-    # environment carries no module load to put it on PATH.
+    # Absolute path from grit's own venv (put on PATH by the cli group), so the
+    # job runs the pinned version whatever the compute node's PATH holds.
     rename_and_orient_cmd = shutil.which("rename-and-orient") or "rename-and-orient"
 
     inner_cmd = (
@@ -86,14 +86,9 @@ def _submit_rename_and_orient_for_hap(
     )
     if min_coverage is not None:
         inner_cmd += f" --min-coverage {min_coverage}"
-    if plot_alignments:
-        if mapping_table:
-            # Plots are drawn from PAF alignment blocks, which mapping-table mode never reads.
-            log.warning(
-                "--plot-alignments ignored for %s: no PAF in mapping-table mode", hap_prefix
-            )
-        else:
-            inner_cmd += " --plot-alignments"
+    # Plots are drawn from PAF alignment blocks, which mapping-table mode never reads.
+    if plot_alignments and not mapping_table:
+        inner_cmd += " --plot-alignments"
 
     bsub_opts = build_bsub_opts(
         group="team135",
@@ -153,7 +148,7 @@ def run_rename_and_orient(
     run_hap2: bool = False,
     mapping_table: Path | None = None,
     min_coverage: float | None = None,
-    plot_alignments: bool = False,
+    plot_alignments: bool = True,
 ) -> None:
     """
     Renames and orients chromosomes in the curated FASTA based on FastGA PAF alignment.
@@ -278,11 +273,12 @@ def run_rename_and_orient(
     help="Minimum coverage threshold for renaming (0.0-1.0)  [rename-and-orient default: 0.5]",
 )
 @click.option(
-    "--plot-alignments",
+    "--plot-alignments/--no-plot-alignments",
     "-P",
-    is_flag=True,
-    default=False,
-    help="Generate scatter plots of PAF alignment blocks per chromosome (PAF mode only).",
+    default=True,
+    show_default=True,
+    help="Write <prefix>.alignments_overview.pdf of the PAF alignment blocks "
+    "(PAF mode only, so hap1 only).",
 )
 @click.pass_context
 def rename_and_orient_cmd(ctx, run_hap2, mapping_table, min_coverage, plot_alignments):

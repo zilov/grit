@@ -1076,8 +1076,13 @@ def test_run_hic_remapping_print_only_passes_full_command(
     assert "curationpretext.sh" in cmd and "--split_telomere true" in cmd
     assert "/config/steps/hic_remapping_nf.config" in cmd
 
+    assert "hic_remapping_high_mem.config" not in cmd
+
     run_hic_remapping(mock_ctx, keep_work=True)
     assert "hic_remapping_nf.config" not in mock_run.call_args[0][0]
+
+    run_hic_remapping(mock_ctx, high_mem=True)
+    assert "/config/steps/hic_remapping_high_mem.config" in mock_run.call_args[0][0]
 
 
 @patch("grit.utils.helpers._run")
@@ -1165,25 +1170,42 @@ def test_run_hic_remapping_dry_run_hap2_exclusive_skips_hap1(
 # ---------------------------------------------------------------------------
 
 
+def _fake_merqury(written=("sDipInt39.qv", "sDipInt39.completeness.stats")):
+    """_run side effect: the kmer_completeness.sh call writes *written* into its run dir."""
+
+    def run(cmd, print_only=False):
+        if "kmer_completeness.sh" in cmd:
+            run_dir = Path(cmd.split(" && cd ")[1].split(" && ")[0])
+            for name in written:
+                (run_dir / name).write_text("x\n")
+        return ""
+
+    return run
+
+
 @patch("grit.steps.post_curation.qv._run")
-def test_run_qv_runs_inline(mock_run, mock_ctx, tmp_path):
-    mock_ctx.workdir = tmp_path
-    mock_ctx.tol_id = "sDipInt39"
-    mock_ctx.release_version = 1
-    mock_ctx.assembly_curated_dir = tmp_path / "curated"
-    merquryk = mock_ctx.assembly_curated_dir / "merquryk"
-    merquryk.mkdir(parents=True)
-    (merquryk / "sDipInt39.qv").write_text("")
-    (merquryk / "sDipInt39.completeness.stats").write_text("")
+def test_run_qv_runs_in_workdir_and_copies_to_curated(mock_run, mock_ctx, tmp_path):
+    ctx = _qv_ctx(mock_ctx, tmp_path)
+    mock_run.side_effect = _fake_merqury()
 
-    run_qv(mock_ctx)
+    run_qv(ctx)
 
-    assert mock_run.called
-    cmd = mock_run.call_args[0][0]
-    assert "kmer_completeness.bash" in cmd
-    assert "sDipInt39" in cmd
-    assert "1" in cmd
-    assert "module load grit" in cmd
+    run_dir = ctx.tracker.latest_run_dir("qv")
+    assert run_dir.parent == tmp_path / "qv"
+    script_cmd, copy_cmd = (c[0][0] for c in mock_run.call_args_list)
+    assert "module load grit" in script_cmd
+    assert f"cd {run_dir} && bash " in script_cmd
+    assert "kmer_completeness.sh sDipInt39 1 " in script_cmd
+    assert f"{ctx.assembly_curated_dir} {ctx.assembly_draft_dir}" in script_cmd
+    assert f"> {run_dir}/kmer_completeness.log 2>&1" in script_cmd
+    qv_dir = ctx.assembly_curated_dir / "merquryk"
+    assert copy_cmd == (
+        f"mkdir -p {qv_dir} && cp {run_dir}/sDipInt39.* {run_dir}/merqury.* {qv_dir}/"
+    )
+    assert ctx.tracker.get_output("qv", "qv") == str(run_dir / "sDipInt39.qv")
+    assert ctx.tracker.get_output("qv", "completeness_stats") == str(
+        run_dir / "sDipInt39.completeness.stats"
+    )
 
 
 @patch("grit.steps.post_curation.qv._run")
@@ -1196,34 +1218,7 @@ def test_run_qv_print_only(mock_run, mock_ctx, tmp_path):
     run_qv(mock_ctx)
 
     assert mock_run.called
-    assert mock_run.call_args[0][1] is True  # print_only passed through
-
-
-@patch("grit.steps.post_curation.qv._run")
-def test_run_qv_registers_outputs_when_files_present(mock_run, mock_ctx, tmp_path):
-    from grit.core.registry import RegistryManager
-    from grit.core.run_tracker import RunTracker
-
-    mock_ctx.workdir = tmp_path
-    mock_ctx.tol_id = "sDipInt39"
-    mock_ctx.release_version = 1
-    mock_ctx.assembly_curated_dir = tmp_path / "curated" / "sDipInt39.1"
-
-    reg = RegistryManager(registry_dir=tmp_path / ".grit_reg")
-    reg.add_ticket(mock_ctx.ticket_id, mock_ctx.tol_id, mock_ctx.species, tmp_path)
-    mock_ctx.tracker = RunTracker(tmp_path, registry=reg)
-
-    merquryk = mock_ctx.assembly_curated_dir / "merquryk"
-    merquryk.mkdir(parents=True)
-    qv_file = merquryk / "sDipInt39.qv"
-    qv_file.write_text("qv\t60.0\n")
-    comp_file = merquryk / "sDipInt39.completeness.stats"
-    comp_file.write_text("completeness\t99.9\n")
-
-    run_qv(mock_ctx)
-
-    assert mock_ctx.tracker.get_output("qv", "qv") == str(qv_file)
-    assert mock_ctx.tracker.get_output("qv", "completeness_stats") == str(comp_file)
+    assert all(c[0][1] is True for c in mock_run.call_args_list)  # print_only passed through
 
 
 def _qv_ctx(mock_ctx, tmp_path, *, untracked=False):
@@ -1245,13 +1240,12 @@ def _qv_ctx(mock_ctx, tmp_path, *, untracked=False):
 @patch("grit.steps.post_curation.qv._run")
 def test_run_qv_fails_the_run_when_outputs_are_missing(mock_run, mock_ctx, tmp_path, written):
     ctx = _qv_ctx(mock_ctx, tmp_path)
-    merquryk = ctx.assembly_curated_dir / "merquryk"
-    merquryk.mkdir(parents=True)
-    for name in written:
-        (merquryk / name).write_text("x\n")
+    mock_run.side_effect = _fake_merqury(written)
 
-    with pytest.raises(RuntimeError, match="kmer_completeness.bash"):
+    with pytest.raises(RuntimeError, match="kmer_completeness.sh"):
         run_qv(ctx)
+
+    assert mock_run.call_count == 1  # nothing copied to curated
 
     assert [r["status"] for r in ctx.tracker.history("qv")] == ["started", "failed"]
 
@@ -1261,7 +1255,7 @@ def test_run_qv_fails_the_run_when_the_wrapper_errors(mock_run, mock_ctx, tmp_pa
     from grit.utils.helpers import CommandError
 
     ctx = _qv_ctx(mock_ctx, tmp_path)
-    mock_run.side_effect = CommandError(1, "kmer_completeness.bash")
+    mock_run.side_effect = CommandError(1, "kmer_completeness.sh")
 
     with pytest.raises(CommandError):
         run_qv(ctx)
@@ -1851,6 +1845,10 @@ def test_run_qv_dry_run(mock_run, mock_ctx, tmp_path):
     completeness_file = mock_ctx.tracker.get_output("qv", "completeness_stats")
     assert qv_file is not None and Path(qv_file).exists()
     assert completeness_file is not None and Path(completeness_file).exists()
+    assert Path(qv_file).parent.parent == tmp_path / "qv"
+    merquryk = mock_ctx.assembly_curated_dir / "merquryk"
+    assert (merquryk / "sDipInt39.qv").exists()
+    assert (merquryk / "sDipInt39.completeness.stats").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -1863,7 +1861,7 @@ def test_run_qv_dry_run(mock_run, mock_ctx, tmp_path):
 def test_finalize_for_qc_dry_run_dual_hap(mock_run, mock_qv_run, mock_ctx, tmp_path):
     """dry_run for a hap1/hap2 assembly must skip the real pta-mismatch check and
     real _run calls entirely, write placeholder files for both haplotypes, and
-    exercise qv's own dry-run branch (not the real kmer_completeness.bash call)
+    exercise qv's own dry-run branch (not the real kmer_completeness.sh call)
     since no merquryk dir exists yet."""
     from grit.core.registry import RegistryManager
     from grit.core.run_tracker import RunTracker
@@ -1905,6 +1903,11 @@ def test_finalize_for_qc_dry_run_dual_hap(mock_run, mock_qv_run, mock_ctx, tmp_p
     assert qv_file is not None and Path(qv_file).exists()
 
     assert mock_ctx.tracker.get_output("finalize_qc", "curated_dir") == str(dest_dir)
+
+    # finalize-qc's console output, qv's included, lands in its run dir
+    run_log = (mock_ctx.tracker.latest_run_dir("finalize_qc") / "finalize_qc.log").read_text()
+    assert "Step: QV analysis" in run_log
+    assert "Curated dir" in run_log
 
 
 @patch("grit.steps.post_curation.qv._run")
@@ -2304,7 +2307,7 @@ def test_finalize_for_qc_fails_its_run_when_qv_fails(
         [f"{mock_ctx.tol_id}.hap1.1.curated.fa"] if "curated.fa" in pattern else []
     )
     mock_run.return_value = ""
-    mock_qv_run.side_effect = RuntimeError("kmer_completeness.bash wrote no .qv")
+    mock_qv_run.side_effect = RuntimeError("kmer_completeness.sh wrote no .qv")
 
     with pytest.raises(RuntimeError):
         finalize_for_qc(mock_ctx)

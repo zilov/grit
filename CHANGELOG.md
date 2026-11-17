@@ -6,6 +6,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-17
+
+### Added
+
+- `hic-remapping --high-mem`: adds dp24's high-memory resources config to curationpretext (more memory, a third retry), for runs killed by `TERM_MEMLIMIT`.
+
+### Changed
+
+- `rename-and-orient` now plots by default (`--no-plot-alignments` to skip): hap1's run writes `<prefix>.alignments_overview.pdf` (rename-and-orient 1.3.0, with matplotlib), and `grit status` prints an scp tip to download it. hap2 runs from hap1's mapping table, so it has no PAF and no plot.
+- `qv` runs in its own run dir, `workdir/qv/<ts>/`, and copies the MerquryFK results (and `merqury.out`/`merqury.err`) to `curated/merquryk/` only once both `.qv` and `.completeness.stats` exist; the script's output goes to `kmer_completeness.log` there instead of being discarded. It runs grit's own `grit/scripts/kmer_completeness.sh` (the module's `kmer_completeness.bash` minus `speciesops`, taking the ticket's curated and draft dirs; the copied k-mer db is removed even when MerquryFK fails).
+- `finalize-qc` writes everything it prints, log lines included, to `finalize_qc.log` in its run dir.
+- `pretext-to-asm-recurate` no longer refuses an AGP whose unloc-named scaffolds carry no `unloc` tag: it lists them and asks `[y/N]`, since a curator may place unlocs into chromosomes on purpose from the remapped map. Without a tty it still fails.
+
+### Fixed
+
+- `rename-and-orient` jobs failed with `command not found` for curators who installed grit with `uv tool install`: uv links only `grit` into `~/.local/bin`, not its dependencies' scripts. grit now puts its own venv's `bin/` on `PATH` at startup.
+
 ## [0.6.3] - 2026-11-10
 
 ### Fixed

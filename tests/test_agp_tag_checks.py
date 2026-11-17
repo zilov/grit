@@ -259,3 +259,22 @@ def test_unloc_check_tag_on_any_row_of_a_multi_row_unloc_object(tmp_path):
         ],
     )
     _check_unloc_tags(agp)
+
+
+@pytest.mark.parametrize("answer", [True, False])
+def test_unloc_check_asks_on_a_tty(tmp_path, answer):
+    """An unloc placed into a chromosome on purpose is confirmed, not refused."""
+    agp = _agp(
+        tmp_path / "recurate.agp",
+        [_ROW.format(name="Scaffold_1", component="SUPER_1_unloc_1_HAP1")],
+    )
+    with (
+        patch("sys.stdin.isatty", return_value=True),
+        patch.object(click, "confirm", return_value=answer) as confirm,
+    ):
+        if answer:
+            _check_unloc_tags(agp)
+        else:
+            with pytest.raises(click.ClickException):
+                _check_unloc_tags(agp)
+    confirm.assert_called_once()

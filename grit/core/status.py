@@ -423,6 +423,7 @@ _SCP_TIP_STEPS = [
     ("fastga", "FastGA results", None),
     ("busco_synteny", "busco-synteny plot", None),
     ("fastga_synteny", "fastga-synteny plot", None),
+    ("rename_and_orient", "rename-and-orient alignment plot", {"hap1_plot"}),
 ]
 
 

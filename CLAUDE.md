@@ -87,9 +87,16 @@ post-`start()` work in try/except and call `ctx.tracker.finish(step, run_dir,
 or a "success" exit that produced none of the expected outputs), then
 re-raise, or a crash strands the record as "started" forever with no
 recovery path but `grit untrack`. `qv` is the same kind of step:
-`kmer_completeness.bash` blocks on its own `bsub -K` MerquryFK job but exits 0
-whatever that job did, so `run_qv` judges completion by the `.qv` and
-`.completeness.stats` files in `merquryk/`, never by the wrapper's exit status.
+`grit/scripts/kmer_completeness.sh` blocks on its own `bsub -K` MerquryFK job in
+`workdir/qv/<ts>/` (output in `kmer_completeness.log` there), and `run_qv` judges
+completion by the `.qv` and `.completeness.stats` files in that run dir, never by
+the exit status, then copies them to `curated/merquryk/`.
+
+To keep a step's own console output in its run dir, wrap the work after
+`tracker.start()` in `with tee_console(run_dir / "<step>.log")`
+(`grit/utils/output.py`; pass `None` under `print_only`, where the run dir is
+virtual). It records `console`, which the `RichHandler` also writes to, so log
+lines are included; nested blocks are fine (see `finalize_qc.py`).
 
 ### HPC module loading
 
@@ -282,7 +289,7 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
   `status="untracked"` instead of the given success/failed when `untracked=True`
   — omitting it there lets the finish record silently overwrite the untracked
   marker with `success`/`failed`, making the run canonical the moment it
-  completes (the exact bug fixed in `TODO/tiny.md`). Outputs are still
+  completes (the exact bug fixed in `TODO/done/tiny_done.md`). Outputs are still
   recorded on an untracked finish, so `grit retrack -t <ticket> -r <run_id>` can
   later promote the run to canonical using its own recorded outputs. The
   recovery paths that finish *without* `untracked` (`_refresh_pending_jobs`,
@@ -432,9 +439,14 @@ storage-format decision (`CORR-02`), not something to improvise per call site.
 Design docs and implementation plans for non-trivial changes live in
 `TODO/<number>_<slug>.md` (next number = highest existing + 1), with
 `## Problem` / `## Design` sections — see `TODO/done/38_busco_shared_step.md` for
-the reference format. Small one-off fixes go in `TODO/tiny.md` instead of
+the reference format. Small one-off fixes go in `TODO/tiny.md` (closed ones move to `TODO/done/tiny_done.md`) instead of
 getting their own file. Move a file to `TODO/done/` once implemented. Do not
 use `docs/superpowers/specs/`.
+
+Before every commit: add a `CHANGELOG.md` entry under `[Unreleased]` and a test
+for the change, and make sure the task is written down — a task that had no
+TODO yet goes in `TODO/tiny.md` (or straight into `TODO/done/tiny_done.md` when
+already done) if small, or in its own `TODO/<number>_<slug>.md` if large.
 
 When a finished task changes the architecture (new pattern, new shared
 helper, a convention this file documents becoming outdated), update this
